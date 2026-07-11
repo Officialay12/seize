@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>seize — capture any signal</title>
+  <meta name="description"
+    content="Convert video to audio, audio to video, and pull media from TikTok, Instagram, Twitter/X and YouTube — clean, fast, no watermark." />
+  <meta name="theme-color" content="#0B0D0C" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="seize" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <div class="scanline-overlay" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22">
+          <path d="M4 12 L9 5 L9 10 L20 10 L15 19 L15 14 L4 14 Z" fill="currentColor" />
+        </svg>
+      </span>
+      <span class="brand-name">seize</span>
+    </div>
+    <div class="topbar-status">
+      <button id="install-btn" class="btn-install mono small hidden" type="button">Install app</button>
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="mono small" id="engine-status">ENGINE READY</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow mono">SIGNAL CAPTURE &amp; CONVERSION</p>
+        <h1>Grab the frame.<br />Isolate the wave.</h1>
+        <p class="hero-sub">seize pulls clean media straight off TikTok, Instagram, Twitter/X and YouTube no watermark
+          bake-in and flips video to audio or audio to video on the spot.</p>
+      </div>
+      <div class="scope-panel" aria-hidden="true">
+        <svg id="scope-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
+          <line x1="0" y1="80" x2="600" y2="80" class="scope-baseline" />
+          <polyline id="scope-trace" class="scope-trace" points="" />
+        </svg>
+        <div class="scope-readout mono small">
+          <span id="scope-freq">00.0 Hz</span>
+          <span id="scope-mode">STANDBY</span>
+        </div>
+      </div>
+    </section>
+
+    <nav class="mode-switch" role="tablist" aria-label="Choose a tool">
+      <button class="mode-btn active" role="tab" aria-selected="true" data-mode="capture">
+        <span class="mode-index mono">01</span> Capture
+      </button>
+      <button class="mode-btn" role="tab" aria-selected="false" data-mode="convert">
+        <span class="mode-index mono">02</span> Convert
+      </button>
+    </nav>
+
+    <!-- CAPTURE PANEL -->
+    <section class="panel" id="panel-capture" data-active="true">
+      <div class="panel-head">
+        <h2>Capture a link</h2>
+        <p class="panel-sub">Paste a TikTok, Instagram, Twitter/X or YouTube URL. seize resolves the original source
+          file.</p>
+      </div>
+
+      <form id="capture-form" class="capture-form">
+        <div class="input-row">
+          <input type="url" id="url-input" class="text-input" placeholder="https://www.tiktok.com/@user/video/..."
+            required autocomplete="off" />
+          <button type="submit" class="btn-primary" id="resolve-btn">Resolve</button>
+        </div>
+        <div class="platform-chips mono small" aria-hidden="true">
+          <span class="chip" data-platform="tiktok">TikTok</span>
+          <span class="chip" data-platform="instagram">Instagram</span>
+          <span class="chip" data-platform="twitter">Twitter/X</span>
+          <span class="chip" data-platform="youtube">YouTube</span>
+        </div>
+      </form>
+
+      <div id="capture-result" class="capture-result hidden">
+        <img id="result-thumb" class="result-thumb" alt="" />
+        <div class="result-meta">
+          <p class="result-title" id="result-title">—</p>
+          <p class="mono small result-sub" id="result-uploader">—</p>
+          <div class="result-actions" id="result-actions">
+            <button class="btn-secondary" id="fetch-video-btn">🎬 Download video</button>
+            <button class="btn-secondary" id="fetch-audio-btn">🎵 Extract audio</button>
+            <button class="btn-secondary" id="fetch-image-btn">🖼️ Download image</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="capture-progress" class="progress-block hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="capture-progress-fill"></div>
+        </div>
+        <p class="mono small" id="capture-progress-label">FETCHING…</p>
+      </div>
+
+      <p id="capture-error" class="error-text hidden"></p>
+    </section>
+
+    <!-- CONVERT PANEL -->
+    <section class="panel" id="panel-convert" data-active="false">
+      <div class="panel-head">
+        <h2>Convert a file</h2>
+        <p class="panel-sub">Drop a video to pull its audio track, or drop audio to render it into a shareable video.
+        </p>
+      </div>
+
+      <div class="convert-switch mono small">
+        <button class="convert-tab active" data-target="v2a">Video → Audio</button>
+        <button class="convert-tab" data-target="a2v">Audio → Video</button>
+      </div>
+
+      <form id="convert-form" class="convert-form">
+        <label id="dropzone" class="dropzone" for="file-input">
+          <svg viewBox="0 0 24 24" width="28" height="28" class="dropzone-icon">
+            <path d="M12 3v12m0 0-4-4m4 4 4-4M4 19h16" stroke="currentColor" stroke-width="1.6" fill="none"
+              stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span id="dropzone-label">Drop a video file, or click to browse</span>
+          <span class="mono small dropzone-hint" id="dropzone-hint">MP4 · MOV · MKV · WEBM up to 500MB</span>
+          <input type="file" id="file-input" hidden />
+        </label>
+
+        <div class="format-row" id="format-row">
+          <label class="mono small" for="format-select">OUTPUT FORMAT</label>
+          <select id="format-select" class="select-input">
+            <option value="mp3">MP3</option>
+            <option value="wav">WAV</option>
+            <option value="aac">AAC</option>
+            <option value="flac">FLAC</option>
+            <option value="ogg">OGG</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn-primary full-width" id="convert-btn" disabled>Convert</button>
+      </form>
+
+      <div id="convert-progress" class="progress-block hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="convert-progress-fill"></div>
+        </div>
+        <p class="mono small" id="convert-progress-label">PROCESSING…</p>
+      </div>
+
+      <p id="convert-error" class="error-text hidden"></p>
+    </section>
+
+    <section class="disclosure">
+      <p class="mono small">
+        seize resolves publicly available links using open tooling. Respect the rights holder download only what you
+        have permission to reuse, and keep personal use in mind for anything pulled from a third-party platform.
+      sikeeee do as you like guys, actually i built this out of curiosity as some may know i build
+    stuffs that make my life easier, and im willing to share it with you all, you are welcome hehe.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span class="mono small">seize · built for capture</span>
+    <span class="mono small footer-credit">built by <a href="https://ayocodes-portfolio.vercel.app" target="_blank"
+        rel="noopener">Ayocodes</a></span>
+  </footer>
+
+  <script src="app.js"></script>
+
+  <!-- Share handler detection -->
+  <script>
+    (function() {
+      // Check if we were opened via share
+      const sharedUrl = sessionStorage.getItem('seize_shared_url');
+      const sharedMode = sessionStorage.getItem('seize_shared_mode');
+
+      if (sharedUrl) {
+        // Wait for page to load
+        window.addEventListener('load', () => {
+          const urlInput = document.getElementById('url-input');
+          const resolveBtn = document.getElementById('resolve-btn');
+
+          // Auto-fill the URL
+          if (urlInput) {
+            urlInput.value = sharedUrl;
+            urlInput.dispatchEvent(new Event('input'));
+          }
+
+          // Auto-click resolve
+          setTimeout(() => {
+            if (resolveBtn) {
+              resolveBtn.click();
+            }
+          }, 800);
+
+          // Switch to the correct tab
+          if (sharedMode === 'convert-video') {
+            document.querySelector('[data-mode="convert"]')?.click();
+            setTimeout(() => {
+              document.querySelector('[data-target="v2a"]')?.click();
+            }, 300);
+          } else if (sharedMode === 'convert-audio') {
+            document.querySelector('[data-mode="convert"]')?.click();
+            setTimeout(() => {
+              document.querySelector('[data-target="a2v"]')?.click();
+            }, 300);
+          } else {
+            // Capture mode is default
+            document.querySelector('[data-mode="capture"]')?.click();
+          }
+
+          // Clear session storage after use
+          sessionStorage.removeItem('seize_shared_url');
+          sessionStorage.removeItem('seize_shared_title');
+          sessionStorage.removeItem('seize_shared_mode');
+        });
+      }
+    })();
+  </script>
+
+</body>
+
+</html>

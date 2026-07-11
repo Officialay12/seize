@@ -1,7 +1,7 @@
 // ===== Config =====
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
-// ===== Thumbnail helper - ensures images load correctly =====
+// ===== Thumbnail Helper =====
 function loadThumbnail(url, imgElement) {
   if (!url) {
     imgElement.src = "";
@@ -9,13 +9,11 @@ function loadThumbnail(url, imgElement) {
     return;
   }
 
-  // Ensure HTTPS
   let imageUrl = url;
   if (imageUrl.startsWith("http://")) {
     imageUrl = imageUrl.replace("http://", "https://");
   }
 
-  // Add cache-busting for CDN images
   if (
     imageUrl.includes("tiktokcdn.com") ||
     imageUrl.includes("fbcdn.net") ||
@@ -29,7 +27,6 @@ function loadThumbnail(url, imgElement) {
   imgElement.src = imageUrl;
   imgElement.style.display = "block";
 
-  // Handle load errors
   imgElement.onerror = function () {
     console.warn("Failed to load thumbnail:", imageUrl);
     if (imageUrl.includes("_t=")) {
@@ -44,7 +41,7 @@ function loadThumbnail(url, imgElement) {
   };
 }
 
-// ===== Oscilloscope trace animation =====
+// ===== Oscilloscope =====
 const scopeTrace = document.getElementById("scope-trace");
 const scopeFreq = document.getElementById("scope-freq");
 const scopeMode = document.getElementById("scope-mode");
@@ -91,7 +88,7 @@ function setScopeState(state) {
   }
 }
 
-// ===== Mode switch =====
+// ===== Mode Switch =====
 const modeButtons = document.querySelectorAll(".mode-btn");
 const panels = {
   capture: document.getElementById("panel-capture"),
@@ -113,7 +110,7 @@ modeButtons.forEach((btn) => {
   });
 });
 
-// ===== Capture panel =====
+// ===== Capture Panel =====
 const urlInput = document.getElementById("url-input");
 const captureForm = document.getElementById("capture-form");
 const resolveBtn = document.getElementById("resolve-btn");
@@ -131,9 +128,7 @@ const captureError = document.getElementById("capture-error");
 const chips = document.querySelectorAll(".chip");
 
 let currentUrl = "";
-let currentContentType = "unknown";
 
-// ===== Update result buttons based on content type =====
 function updateResultButtons(data) {
   if (data.hasVideo) {
     fetchVideoBtn.style.display = "inline-flex";
@@ -201,9 +196,7 @@ captureForm.addEventListener("submit", async (e) => {
       body: JSON.stringify({ url }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not resolve this link.");
-
-    currentContentType = data.contentType || "unknown";
+    if (!res.ok) throw new Error(data.error || "Could not resolve.");
 
     if (data.thumbnail) {
       loadThumbnail(data.thumbnail, resultThumb);
@@ -219,7 +212,6 @@ captureForm.addEventListener("submit", async (e) => {
     resultUploader.textContent = uploaderText;
 
     updateResultButtons(data);
-
     captureResult.classList.remove("hidden");
     setScopeState("done");
   } catch (err) {
@@ -275,7 +267,7 @@ fetchImageBtn.addEventListener("click", () => runCaptureFetch("image"));
 function pollJob(statusUrl, fillEl, labelEl) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
-    const maxAttempts = 90;
+    const maxAttempts = 120;
     const interval = setInterval(async () => {
       attempts++;
       try {
@@ -303,7 +295,7 @@ function pollJob(statusUrl, fillEl, labelEl) {
   });
 }
 
-// ===== Convert panel =====
+// ===== Convert Panel =====
 const convertTabs = document.querySelectorAll(".convert-tab");
 const dropzone = document.getElementById("dropzone");
 const dropzoneLabel = document.getElementById("dropzone-label");
@@ -343,14 +335,21 @@ convertTabs.forEach((tab) => {
   });
 });
 
-dropzone.addEventListener("click", () => fileInput.click());
+// Fix: Mobile file input - works when clicking dropzone
+dropzone.addEventListener("click", function (e) {
+  e.preventDefault();
+  fileInput.click();
+});
+
 dropzone.addEventListener("dragover", (e) => {
   e.preventDefault();
   dropzone.classList.add("dragover");
 });
-dropzone.addEventListener("dragleave", () =>
-  dropzone.classList.remove("dragover"),
-);
+
+dropzone.addEventListener("dragleave", () => {
+  dropzone.classList.remove("dragover");
+});
+
 dropzone.addEventListener("drop", (e) => {
   e.preventDefault();
   dropzone.classList.remove("dragover");
@@ -359,13 +358,18 @@ dropzone.addEventListener("drop", (e) => {
     fileInput.files = e.dataTransfer.files;
     dropzoneLabel.textContent = selectedFile.name;
     convertBtn.disabled = false;
+    const fileSize = (selectedFile.size / (1024 * 1024)).toFixed(2);
+    dropzoneHint.textContent = `${selectedFile.name} (${fileSize} MB)`;
   }
 });
+
 fileInput.addEventListener("change", () => {
   if (fileInput.files.length) {
     selectedFile = fileInput.files[0];
     dropzoneLabel.textContent = selectedFile.name;
     convertBtn.disabled = false;
+    const fileSize = (selectedFile.size / (1024 * 1024)).toFixed(2);
+    dropzoneHint.textContent = `${selectedFile.name} (${fileSize} MB)`;
   }
 });
 
@@ -404,7 +408,7 @@ convertForm.addEventListener("submit", async (e) => {
       body: formData,
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Conversion failed to start.");
+    if (!res.ok) throw new Error(data.error || "Conversion failed.");
 
     convertProgressLabel.textContent = "PROCESSING…";
     await pollJob(
@@ -424,7 +428,7 @@ convertForm.addEventListener("submit", async (e) => {
   }
 });
 
-// ===== SHARE HANDLER =====
+// ===== Share Handler =====
 const sharedUrl = sessionStorage.getItem("seize_shared_url");
 const sharedMode = sessionStorage.getItem("seize_shared_mode");
 
@@ -434,13 +438,9 @@ if (sharedUrl) {
       urlInput.value = sharedUrl;
       urlInput.dispatchEvent(new Event("input"));
     }
-
     setTimeout(() => {
-      if (resolveBtn) {
-        resolveBtn.click();
-      }
+      if (resolveBtn) resolveBtn.click();
     }, 800);
-
     if (sharedMode === "convert-video") {
       document.querySelector('[data-mode="convert"]')?.click();
       setTimeout(() => {
@@ -452,7 +452,6 @@ if (sharedUrl) {
         document.querySelector('[data-target="a2v"]')?.click();
       }, 300);
     }
-
     sessionStorage.removeItem("seize_shared_url");
     sessionStorage.removeItem("seize_shared_title");
     sessionStorage.removeItem("seize_shared_mode");
@@ -463,23 +462,19 @@ if (sharedUrl) {
 async function handleSharedFile(file) {
   const isVideo = file.type.startsWith("video/");
   const isAudio = file.type.startsWith("audio/");
-  const isImage = file.type.startsWith("image/");
 
   if (isVideo) {
     document.querySelector('[data-mode="convert"]')?.click();
     setTimeout(() => {
       document.querySelector('[data-target="v2a"]')?.click();
     }, 300);
-
     if (fileInput) {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       fileInput.files = dataTransfer.files;
       fileInput.dispatchEvent(new Event("change"));
     }
-    if (dropzoneLabel) {
-      dropzoneLabel.textContent = file.name;
-    }
+    if (dropzoneLabel) dropzoneLabel.textContent = file.name;
     if (convertBtn) {
       convertBtn.disabled = false;
       setTimeout(() => convertBtn.click(), 500);
@@ -489,25 +484,17 @@ async function handleSharedFile(file) {
     setTimeout(() => {
       document.querySelector('[data-target="a2v"]')?.click();
     }, 300);
-
     if (fileInput) {
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(file);
       fileInput.files = dataTransfer.files;
       fileInput.dispatchEvent(new Event("change"));
     }
-    if (dropzoneLabel) {
-      dropzoneLabel.textContent = file.name;
-    }
+    if (dropzoneLabel) dropzoneLabel.textContent = file.name;
     if (convertBtn) {
       convertBtn.disabled = false;
       setTimeout(() => convertBtn.click(), 500);
     }
-  } else if (isImage) {
-    document.querySelector('[data-mode="capture"]')?.click();
-    showCaptureError(
-      "Image sharing from gallery coming soon. Use the Convert panel for audio/video files.",
-    );
   }
 }
 
@@ -549,7 +536,6 @@ installBtn.addEventListener("click", async () => {
     deferredPrompt = null;
     return;
   }
-
   if (isIOS() && !navigator.standalone) {
     showIOSInstallGuide();
   }
@@ -574,11 +560,9 @@ function showIOSInstallGuide() {
     </div>
   `;
   document.body.appendChild(modal);
-
   document.getElementById("ios-modal-close").addEventListener("click", () => {
     modal.remove();
   });
-
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.remove();
   });
@@ -589,7 +573,7 @@ if (isIOS() && !navigator.standalone) {
   installBtn.textContent = "📱 Install on iOS";
 }
 
-// ===== Service worker registration =====
+// ===== Service Worker =====
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").catch(() => {});

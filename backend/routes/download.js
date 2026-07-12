@@ -41,6 +41,7 @@ function updateYtDlpBinary() {
 setTimeout(updateYtDlpBinary, 5000);
 setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
+// ===
 const COOKIE_FILES = {
   youtube: process.env.YT_COOKIES_FILE,
   tiktok: process.env.TIKTOK_COOKIES_FILE,
@@ -77,6 +78,7 @@ function baseOptions(platform) {
     ffmpegLocation: ffmpegStaticPath,
     retries: 5,
     socketTimeout: 45,
+
     concurrentFragments: 8,
   };
   const cookies = cookiesFor(platform);

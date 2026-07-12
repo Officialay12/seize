@@ -89,6 +89,11 @@ if (ffprobePath) {
 
 const CPU_THREADS = Math.max(1, os.cpus()?.length || 1);
 
+// ============================================================
+// CONVERSION HELPERS
+// (These are what routes/convert.js actually calls.)
+// ============================================================
+
 const AUDIO_CODECS = {
   mp3: { codec: "libmp3lame", bitrate: 192 },
   aac: { codec: "aac", bitrate: 192 },
@@ -106,16 +111,41 @@ function probe(filePath) {
   });
 }
 
-function videoToAudio(inputPath, outputPath, format = "mp3", onProgress) {
+const COMPATIBLE_SOURCE_CODECS = {
+  mp3: ["mp3"],
+  aac: ["aac"],
+  m4a: ["aac"],
+  flac: ["flac"],
+  ogg: ["vorbis", "opus"],
+};
+
+async function videoToAudio(inputPath, outputPath, format = "mp3", onProgress) {
   const fmt = AUDIO_CODECS[format] ? format : "mp3";
   const { codec, bitrate } = AUDIO_CODECS[fmt];
 
+  let canCopy = false;
+  try {
+    const info = await probe(inputPath);
+    const audioStream = info.streams?.find((s) => s.codec_type === "audio");
+    const sourceCodec = audioStream?.codec_name;
+    canCopy =
+      !!sourceCodec &&
+      (COMPATIBLE_SOURCE_CODECS[fmt] || []).includes(sourceCodec);
+  } catch (e) {
+    // If probing fails for any reason, just fall through to a normal
+    // re-encode rather than blocking the conversion entirely.
+    canCopy = false;
+  }
+
   return new Promise((resolve, reject) => {
-    const cmd = ffmpeg(inputPath)
-      .noVideo()
-      .audioCodec(codec)
-      .outputOptions(["-threads", String(CPU_THREADS)]);
-    if (bitrate) cmd.audioBitrate(bitrate);
+    const cmd = ffmpeg(inputPath).noVideo();
+
+    if (canCopy) {
+      cmd.audioCodec("copy");
+    } else {
+      cmd.audioCodec(codec).outputOptions(["-threads", String(CPU_THREADS)]);
+      if (bitrate) cmd.audioBitrate(bitrate);
+    }
 
     cmd
       .on("progress", (p) => {
@@ -148,7 +178,6 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
         "28",
         "-threads",
         String(CPU_THREADS),
-
         "-g",
         "250",
       ])
@@ -164,8 +193,8 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
 function generatePlainCoverFallback(destPath) {
   return new Promise((resolve, reject) => {
     const { PassThrough } = require("stream");
-    const width = 1080;
-    const height = 1080;
+    const width = 720;
+    const height = 720;
     const [r, g, b] = [0x0b, 0x0d, 0x0c]; // brand background color
 
     const frame = Buffer.alloc(width * height * 3);

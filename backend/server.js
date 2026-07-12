@@ -19,7 +19,6 @@ const { trackUser, adminRateLimit } = require("./utils/middleware");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-
 app.set("trust proxy", 1);
 
 // ============================================================
@@ -131,8 +130,7 @@ app.get("/api/health", (req, res) =>
   }),
 );
 
-// Root route
-app.get("/", (req, res) => {
+app.get("/api/status", (req, res) => {
   res.json({
     name: "seize-backend",
     version: "3.0.0",

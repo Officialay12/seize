@@ -476,6 +476,7 @@ main {
   border: 1px solid var(--line);
   color: var(--muted);
   padding: 9px 14px;
+  min-height: 44px;
   border-radius: 999px;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
@@ -514,6 +515,20 @@ main {
 
 .dropzone-hint {
   color: #565D59;
+}
+
+#dropzone-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+@media (max-width: 480px) {
+  .dropzone {
+    padding: 32px 16px;
+  }
 }
 
 .format-row {
@@ -680,6 +695,7 @@ main {
   border: 1px solid var(--phosphor-dim);
   color: var(--phosphor);
   padding: 6px 12px;
+  min-height: 40px;
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 0.78rem;
@@ -696,6 +712,8 @@ main {
   border: 1px solid var(--line);
   color: var(--muted);
   padding: 6px 10px;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 0.9rem;
@@ -719,6 +737,16 @@ main {
 
 /* ---------- Small phone adjustments ---------- */
 @media (max-width: 480px) {
+  .mode-btn {
+    padding: 12px 8px;
+    font-size: 0.92rem;
+    gap: 6px;
+  }
+
+  .mode-index {
+    display: none;
+  }
+
   .input-row {
     flex-wrap: wrap;
   }
@@ -749,6 +777,205 @@ main {
     width: 100%;
     justify-content: flex-end;
   }
+}
+
+/* ---------- Restored-file banner ---------- */
+.restored-banner {
+  background: rgba(255, 184, 107, 0.08);
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* ---------- Clipboard auto-detect toast ---------- */
+.clipboard-suggestion {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel-raised);
+  border: 1px solid var(--phosphor-dim);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.2s ease-out;
+}
+
+.clipboard-suggestion span {
+  flex: 1;
+  color: var(--text);
+}
+
+.clipboard-use-btn {
+  background: var(--phosphor);
+  color: #06120a;
+  border: none;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.clipboard-dismiss-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 8px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .clipboard-suggestion {
+    flex-wrap: wrap;
+  }
+}
+
+/* ---------- Quality picker ---------- */
+.quality-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 14px;
+  color: var(--muted);
+}
+
+.quality-row.hidden {
+  display: none;
+}
+
+.quality-row .select-input {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
+/* ---------- Batch queue ---------- */
+.queue-block {
+  margin-top: 22px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.queue-block.hidden {
+  display: none;
+}
+
+.queue-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.queue-title {
+  color: var(--muted);
+}
+
+.queue-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.queue-item-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.queue-item-status {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.queue-item-status[data-state="pending"] {
+  color: var(--muted);
+}
+
+.queue-item-status[data-state="processing"] {
+  color: var(--amber);
+}
+
+.queue-item-status[data-state="done"] {
+  color: var(--phosphor);
+}
+
+.queue-item-status[data-state="error"] {
+  color: var(--error);
+}
+
+.queue-item-remove {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 0.9rem;
+}
+
+/* ---------- Offline banner ---------- */
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 950;
+  background: var(--error);
+  color: #1a0000;
+  text-align: center;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  font-weight: 600;
+}
+
+.offline-banner.hidden {
+  display: none;
 }
 
 /* ---------- iOS Install Modal ---------- */

@@ -1,5 +1,213 @@
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
+// ===== Pending-file persistence (survives the mobile PWA reload) =====
+// android chrome loves to nuke the whole page while the native file
+// picker is open (memory reclaim thing), so when you come back the
+// File you picked is just... gone. can't be helped, file inputs never
+// survive a reload. workaround: stash the blob in indexedDB the second
+// it's picked, then check for it on load and rebuild everything.
+const IDB_NAME = "seize-pending";
+const IDB_STORE = "files";
+const QUEUE_STORE = "offline-queue";
+
+function openPendingDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+      if (!db.objectStoreNames.contains(QUEUE_STORE)) {
+        db.createObjectStore(QUEUE_STORE, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function savePendingFile(file, meta) {
+  try {
+    const db = await openPendingDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(
+        { blob: file, name: file.name, type: file.type, ...meta },
+        "convert",
+      );
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn("[seize] Could not persist pending file:", err);
+  }
+}
+
+async function loadPendingFile() {
+  try {
+    const db = await openPendingDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get("convert");
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function clearPendingFile() {
+  try {
+    const db = await openPendingDB();
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete("convert");
+  } catch {
+    /* ignore */
+  }
+}
+
+// ===== Offline request queue =====
+// no signal? no problem. stash the request (blob included for converts)
+// and fire it off in order once we're back online instead of just
+// letting it fail.
+async function addToOfflineQueue(item) {
+  try {
+    const db = await openPendingDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(QUEUE_STORE, "readwrite");
+      tx.objectStore(QUEUE_STORE).add({ ...item, queuedAt: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn("[seize] Could not queue offline request:", err);
+  }
+}
+
+async function getOfflineQueue() {
+  try {
+    const db = await openPendingDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(QUEUE_STORE, "readonly");
+      const req = tx.objectStore(QUEUE_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function removeFromOfflineQueue(id) {
+  try {
+    const db = await openPendingDB();
+    const tx = db.transaction(QUEUE_STORE, "readwrite");
+    tx.objectStore(QUEUE_STORE).delete(id);
+  } catch {
+    /* ignore */
+  }
+}
+
+function queueOfflineRequest(item) {
+  addToOfflineQueue(item);
+  updateOfflineBanner();
+}
+
+async function processOfflineQueue() {
+  if (!navigator.onLine) return;
+  const items = await getOfflineQueue();
+  for (const item of items) {
+    try {
+      if (item.kind === "capture-resolve") {
+        const res = await fetch(`${API_BASE}/download/resolve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: item.url }),
+        });
+        if (!res.ok) throw new Error("resolve retry failed");
+      } else if (item.kind === "capture-fetch") {
+        const res = await fetch(`${API_BASE}/download/fetch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: item.url,
+            mode: item.mode,
+            quality: item.quality || "best",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "fetch retry failed");
+        await pollJob(
+          `${API_BASE}/download/status/${data.jobId}`,
+          { style: {} },
+          { textContent: "" },
+        );
+        notifyJobDone(
+          "Queued job finished",
+          `${item.title || "Media"} is ready — open seize to save it.`,
+        );
+      } else if (item.kind === "convert") {
+        const formData = new FormData();
+        formData.append("file", item.blob, item.name);
+        const endpoint =
+          item.target === "v2a" ? "video-to-audio" : "audio-to-video";
+        if (item.target === "v2a")
+          formData.append("format", item.format || "mp3");
+        const res = await fetch(`${API_BASE}/convert/${endpoint}`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "convert retry failed");
+        await pollJob(
+          `${API_BASE}/convert/status/${data.jobId}`,
+          { style: {} },
+          { textContent: "" },
+        );
+        notifyJobDone(
+          "Queued conversion finished",
+          `${item.name || "Your file"} finished converting — open seize to save it.`,
+        );
+      }
+      await removeFromOfflineQueue(item.id);
+    } catch (err) {
+      console.warn("[seize] Offline queue item failed, will retry later:", err);
+      // leave it in the queue, next 'online' event will retry
+      break;
+    }
+  }
+  updateOfflineBanner();
+}
+
+async function updateOfflineBanner() {
+  const banner = document.getElementById("offline-banner");
+  if (!banner) return;
+  if (!navigator.onLine) {
+    banner.textContent =
+      "⚠ You're offline — requests will be queued and sent automatically.";
+    banner.classList.remove("hidden");
+    return;
+  }
+  const pending = await getOfflineQueue();
+  if (pending.length > 0) {
+    banner.textContent = `⏳ Back online — sending ${pending.length} queued request${pending.length > 1 ? "s" : ""}…`;
+    banner.classList.remove("hidden");
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+window.addEventListener("online", () => {
+  updateOfflineBanner();
+  processOfflineQueue();
+});
+window.addEventListener("offline", () => updateOfflineBanner());
+
 async function saveMediaToDevice(fileUrl, suggestedName) {
   let blob;
   try {
@@ -332,11 +540,32 @@ const chips = document.querySelectorAll(".chip");
 let currentUrl = "";
 
 function updateResultButtons(data) {
+  const qualityRow = document.getElementById("quality-row");
+  const qualitySelect = document.getElementById("quality-select");
+
   if (data.hasVideo) {
     fetchVideoBtn.style.display = "inline-flex";
     fetchVideoBtn.textContent = "🎬 Download video";
+
+    const heights = [
+      ...new Set(
+        (data.media?.videos || [])
+          .map((v) => v.height)
+          .filter((h) => Number.isFinite(h) && h > 0),
+      ),
+    ].sort((a, b) => b - a);
+
+    qualitySelect.innerHTML = `<option value="best">Best available</option>`;
+    heights.forEach((h) => {
+      const opt = document.createElement("option");
+      opt.value = String(h);
+      opt.textContent = `${h}p`;
+      qualitySelect.appendChild(opt);
+    });
+    qualityRow.classList.remove("hidden");
   } else {
     fetchVideoBtn.style.display = "none";
+    qualityRow.classList.add("hidden");
   }
 
   if (data.hasImage || data.contentType === "image") {
@@ -386,6 +615,14 @@ captureForm.addEventListener("submit", async (e) => {
   const url = urlInput.value.trim();
   if (!url) return;
   currentUrl = url;
+
+  if (!navigator.onLine) {
+    queueOfflineRequest({ kind: "capture-resolve", url });
+    showCaptureError(
+      "You're offline — this will resolve automatically once you're back online.",
+    );
+    return;
+  }
 
   resolveBtn.disabled = true;
   resolveBtn.textContent = "Resolving…";
@@ -447,11 +684,33 @@ async function runCaptureFetch(mode) {
   captureProgressFill.style.width = "10%";
   setScopeState("processing");
 
+  const quality =
+    mode === "video"
+      ? document.getElementById("quality-select")?.value || "best"
+      : "best";
+
+  if (!navigator.onLine) {
+    queueOfflineRequest({
+      kind: "capture-fetch",
+      url: currentUrl,
+      mode,
+      quality,
+      title: resultTitle.textContent || "Untitled",
+      thumbnail: resultThumb.src || null,
+    });
+    captureProgress.classList.add("hidden");
+    showCaptureError(
+      "You're offline — this will run automatically once you're back online.",
+    );
+    setScopeState("idle");
+    return;
+  }
+
   try {
     const res = await fetch(`${API_BASE}/download/fetch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: currentUrl, mode }),
+      body: JSON.stringify({ url: currentUrl, mode, quality }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Fetch failed.");
@@ -479,6 +738,10 @@ async function runCaptureFetch(mode) {
       title: resultTitle.textContent || "Untitled",
       thumbnail: resultThumb.src || null,
     });
+    notifyJobDone(
+      "Your file is ready",
+      `${resultTitle.textContent || "Media"} finished — tap to save it.`,
+    );
   } catch (err) {
     showCaptureError(err.message);
     captureProgress.classList.add("hidden");
@@ -521,6 +784,184 @@ function pollJob(statusUrl, fillEl, labelEl) {
   });
 }
 
+// ===== Batch / Queue mode =====
+// paste a bunch of links at once (one per line) and they queue up +
+// download one by one instead of forcing one-at-a-time
+const LINK_TOKEN_RE = /https?:\/\/[^\s]+/g;
+const queueBlock = document.getElementById("queue-block");
+const queueList = document.getElementById("queue-list");
+const queueCount = document.getElementById("queue-count");
+const queueAddBtn = document.getElementById("queue-add-btn");
+const queueStartBtn = document.getElementById("queue-start-btn");
+const queueClearBtn = document.getElementById("queue-clear-btn");
+
+let batchQueue = [];
+let queueRunning = false;
+
+function renderQueue() {
+  queueList.innerHTML = "";
+  queueCount.textContent = String(batchQueue.length);
+  queueBlock.classList.toggle("hidden", batchQueue.length === 0);
+
+  batchQueue.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "queue-item";
+
+    const urlSpan = document.createElement("span");
+    urlSpan.className = "queue-item-url";
+    urlSpan.textContent = item.url;
+
+    const status = document.createElement("span");
+    status.className = "queue-item-status";
+    status.dataset.state = item.status;
+    status.textContent =
+      item.status === "pending"
+        ? "WAITING"
+        : item.status === "processing"
+          ? "WORKING…"
+          : item.status === "done"
+            ? "✓ DONE"
+            : "✕ FAILED";
+
+    row.appendChild(urlSpan);
+    row.appendChild(status);
+
+    if (item.status === "done" && item.fileUrl) {
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "queue-item-remove";
+      saveBtn.title = "Save to device";
+      saveBtn.textContent = "📲";
+      saveBtn.addEventListener("click", () =>
+        saveMediaToDevice(item.fileUrl, `seize-batch-${Date.now()}.mp4`),
+      );
+      row.appendChild(saveBtn);
+    }
+
+    if (item.status !== "processing") {
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "queue-item-remove";
+      removeBtn.textContent = "✕";
+      removeBtn.addEventListener("click", () => {
+        batchQueue = batchQueue.filter((q) => q.id !== item.id);
+        renderQueue();
+      });
+      row.appendChild(removeBtn);
+    }
+
+    queueList.appendChild(row);
+  });
+}
+
+function addLinksToQueue(links) {
+  links.forEach((url) => {
+    if (batchQueue.some((q) => q.url === url)) return; // no dupes
+    batchQueue.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      url,
+      status: "pending",
+    });
+  });
+  renderQueue();
+}
+
+queueAddBtn.addEventListener("click", () => {
+  const url = urlInput.value.trim();
+  if (!url) return;
+  addLinksToQueue([url]);
+  urlInput.value = "";
+  urlInput.dispatchEvent(new Event("input"));
+});
+
+urlInput.addEventListener("paste", (e) => {
+  const text = e.clipboardData?.getData("text") || "";
+  const links = text.match(LINK_TOKEN_RE) || [];
+  if (links.length > 1) {
+    e.preventDefault();
+    addLinksToQueue(links);
+  }
+});
+
+queueClearBtn.addEventListener("click", () => {
+  if (queueRunning) return;
+  batchQueue = [];
+  renderQueue();
+});
+
+async function processQueueItem(item) {
+  item.status = "processing";
+  renderQueue();
+  try {
+    const resolveRes = await fetch(`${API_BASE}/download/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: item.url }),
+    });
+    const resolveData = await resolveRes.json();
+    if (!resolveRes.ok)
+      throw new Error(resolveData.error || "Could not resolve.");
+
+    const mode = resolveData.hasVideo
+      ? "video"
+      : resolveData.hasImage
+        ? "image"
+        : "audio";
+
+    const fetchRes = await fetch(`${API_BASE}/download/fetch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: item.url, mode, quality: "best" }),
+    });
+    const fetchData = await fetchRes.json();
+    if (!fetchRes.ok) throw new Error(fetchData.error || "Fetch failed.");
+
+    await pollJob(
+      `${API_BASE}/download/status/${fetchData.jobId}`,
+      { style: {} },
+      { textContent: "" },
+    );
+
+    item.status = "done";
+    item.fileUrl = `${API_BASE}/download/file/${fetchData.jobId}`;
+
+    addHistoryEntry({
+      type: "download",
+      mode,
+      url: item.url,
+      title: resolveData.title || "Untitled",
+      thumbnail: resolveData.thumbnail || null,
+    });
+  } catch (err) {
+    item.status = "error";
+    item.error = err.message;
+  }
+  renderQueue();
+}
+
+queueStartBtn.addEventListener("click", async () => {
+  if (queueRunning) return;
+  if (!navigator.onLine) {
+    showCaptureError("You're offline — reconnect to start the queue.");
+    return;
+  }
+  queueRunning = true;
+  queueStartBtn.disabled = true;
+  queueStartBtn.textContent = "Working…";
+
+  for (const item of batchQueue) {
+    if (item.status === "pending") await processQueueItem(item);
+  }
+
+  queueRunning = false;
+  queueStartBtn.disabled = false;
+  queueStartBtn.textContent = "▶ Start queue";
+  notifyJobDone(
+    "Batch queue finished",
+    `${batchQueue.filter((q) => q.status === "done").length} item(s) ready to save.`,
+  );
+});
+
 // ===== Convert Panel =====
 const convertTabs = document.querySelectorAll(".convert-tab");
 const dropzone = document.getElementById("dropzone");
@@ -538,6 +979,24 @@ const convertError = document.getElementById("convert-error");
 let convertTarget = "v2a";
 let selectedFile = null;
 
+// remembers whatever format you last converted to, defaults to it next
+// time so you're not re-picking mp3 every single run
+const LAST_FORMAT_KEY = "seize_last_format";
+function lastUsedFormat(setValue, isSave) {
+  if (isSave) {
+    if (setValue) localStorage.setItem(LAST_FORMAT_KEY, setValue);
+    return;
+  }
+  return localStorage.getItem(LAST_FORMAT_KEY);
+}
+{
+  const remembered = lastUsedFormat();
+  if (remembered) {
+    const initialSelect = document.getElementById("format-select");
+    if (initialSelect) initialSelect.value = remembered;
+  }
+}
+
 convertTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     convertTabs.forEach((t) => t.classList.remove("active"));
@@ -547,12 +1006,16 @@ convertTabs.forEach((tab) => {
     fileInput.value = "";
     convertBtn.disabled = true;
     dropzone.classList.remove("has-file");
+    clearPendingFile();
     if (convertTarget === "v2a") {
       dropzoneLabel.textContent = "Drop a video file, or click to browse";
       dropzoneHint.textContent = "MP4 · MOV · MKV · WEBM — up to 500MB";
       formatRow.style.display = "flex";
       document.getElementById("format-select").innerHTML =
         `<option value="mp3">MP3</option><option value="wav">WAV</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="ogg">OGG</option>`;
+      const remembered = lastUsedFormat();
+      if (remembered)
+        document.getElementById("format-select").value = remembered;
     } else {
       dropzoneLabel.textContent = "Drop an audio file, or click to browse";
       dropzoneHint.textContent =
@@ -578,10 +1041,13 @@ dropzone.addEventListener("dragleave", () => {
   dropzone.classList.remove("dragover");
 });
 
-function applySelectedFile(file) {
+function applySelectedFile(file, opts = {}) {
   selectedFile = file;
   convertBtn.disabled = false;
   dropzone.classList.add("has-file");
+  if (!opts.skipPersist) {
+    savePendingFile(file, { target: convertTarget });
+  }
   const fileSize = (file.size / (1024 * 1024)).toFixed(2);
   dropzoneLabel.textContent = `✅ ${file.name}`;
   dropzoneHint.textContent = `${fileSize} MB — click to choose a different file`;
@@ -602,6 +1068,28 @@ fileInput.addEventListener("change", () => {
   }
 });
 
+(async function restorePendingFile() {
+  const pending = await loadPendingFile();
+  if (!pending || !pending.blob) return;
+
+  // rebuild a real File from the stashed blob
+  const file = new File([pending.blob], pending.name, { type: pending.type });
+
+  if (pending.target && pending.target !== convertTarget) {
+    document.querySelector(`[data-target="${pending.target}"]`)?.click();
+  }
+
+  document.querySelector('[data-mode="convert"]')?.click();
+  applySelectedFile(file, { skipPersist: true });
+
+  const banner = document.createElement("p");
+  banner.className = "mono small restored-banner";
+  banner.textContent =
+    "↺ Restored the file you picked before the app reloaded — hit Convert to continue.";
+  convertForm.insertAdjacentElement("beforebegin", banner);
+  setTimeout(() => banner.remove(), 8000);
+})();
+
 function showConvertError(msg) {
   convertError.textContent = msg;
   convertError.classList.remove("hidden");
@@ -615,6 +1103,20 @@ convertForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearConvertError();
   if (!selectedFile) return;
+
+  if (!navigator.onLine) {
+    queueOfflineRequest({
+      kind: "convert",
+      blob: selectedFile,
+      name: selectedFile.name,
+      target: convertTarget,
+      format: document.getElementById("format-select")?.value,
+    });
+    showConvertError(
+      "You're offline — this will convert automatically once you're back online.",
+    );
+    return;
+  }
 
   convertBtn.disabled = true;
   convertProgress.classList.remove("hidden");
@@ -693,6 +1195,17 @@ convertForm.addEventListener("submit", async (e) => {
       title: selectedFile?.name || "Converted file",
       outFormat: outExt,
     });
+    clearPendingFile();
+    lastUsedFormat(
+      convertTarget === "v2a"
+        ? document.getElementById("format-select").value
+        : null,
+      true,
+    );
+    notifyJobDone(
+      "Your file is ready",
+      `${selectedFile?.name || "Your file"} finished converting — tap to save it.`,
+    );
   } catch (err) {
     showConvertError(err.message);
     convertProgress.classList.add("hidden");
@@ -789,6 +1302,107 @@ window.addEventListener("load", () => {
   }
 });
 
+// ===== Clipboard auto-detect =====
+// check the clipboard when the app comes back to foreground, offer to
+// autofill if there's a link on it. saves a paste every time
+const CLIPBOARD_LINK_RE =
+  /https?:\/\/[^\s]*(tiktok\.com|instagram\.com|twitter\.com|x\.com|youtube\.com|youtu\.be)[^\s]*/i;
+let lastClipboardSuggestion = "";
+
+async function checkClipboardForLink() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) return;
+  try {
+    const text = await navigator.clipboard.readText();
+    const match = text && text.match(CLIPBOARD_LINK_RE);
+    if (!match) return;
+    const found = match[0];
+    if (found === lastClipboardSuggestion) return;
+    if (urlInput.value.trim() === found) return;
+    lastClipboardSuggestion = found;
+    showClipboardSuggestion(found);
+  } catch {
+    // no permission or not focused, whatever — fail quietly
+  }
+}
+
+function showClipboardSuggestion(link) {
+  document.querySelector(".clipboard-suggestion")?.remove();
+
+  const bar = document.createElement("div");
+  bar.className = "clipboard-suggestion mono small";
+
+  const label = document.createElement("span");
+  label.textContent = "📋 Link found on clipboard — use it?";
+  bar.appendChild(label);
+
+  const useBtn = document.createElement("button");
+  useBtn.type = "button";
+  useBtn.className = "clipboard-use-btn";
+  useBtn.textContent = "Use it";
+  useBtn.addEventListener("click", () => {
+    document.querySelector('[data-mode="capture"]')?.click();
+    urlInput.value = link;
+    urlInput.dispatchEvent(new Event("input"));
+    bar.remove();
+  });
+  bar.appendChild(useBtn);
+
+  const dismissBtn = document.createElement("button");
+  dismissBtn.type = "button";
+  dismissBtn.className = "clipboard-dismiss-btn";
+  dismissBtn.textContent = "✕";
+  dismissBtn.addEventListener("click", () => bar.remove());
+  bar.appendChild(dismissBtn);
+
+  document.body.appendChild(bar);
+  setTimeout(() => bar.remove(), 12000);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkClipboardForLink();
+});
+window.addEventListener("focus", checkClipboardForLink);
+
+// ===== Local notifications on job completion =====
+// so you can background the app on a long convert instead of staring
+// at the progress bar. goes through the service worker so it fires
+// even if the tab got suspended
+let notificationPermissionAsked = false;
+
+async function ensureNotificationPermission() {
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  if (notificationPermissionAsked) return false;
+  notificationPermissionAsked = true;
+  try {
+    return (await Notification.requestPermission()) === "granted";
+  } catch {
+    return false;
+  }
+}
+
+async function notifyJobDone(title, body) {
+  const ok = await ensureNotificationPermission();
+  if (!ok) return;
+  // only bug them if they've actually left the tab
+  if (document.visibilityState === "visible") return;
+  try {
+    if (navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification(title, {
+        body,
+        icon: "icons/icon-192.png",
+        badge: "icons/icon-192.png",
+      });
+    } else {
+      new Notification(title, { body, icon: "icons/icon-192.png" });
+    }
+  } catch (err) {
+    console.warn("[seize] Notification failed:", err);
+  }
+}
+
 // ===== Install Button =====
 const installBtn = document.getElementById("install-btn");
 let deferredPrompt;
@@ -853,6 +1467,9 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+updateOfflineBanner();
+if (navigator.onLine) processOfflineQueue();
 
 console.log("✅ seize app loaded successfully");
 console.log("🔗 API Base:", API_BASE);

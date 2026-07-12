@@ -25,6 +25,7 @@
   </head>
 
   <body>
+    <div id="offline-banner" class="offline-banner hidden mono small"></div>
     <div class="scanline-overlay" aria-hidden="true"></div>
 
     <header class="topbar">
@@ -122,6 +123,14 @@
               required
               autocomplete="off"
             />
+            <button
+              type="button"
+              class="btn-secondary"
+              id="queue-add-btn"
+              title="Add to batch queue instead of resolving now"
+            >
+              ➕ Queue
+            </button>
             <button type="submit" class="btn-primary" id="resolve-btn">
               Resolve
             </button>
@@ -132,13 +141,39 @@
             <span class="chip" data-platform="twitter">Twitter/X</span>
             <span class="chip" data-platform="youtube">YouTube</span>
           </div>
+          <p class="mono small dropzone-hint" id="batch-hint">
+            Tip: paste several links at once (one per line) to queue them all.
+          </p>
         </form>
+
+        <div id="queue-block" class="queue-block hidden">
+          <div class="queue-toolbar">
+            <p class="mono small queue-title">
+              Queue (<span id="queue-count">0</span>)
+            </p>
+            <div class="queue-toolbar-actions">
+              <button type="button" class="btn-secondary" id="queue-start-btn">
+                ▶ Start queue
+              </button>
+              <button type="button" class="history-remove-btn" id="queue-clear-btn">
+                🗑️
+              </button>
+            </div>
+          </div>
+          <div id="queue-list" class="queue-list"></div>
+        </div>
 
         <div id="capture-result" class="capture-result hidden">
           <img id="result-thumb" class="result-thumb" alt="" />
           <div class="result-meta">
             <p class="result-title" id="result-title">—</p>
             <p class="mono small result-sub" id="result-uploader">—</p>
+            <div class="quality-row hidden mono small" id="quality-row">
+              <label for="quality-select">QUALITY</label>
+              <select id="quality-select" class="select-input">
+                <option value="best">Best available</option>
+              </select>
+            </div>
             <div class="result-actions" id="result-actions">
               <button class="btn-secondary" id="fetch-video-btn">
                 🎬 Download video

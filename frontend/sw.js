@@ -1,4 +1,4 @@
-const CACHE_NAME = "seize-shell-v5";
+const CACHE_NAME = "seize-shell-v6";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -18,9 +18,8 @@ self.addEventListener("install", (event) => {
       .open(CACHE_NAME)
       .then((cache) => {
         console.log("📦 Caching shell assets");
-        // cache.addAll() is all-or-nothing: one 404'ing asset silently
-        // fails the ENTIRE precache. Cache each asset independently so
-        // a single missing file doesn't take the rest down with it.
+        // cache.addAll is all-or-nothing — one 404 kills the whole
+        // precache, so add each asset separately instead
         return Promise.all(
           SHELL_ASSETS.map((url) =>
             cache.add(url).catch((err) => {
@@ -57,20 +56,29 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        for (const client of clients) {
+          if ("focus" in client) return client.focus();
+        }
+        if (self.clients.openWindow) return self.clients.openWindow("/");
+      }),
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // ============================================
-  // CRITICAL FIX: Skip ALL non-http/https requests
-  // This includes chrome-extension, chrome-devtools, etc.
-  // ============================================
+  // skip anything that's not http/https (chrome-extension:// etc)
   if (!url.protocol.startsWith("http")) {
     return;
   }
 
-  // ============================================
-  // Skip external domains that cause CSP issues
-  // ============================================
+  // domains that just cause CSP headaches, skip 'em
   const externalDomains = [
     "chat.deepseek.com",
     "deepseek.com",
@@ -83,9 +91,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ============================================
-  // API calls: network first
-  // ============================================
+  // api calls: network first, always
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -98,9 +104,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ============================================
-  // Admin pages: network first (no cache)
-  // ============================================
+  // admin pages: no cache, straight to network
   if (url.pathname === "/admin.html" || url.pathname === "/admin-login.html") {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -113,17 +117,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ============================================
-  // Share handler: always network
-  // ============================================
+  // share handler: never cache this one
   if (url.pathname === "/share-handler" || url.pathname === "/share-handler/") {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // ============================================
-  // External images: network first with no-cors
-  // ============================================
+  // external images: network first, no-cors
   if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
     if (
       url.pathname.match(/\.(jpg|jpeg|png|gif|webp|svg|avif)$/i) ||
@@ -137,14 +137,14 @@ self.addEventListener("fetch", (event) => {
           cache: "default",
         })
           .then((response) => {
-            // Only cache if it's a valid response
+            // only cache valid responses
             if (response && response.ok && response.type === "basic") {
               const clone = response.clone();
               caches.open(CACHE_NAME).then((cache) => {
                 try {
                   cache.put(event.request, clone);
                 } catch (e) {
-                  // Some responses can't be cached
+                  // some responses just refuse to be cached
                 }
               });
             }
@@ -158,9 +158,7 @@ self.addEventListener("fetch", (event) => {
     }
   }
 
-  // ============================================
-  // Everything else: cache first, fallback to network
-  // ============================================
+  // everything else: cache first, network as backup
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) {
@@ -168,7 +166,7 @@ self.addEventListener("fetch", (event) => {
       }
       return fetch(event.request)
         .then((response) => {
-          // Only cache successful responses for local assets
+          // only cache successful local-asset responses
           if (
             response &&
             response.ok &&
@@ -179,14 +177,14 @@ self.addEventListener("fetch", (event) => {
               try {
                 cache.put(event.request, clone);
               } catch (e) {
-                // Some responses can't be cached
+                // some responses just refuse to be cached
               }
             });
           }
           return response;
         })
         .catch(() => {
-          // Return offline fallback
+          // offline fallback
           if (url.pathname.endsWith(".html")) {
             return new Response("Page not available offline", {
               status: 503,

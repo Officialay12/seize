@@ -178,23 +178,19 @@ async function resolveWithStrategies(url, platform, isUsable) {
     } catch (err) {
       lastErr = err;
       const msg = (err.stderr || err.message || "").toLowerCase();
-      // Rate limits won't be fixed by trying another client strategy —
-      // fail fast instead of burning through all of them.
+      // rate limit = give up early, switching client won't fix that
       if (msg.includes("429") || msg.includes("rate limit")) throw err;
     }
     if (i < strategies.length - 1) {
-      // Short, non-blocking gap between strategies — enough to dodge a
-      // transient block without meaningfully slowing down resolution.
+      // tiny gap between strategies, dodges transient blocks
       await new Promise((r) => setTimeout(r, 250));
     }
   }
   throw lastErr || new Error("All extraction strategies failed");
 }
 
-// Runs a yt-dlp download while parsing its own stdout for real progress
-// percentages (yt-dlp prints lines like "[download]  42.3% of 12.34MiB")
-// instead of faking a linear progress bar — this reports what's actually
-// happening and adds no meaningful overhead.
+// parses yt-dlp's own stdout ("[download] 42.3% of 12.34MiB") for real
+// progress instead of faking a linear bar
 function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -321,10 +317,8 @@ function extractMediaUrls(info) {
     hasImage: false,
   };
 
-  // Carousels / multi-image posts (Instagram sidecar, Twitter multi-photo,
-  // TikTok slideshows) come back as a playlist with `entries`. Flatten
-  // every entry's formats/thumbnail into the same media buckets instead
-  // of only looking at the top-level object.
+  // carousels (IG sidecar, twitter multi-photo, tiktok slideshows) come
+  // back as a playlist with `entries` — flatten those into the same buckets
   const nodes =
     Array.isArray(info.entries) && info.entries.length
       ? info.entries.filter(Boolean)
@@ -386,8 +380,8 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Some image-only posts expose the image directly rather than as a
-    // "format" (common on Instagram/Twitter photo posts).
+    // some image posts expose the image directly, not as a "format"
+    // (IG/twitter photo posts do this)
     if (
       node.url &&
       (node.ext === "jpg" ||
@@ -513,7 +507,7 @@ router.post("/resolve", async (req, res) => {
 });
 
 router.post("/fetch", async (req, res) => {
-  const { url, mode = "video" } = req.body;
+  const { url, mode = "video", quality = "best" } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
 
   const platform = detectPlatform(url);
@@ -558,21 +552,37 @@ router.post("/fetch", async (req, res) => {
     }
 
     // ---------- VIDEO / AUDIO MODE ----------
-    // Ordered fallback chain of format strings, weakest constraint last.
-    // Each is tried with each header/client strategy before giving up.
+    // fallback chain of format strings, weakest last. quality tier
+    // (e.g. "720") caps height on every entry; "best" leaves it alone
+    const heightCap = /^\d+$/.test(String(quality)) ? String(quality) : null;
+    const capFmt = (fmt) => {
+      if (!heightCap) return fmt;
+      // cap height per alternative, leave the "/" fallbacks alone
+      return fmt
+        .split("/")
+        .map((part) =>
+          part.replace(
+            /\b(bestvideo|best)\b(?!audio)(\[[^\]]*\])?/g,
+            (m, base, existing) =>
+              `${base}${existing || ""}[height<=${heightCap}]`,
+          ),
+        )
+        .join("/");
+    };
+
     const formatChains = {
       audio:
         platform === "youtube"
           ? ["bestaudio[ext=m4a]/bestaudio/best", "bestaudio/best", "best"]
           : ["bestaudio/best", "best"],
-      video:
-        platform === "youtube"
-          ? [
-              "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
-              "bestvideo+bestaudio/best",
-              "best",
-            ]
-          : ["bestvideo+bestaudio/best", "best[ext=mp4]/best", "best"],
+      video: (platform === "youtube"
+        ? [
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+            "bestvideo+bestaudio/best",
+            "best",
+          ]
+        : ["bestvideo+bestaudio/best", "best[ext=mp4]/best", "best"]
+      ).map(capFmt),
     };
     const chain = formatChains[mode === "audio" ? "audio" : "video"];
     const strategies = getStrategies(platform);
@@ -605,7 +615,7 @@ router.post("/fetch", async (req, res) => {
           if (msg.includes("429") || msg.includes("rate limit")) {
             throw err;
           }
-          // clean up any partial file before trying the next combination
+          // wipe partial file before the next attempt
           if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
         }
       }

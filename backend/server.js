@@ -19,6 +19,13 @@ const { trackUser, adminRateLimit } = require("./utils/middleware");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Render (and most PaaS hosts) sit behind a reverse proxy, so incoming
+// requests carry an X-Forwarded-For header. Without this, Express won't
+// trust that header, and express-rate-limit can't correctly identify
+// individual clients for rate limiting (it may bucket everyone together
+// or be spoofable). `1` = trust exactly one hop (Render's proxy).
+app.set("trust proxy", 1);
+
 // ============================================================
 // CRASH GUARDS
 // ============================================================

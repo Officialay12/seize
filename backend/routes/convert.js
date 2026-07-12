@@ -1,221 +1,198 @@
-const express = require("express");
-const path = require("path");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegStatic = require("ffmpeg-static");
+const ffprobeStatic = require("ffprobe-static");
 const fs = require("fs");
-const multer = require("multer");
-const { v4: uuid } = require("uuid");
-const {
-  isAvailable,
-  videoToAudio,
-  audioToVideo,
-  generatePlainCoverFallback,
-} = require("../utils/convert");
-const { scheduleCleanup } = require("../utils/cleanup");
+const os = require("os");
 
-const router = express.Router();
+let ffmpegPath = null;
+let ffprobePath = null;
 
-// ============================================================
-// TEMP STORAGE + JOB QUEUE
-// ============================================================
-const TMP_DIR = path.join(__dirname, "..", "tmp");
-if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-
-const jobs = new Map();
-scheduleCleanup({ jobs, tmpDir: TMP_DIR });
-
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB, matches the UI's stated limit
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, TMP_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || "";
-    cb(null, `upload-${uuid()}${ext}`);
-  },
-});
-
-function fileFilter(req, file, cb) {
-  const okPrefix = req.path.includes("audio-to-video") ? "audio/" : "video/";
-
-  if (
-    file.mimetype.startsWith(okPrefix) ||
-    file.mimetype.startsWith("video/") ||
-    file.mimetype.startsWith("audio/") ||
-    file.mimetype === "application/octet-stream"
-  ) {
-    cb(null, true);
-  } else {
-    cb(new Error("Unsupported file type."));
+function tryPath(p, label) {
+  try {
+    if (p && fs.existsSync(p)) return p;
+  } catch (e) {
+    console.log(`⚠️ ${label} path check failed:`, e.message);
   }
+  return null;
 }
 
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_FILE_SIZE },
-  fileFilter,
-});
+ffmpegPath = tryPath(ffmpegStatic, "ffmpeg-static");
+ffprobePath = tryPath(ffprobeStatic && ffprobeStatic.path, "ffprobe-static");
 
-function uploadSingle(req, res, next) {
-  upload.single("file")(req, res, (err) => {
-    if (err) {
-      if (err.code === "LIMIT_FILE_SIZE") {
-        return res
-          .status(413)
-          .json({ error: "File too large. Maximum size is 500MB." });
+if (!ffmpegPath || !ffprobePath) {
+  try {
+    const { execSync } = require("child_process");
+    const which = (bin) => {
+      try {
+        const result = execSync(`command -v ${bin} 2>/dev/null || echo ""`, {
+          encoding: "utf8",
+          timeout: 3000,
+        })
+          .toString()
+          .trim();
+        return result && fs.existsSync(result) ? result : null;
+      } catch {
+        return null;
       }
-      return res.status(400).json({ error: err.message || "Upload failed." });
-    }
-    next();
-  });
+    };
+    if (!ffmpegPath) ffmpegPath = which("ffmpeg");
+    if (!ffprobePath) ffprobePath = which("ffprobe");
+  } catch (e) {
+    console.log("⚠️ System ffmpeg/ffprobe detection failed:", e.message);
+  }
 }
 
-const BRANDED_COVER_PATH = path.join(
-  __dirname,
-  "..",
-  "..",
-  "frontend",
-  "icons",
-  "seize-cover.png",
-);
-const FALLBACK_COVER_PATH = path.join(TMP_DIR, "_fallback-cover.png");
-let coverReadyPromise = null;
+if (!ffmpegPath) {
+  for (const p of [
+    "/usr/bin/ffmpeg",
+    "/usr/local/bin/ffmpeg",
+    "/opt/homebrew/bin/ffmpeg",
+  ]) {
+    const found = tryPath(p, "ffmpeg common path");
+    if (found) {
+      ffmpegPath = found;
+      break;
+    }
+  }
+}
+if (!ffprobePath) {
+  for (const p of [
+    "/usr/bin/ffprobe",
+    "/usr/local/bin/ffprobe",
+    "/opt/homebrew/bin/ffprobe",
+  ]) {
+    const found = tryPath(p, "ffprobe common path");
+    if (found) {
+      ffprobePath = found;
+      break;
+    }
+  }
+}
 
-function ensureCoverImage() {
-  if (coverReadyPromise) return coverReadyPromise;
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
+  console.log("✅ FFmpeg path set:", ffmpegPath);
+} else {
+  console.error(
+    "❌ FFmpeg not found! Conversions will fail until this is resolved.",
+  );
+}
 
-  coverReadyPromise = (async () => {
-    if (fs.existsSync(BRANDED_COVER_PATH)) return BRANDED_COVER_PATH;
-    if (fs.existsSync(FALLBACK_COVER_PATH)) return FALLBACK_COVER_PATH;
-    console.warn(
-      "[seize] Branded cover asset missing, generating a plain fallback cover once.",
+if (ffprobePath) {
+  ffmpeg.setFfprobePath(ffprobePath);
+  console.log("✅ FFprobe path set:", ffprobePath);
+} else {
+  console.error(
+    "❌ FFprobe not found! Media inspection will fail until this is resolved.",
+  );
+}
+
+const CPU_THREADS = Math.max(1, os.cpus()?.length || 1);
+
+const AUDIO_CODECS = {
+  mp3: { codec: "libmp3lame", bitrate: 192 },
+  aac: { codec: "aac", bitrate: 192 },
+  m4a: { codec: "aac", bitrate: 192 },
+  wav: { codec: "pcm_s16le" },
+  flac: { codec: "flac" },
+  ogg: { codec: "libvorbis", bitrate: 192 },
+};
+
+function probe(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, data) =>
+      err ? reject(err) : resolve(data),
     );
-    await generatePlainCoverFallback(FALLBACK_COVER_PATH);
-    return FALLBACK_COVER_PATH;
-  })();
-
-  return coverReadyPromise;
-}
-
-function cleanupUploadedFile(req) {
-  if (req.file?.path && fs.existsSync(req.file.path)) {
-    fs.unlink(req.file.path, () => {});
-  }
-}
-
-// ============================================================
-// VIDEO -> AUDIO
-// ============================================================
-router.post("/video-to-audio", uploadSingle, async (req, res) => {
-  if (!isAvailable()) {
-    cleanupUploadedFile(req);
-    return res.status(503).json({ error: "Conversion engine unavailable." });
-  }
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded." });
-  }
-
-  const format = ["mp3", "wav", "aac", "flac", "ogg"].includes(req.body.format)
-    ? req.body.format
-    : "mp3";
-
-  const jobId = uuid();
-  const outputPath = path.join(TMP_DIR, `${jobId}.${format}`);
-
-  jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
-  res.json({ jobId });
-
-  try {
-    await videoToAudio(req.file.path, outputPath, format, (pct) => {
-      const job = jobs.get(jobId);
-      if (job && job.status === "processing") job.progress = pct;
-    });
-
-    jobs.set(jobId, {
-      status: "done",
-      progress: 100,
-      outputPath,
-      downloadName: `seize-audio.${format}`,
-      finishedAt: Date.now(),
-    });
-  } catch (err) {
-    console.error("[convert] video-to-audio failed:", err.message);
-    jobs.set(jobId, {
-      status: "error",
-      error:
-        "Conversion failed. The file may be corrupt or an unsupported format.",
-      finishedAt: Date.now(),
-    });
-    if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
-  } finally {
-    cleanupUploadedFile(req);
-  }
-});
-
-// ============================================================
-// AUDIO -> VIDEO
-// ============================================================
-router.post("/audio-to-video", uploadSingle, async (req, res) => {
-  if (!isAvailable()) {
-    cleanupUploadedFile(req);
-    return res.status(503).json({ error: "Conversion engine unavailable." });
-  }
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded." });
-  }
-
-  const jobId = uuid();
-  const outputPath = path.join(TMP_DIR, `${jobId}.mp4`);
-
-  jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
-  res.json({ jobId });
-
-  try {
-    const coverPath = await ensureCoverImage();
-
-    await audioToVideo(req.file.path, outputPath, coverPath, (pct) => {
-      const job = jobs.get(jobId);
-      if (job && job.status === "processing") job.progress = pct;
-    });
-
-    jobs.set(jobId, {
-      status: "done",
-      progress: 100,
-      outputPath,
-      downloadName: "seize-video.mp4",
-      finishedAt: Date.now(),
-    });
-  } catch (err) {
-    console.error("[convert] audio-to-video failed:", err.message);
-    jobs.set(jobId, {
-      status: "error",
-      error:
-        "Conversion failed. The file may be corrupt or an unsupported format.",
-      finishedAt: Date.now(),
-    });
-    if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
-  } finally {
-    cleanupUploadedFile(req);
-  }
-});
-
-// ============================================================
-// STATUS + DOWNLOAD
-// ============================================================
-router.get("/status/:jobId", (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  res.json({ status: job.status, progress: job.progress, error: job.error });
-});
-
-router.get("/download/:jobId", (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job || job.status !== "done") {
-    return res.status(404).json({ error: "File not ready" });
-  }
-  res.download(job.outputPath, job.downloadName, (err) => {
-    if (!err) {
-      fs.unlink(job.outputPath, () => {});
-      jobs.delete(req.params.jobId);
-    }
   });
-});
+}
 
-module.exports = router;
+function videoToAudio(inputPath, outputPath, format = "mp3", onProgress) {
+  const fmt = AUDIO_CODECS[format] ? format : "mp3";
+  const { codec, bitrate } = AUDIO_CODECS[fmt];
+
+  return new Promise((resolve, reject) => {
+    const cmd = ffmpeg(inputPath)
+      .noVideo()
+      .audioCodec(codec)
+      .outputOptions(["-threads", String(CPU_THREADS)]);
+    if (bitrate) cmd.audioBitrate(bitrate);
+
+    cmd
+      .on("progress", (p) => {
+        if (onProgress) onProgress(Math.min(99, Math.round(p.percent || 0)));
+      })
+      .on("error", (err) => reject(err))
+      .on("end", () => resolve(outputPath))
+      .save(outputPath);
+  });
+}
+
+function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(coverImagePath)
+      .loop(true)
+      .input(audioPath)
+      .videoCodec("libx264")
+      .audioCodec("aac")
+      .audioBitrate(192)
+      .outputOptions([
+        "-shortest",
+        "-pix_fmt",
+        "yuv420p",
+        "-tune",
+        "stillimage",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+        "-threads",
+        String(CPU_THREADS),
+
+        "-g",
+        "250",
+      ])
+      .on("progress", (p) => {
+        if (onProgress) onProgress(Math.min(99, Math.round(p.percent || 0)));
+      })
+      .on("error", (err) => reject(err))
+      .on("end", () => resolve(outputPath))
+      .save(outputPath);
+  });
+}
+
+function generatePlainCoverFallback(destPath) {
+  return new Promise((resolve, reject) => {
+    const { PassThrough } = require("stream");
+    const width = 1080;
+    const height = 1080;
+    const [r, g, b] = [0x0b, 0x0d, 0x0c]; // brand background color
+
+    const frame = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < frame.length; i += 3) {
+      frame[i] = r;
+      frame[i + 1] = g;
+      frame[i + 2] = b;
+    }
+
+    const input = new PassThrough();
+    input.end(frame);
+
+    ffmpeg(input)
+      .inputFormat("rawvideo")
+      .inputOptions(["-pix_fmt", "rgb24", "-s", `${width}x${height}`])
+      .outputOptions(["-frames:v", "1", "-update", "1"])
+      .on("error", (err) => reject(err))
+      .on("end", () => resolve(destPath))
+      .save(destPath);
+  });
+}
+
+module.exports = ffmpeg;
+module.exports.ffmpegPath = ffmpegPath;
+module.exports.ffprobePath = ffprobePath;
+module.exports.isAvailable = () => !!ffmpegPath && !!ffprobePath;
+module.exports.probe = probe;
+module.exports.videoToAudio = videoToAudio;
+module.exports.audioToVideo = audioToVideo;
+module.exports.generatePlainCoverFallback = generatePlainCoverFallback;

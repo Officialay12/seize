@@ -467,7 +467,7 @@ async function runCaptureFetch(mode) {
     const fileExt = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
     showSaveButton(
-      captureResult,
+      captureResult.parentElement,
       fileUrl,
       `seize-${mode}-${Date.now()}.${fileExt}`,
     );
@@ -824,7 +824,7 @@ function showIOSInstallGuide() {
   modal.className = "ios-install-modal";
   modal.innerHTML = `
     <div class="ios-modal-content">
-      <h3>📱 Install Seize Ayocodes on your iPhone</h3>
+      <h3>📱 Install seize on your iPhone</h3>
       <ol>
         <li>Tap the <strong>Share</strong> button <span class="share-icon">⎔</span></li>
         <li>Scroll down and tap <strong>Add to Home Screen</strong></li>

@@ -1,4 +1,3 @@
-// ===== Config =====
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
 async function saveMediaToDevice(fileUrl, suggestedName) {
@@ -57,6 +56,145 @@ function showSaveButton(container, fileUrl, suggestedName) {
   });
   container.appendChild(btn);
 }
+
+// ===== History (local to this device only) =====
+const HISTORY_KEY = "seize_history";
+const MAX_HISTORY_ITEMS = 50;
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistoryList(list) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  } catch (err) {
+    console.warn("[seize] Could not save history (storage may be full):", err);
+  }
+}
+
+function addHistoryEntry(entry) {
+  const list = loadHistory();
+  list.unshift({
+    ...entry,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    timestamp: Date.now(),
+  });
+  saveHistoryList(list.slice(0, MAX_HISTORY_ITEMS));
+  renderHistory();
+}
+
+function removeHistoryEntry(id) {
+  const list = loadHistory().filter((item) => item.id !== id);
+  saveHistoryList(list);
+  renderHistory();
+}
+
+function clearAllHistory() {
+  saveHistoryList([]);
+  renderHistory();
+}
+
+function formatHistoryDate(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return sameDay ? `Today, ${time}` : `${d.toLocaleDateString()}, ${time}`;
+}
+
+function historySubtitle(item) {
+  const when = formatHistoryDate(item.timestamp);
+  if (item.type === "resolve") {
+    return `${(item.platform || "link").toUpperCase()} · Resolved · ${when}`;
+  }
+  if (item.type === "download") {
+    return `${item.mode?.toUpperCase() || "FILE"} downloaded · ${when}`;
+  }
+  if (item.type === "convert") {
+    return `${item.direction} · .${item.outFormat} · ${when}`;
+  }
+  return when;
+}
+
+function renderHistory() {
+  const list = loadHistory();
+  const container = document.getElementById("history-list");
+  const emptyMsg = document.getElementById("history-empty");
+  if (!container || !emptyMsg) return;
+
+  container.innerHTML = "";
+
+  if (list.length === 0) {
+    emptyMsg.classList.remove("hidden");
+    return;
+  }
+  emptyMsg.classList.add("hidden");
+
+  list.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "history-item";
+
+    const thumb = document.createElement("img");
+    thumb.className = "history-thumb";
+    thumb.alt = "";
+    thumb.src = item.thumbnail || "icons/icon-192.png";
+    thumb.onerror = () => {
+      thumb.src = "icons/icon-192.png";
+    };
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    const title = document.createElement("p");
+    title.className = "history-title";
+    title.textContent = item.title || "Untitled";
+    const sub = document.createElement("p");
+    sub.className = "mono small history-sub";
+    sub.textContent = historySubtitle(item);
+    meta.appendChild(title);
+    meta.appendChild(sub);
+
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
+
+    if (item.url) {
+      const useBtn = document.createElement("button");
+      useBtn.type = "button";
+      useBtn.className = "history-action-btn";
+      useBtn.textContent = "Resolve again";
+      useBtn.addEventListener("click", () => {
+        document.querySelector('[data-mode="capture"]')?.click();
+        urlInput.value = item.url;
+        captureForm.dispatchEvent(new Event("submit", { cancelable: true }));
+      });
+      actions.appendChild(useBtn);
+    }
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "history-remove-btn";
+    removeBtn.textContent = "✕";
+    removeBtn.title = "Remove from history";
+    removeBtn.addEventListener("click", () => removeHistoryEntry(item.id));
+    actions.appendChild(removeBtn);
+
+    row.appendChild(thumb);
+    row.appendChild(meta);
+    row.appendChild(actions);
+    container.appendChild(row);
+  });
+}
+
+document.getElementById("clear-history-btn")?.addEventListener("click", () => {
+  clearAllHistory();
+});
+
+renderHistory();
 
 // ===== Thumbnail Helper =====
 function loadThumbnail(url, imgElement) {
@@ -150,6 +288,7 @@ const modeButtons = document.querySelectorAll(".mode-btn");
 const panels = {
   capture: document.getElementById("panel-capture"),
   convert: document.getElementById("panel-convert"),
+  history: document.getElementById("panel-history"),
 };
 
 modeButtons.forEach((btn) => {
@@ -164,8 +303,14 @@ modeButtons.forEach((btn) => {
     Object.entries(panels).forEach(([key, panel]) =>
       panel.setAttribute("data-active", key === mode ? "true" : "false"),
     );
+    sessionStorage.setItem("seize_active_tab", mode);
   });
 });
+
+const savedTab = sessionStorage.getItem("seize_active_tab");
+if (savedTab && panels[savedTab]) {
+  document.querySelector(`[data-mode="${savedTab}"]`)?.click();
+}
 
 // ===== Capture Panel =====
 const urlInput = document.getElementById("url-input");
@@ -271,6 +416,15 @@ captureForm.addEventListener("submit", async (e) => {
     updateResultButtons(data);
     captureResult.classList.remove("hidden");
     setScopeState("done");
+
+    addHistoryEntry({
+      type: "resolve",
+      url,
+      title: data.title || "Untitled",
+      thumbnail: data.thumbnail || null,
+      platform: data.platform || null,
+      contentType: data.contentType || null,
+    });
   } catch (err) {
     showCaptureError(err.message);
     setScopeState("idle");
@@ -317,6 +471,14 @@ async function runCaptureFetch(mode) {
       fileUrl,
       `seize-${mode}-${Date.now()}.${fileExt}`,
     );
+
+    addHistoryEntry({
+      type: "download",
+      mode,
+      url: currentUrl,
+      title: resultTitle.textContent || "Untitled",
+      thumbnail: resultThumb.src || null,
+    });
   } catch (err) {
     showCaptureError(err.message);
     captureProgress.classList.add("hidden");
@@ -469,15 +631,43 @@ convertForm.addEventListener("submit", async (e) => {
     formData.append("format", document.getElementById("format-select").value);
   }
 
-  try {
-    const res = await fetch(`${API_BASE}/convert/${endpoint}`, {
-      method: "POST",
-      body: formData,
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Conversion failed.");
+  function uploadWithProgress(url, body) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
 
-    convertProgressLabel.textContent = "PROCESSING…";
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        const pct = Math.round((evt.loaded / evt.total) * 100);
+        convertProgressFill.style.width = `${pct}%`;
+        convertProgressLabel.textContent =
+          pct < 100 ? `UPLOADING… ${pct}%` : "PROCESSING…";
+      };
+
+      xhr.onload = () => {
+        let data;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch {
+          data = {};
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(data.error || `Upload failed (${xhr.status}).`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload."));
+      xhr.send(body);
+    });
+  }
+
+  try {
+    const data = await uploadWithProgress(
+      `${API_BASE}/convert/${endpoint}`,
+      formData,
+    );
     await pollJob(
       `${API_BASE}/convert/status/${data.jobId}`,
       convertProgressFill,
@@ -496,6 +686,13 @@ convertForm.addEventListener("submit", async (e) => {
       fileUrl,
       `seize-converted-${Date.now()}.${outExt}`,
     );
+
+    addHistoryEntry({
+      type: "convert",
+      direction: convertTarget === "v2a" ? "Video → Audio" : "Audio → Video",
+      title: selectedFile?.name || "Converted file",
+      outFormat: outExt,
+    });
   } catch (err) {
     showConvertError(err.message);
     convertProgress.classList.add("hidden");
@@ -627,7 +824,7 @@ function showIOSInstallGuide() {
   modal.className = "ios-install-modal";
   modal.innerHTML = `
     <div class="ios-modal-content">
-      <h3>📱 Install seize by Ayocodes on your iPhone</h3>
+      <h3>📱 Install Seize Ayocodes on your iPhone</h3>
       <ol>
         <li>Tap the <strong>Share</strong> button <span class="share-icon">⎔</span></li>
         <li>Scroll down and tap <strong>Add to Home Screen</strong></li>

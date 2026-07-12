@@ -172,9 +172,8 @@ main {
   margin-bottom: 12px;
   /* NO BORDER */
   background: linear-gradient(to bottom,
-    rgba(127,255,176,0.02) 0%,
-    transparent 100%
-  );
+      rgba(127, 255, 176, 0.02) 0%,
+      transparent 100%);
 }
 
 @media (max-width: 860px) {
@@ -250,7 +249,7 @@ main {
   gap: 4px;
   margin: 40px 0 32px;
   padding-bottom: 8px;
-  background: linear-gradient(to bottom, transparent 90%, rgba(127,255,176,0.05) 100%);
+  background: linear-gradient(to bottom, transparent 90%, rgba(127, 255, 176, 0.05) 100%);
   /* NO BORDER */
 }
 
@@ -418,7 +417,7 @@ main {
   gap: 18px;
   margin-top: 26px;
   padding: 24px;
-  background: rgba(127,255,176,0.02);
+  background: rgba(127, 255, 176, 0.02);
   border-radius: var(--radius);
   /* NO BORDER */
 }
@@ -567,7 +566,7 @@ main {
 .disclosure {
   margin-top: 40px;
   padding: 32px 24px;
-  background: rgba(0,0,0,0.15);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: var(--radius);
   /* NO BORDER */
 }
@@ -582,7 +581,7 @@ main {
 .footer {
   text-align: center;
   padding: 40px 24px 28px;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
   margin-top: 20px;
   display: flex;
   flex-direction: column;
@@ -600,11 +599,115 @@ main {
   color: var(--phosphor);
 }
 
+/* ---------- History ---------- */
+.history-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: border-color 0.15s;
+}
+
+.history-item:hover {
+  border-color: var(--phosphor-dim);
+}
+
+.history-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
+.history-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-sub {
+  margin: 0;
+  color: var(--muted);
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.history-action-btn {
+  background: transparent;
+  border: 1px solid var(--phosphor-dim);
+  color: var(--phosphor);
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.history-action-btn:hover {
+  background: rgba(127, 255, 176, 0.08);
+  border-color: var(--phosphor);
+}
+
+.history-remove-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.history-remove-btn:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.history-empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 32px 0;
+}
+
+.history-empty.hidden {
+  display: none;
+}
+
 /* ---------- iOS Install Modal ---------- */
 .ios-install-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.85);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;

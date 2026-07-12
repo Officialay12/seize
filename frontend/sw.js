@@ -1,4 +1,4 @@
-const CACHE_NAME = "seize-shell-v1.0.0";
+const CACHE_NAME = "seize-shell-v5";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -18,9 +18,16 @@ self.addEventListener("install", (event) => {
       .open(CACHE_NAME)
       .then((cache) => {
         console.log("📦 Caching shell assets");
-        return cache.addAll(SHELL_ASSETS).catch((err) => {
-          console.warn("⚠️ Failed to cache some assets:", err);
-        });
+        // cache.addAll() is all-or-nothing: one 404'ing asset silently
+        // fails the ENTIRE precache. Cache each asset independently so
+        // a single missing file doesn't take the rest down with it.
+        return Promise.all(
+          SHELL_ASSETS.map((url) =>
+            cache.add(url).catch((err) => {
+              console.warn(`⚠️ Failed to cache "${url}":`, err.message);
+            }),
+          ),
+        );
       })
       .then(() => {
         console.log("✅ Install complete");
@@ -53,10 +60,17 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
+  // ============================================
+  // CRITICAL FIX: Skip ALL non-http/https requests
+  // This includes chrome-extension, chrome-devtools, etc.
+  // ============================================
   if (!url.protocol.startsWith("http")) {
     return;
   }
 
+  // ============================================
+  // Skip external domains that cause CSP issues
+  // ============================================
   const externalDomains = [
     "chat.deepseek.com",
     "deepseek.com",
@@ -84,6 +98,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // ============================================
+  // Admin pages: network first (no cache)
+  // ============================================
   if (url.pathname === "/admin.html" || url.pathname === "/admin-login.html") {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -96,11 +113,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // ============================================
+  // Share handler: always network
+  // ============================================
   if (url.pathname === "/share-handler" || url.pathname === "/share-handler/") {
     event.respondWith(fetch(event.request));
     return;
   }
 
+  // ============================================
+  // External images: network first with no-cors
+  // ============================================
   if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
     if (
       url.pathname.match(/\.(jpg|jpeg|png|gif|webp|svg|avif)$/i) ||
@@ -135,6 +158,9 @@ self.addEventListener("fetch", (event) => {
     }
   }
 
+  // ============================================
+  // Everything else: cache first, fallback to network
+  // ============================================
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) {

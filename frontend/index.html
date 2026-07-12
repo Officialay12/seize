@@ -92,6 +92,14 @@
         >
           <span class="mode-index mono">02</span> Convert
         </button>
+        <button
+          class="mode-btn"
+          role="tab"
+          aria-selected="false"
+          data-mode="history"
+        >
+          <span class="mode-index mono">03</span> History
+        </button>
       </nav>
 
       <!-- CAPTURE PANEL -->
@@ -242,6 +250,29 @@
           platform. sikeeee do as you like guys, actually i built this out of
           curiosity as some may know i build stuffs that make my life easier,
           and im willing to share it with you all, you are welcome hehe.
+        </p>
+      </section>
+
+      <!-- HISTORY PANEL -->
+      <section class="panel" id="panel-history" data-active="false">
+        <div class="panel-head">
+          <h2>Past activity</h2>
+          <p class="panel-sub">
+            Links you've resolved and files you've converted, saved on this
+            device only. Tap a link entry to resolve it again.
+          </p>
+        </div>
+
+        <div class="history-toolbar">
+          <button class="btn-secondary" id="clear-history-btn">
+            🗑️ Clear history
+          </button>
+        </div>
+
+        <div id="history-list" class="history-list"></div>
+        <p id="history-empty" class="mono small history-empty hidden">
+          Nothing here yet — resolved links and conversions will show up
+          after you use them.
         </p>
       </section>
     </main>

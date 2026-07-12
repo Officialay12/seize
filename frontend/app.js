@@ -965,6 +965,14 @@ queueStartBtn.addEventListener("click", async () => {
 // ===== Convert Panel =====
 const convertTabs = document.querySelectorAll(".convert-tab");
 const dropzone = document.getElementById("dropzone");
+const dropzoneEmpty = document.getElementById("dropzone-empty");
+const dropzonePreview = document.getElementById("dropzone-preview");
+const dropzonePreviewIcon = document.getElementById("dropzone-preview-icon");
+const dropzonePreviewName = document.getElementById("dropzone-preview-name");
+const dropzonePreviewSize = document.getElementById("dropzone-preview-size");
+const dropzonePreviewRemove = document.getElementById(
+  "dropzone-preview-remove",
+);
 const dropzoneLabel = document.getElementById("dropzone-label");
 const dropzoneHint = document.getElementById("dropzone-hint");
 const fileInput = document.getElementById("file-input");
@@ -975,6 +983,7 @@ const convertProgress = document.getElementById("convert-progress");
 const convertProgressFill = document.getElementById("convert-progress-fill");
 const convertProgressLabel = document.getElementById("convert-progress-label");
 const convertError = document.getElementById("convert-error");
+const convertRestoreBanner = document.getElementById("convert-restore-banner");
 
 let convertTarget = "v2a";
 let selectedFile = null;
@@ -1002,11 +1011,7 @@ convertTabs.forEach((tab) => {
     convertTabs.forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
     convertTarget = tab.dataset.target;
-    selectedFile = null;
-    fileInput.value = "";
-    convertBtn.disabled = true;
-    dropzone.classList.remove("has-file");
-    clearPendingFile();
+    clearSelectedFile();
     if (convertTarget === "v2a") {
       dropzoneLabel.textContent = "Drop a video file, or click to browse";
       dropzoneHint.textContent = "MP4 · MOV · MKV · WEBM — up to 500MB";
@@ -1027,9 +1032,25 @@ convertTabs.forEach((tab) => {
 
 fileInput.addEventListener("click", (e) => e.stopPropagation());
 
+// dropzone is a plain <div role="button">, not a <label for="file-input">.
+// There's no native forwarding behavior to fight here — this is the ONLY
+// thing that opens the picker, so there's no risk of a double-dispatch
+// (label click -> forwarded input click -> our handler -> fileInput.click()
+// -> input click bubbles back up) which is a classic source of mobile
+// browsers opening the picker twice or getting confused about the source
+// of the "click".
 dropzone.addEventListener("click", function (e) {
   e.preventDefault();
+  e.stopPropagation();
   fileInput.click();
+});
+
+// keyboard support since this is a div, not a real button/label
+dropzone.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fileInput.click();
+  }
 });
 
 dropzone.addEventListener("dragover", (e) => {
@@ -1041,17 +1062,76 @@ dropzone.addEventListener("dragleave", () => {
   dropzone.classList.remove("dragover");
 });
 
+function fileTypeIcon(file) {
+  if (file.type.startsWith("audio/")) return "🎵";
+  if (file.type.startsWith("video/")) return "🎬";
+  return "📄";
+}
+
 function applySelectedFile(file, opts = {}) {
   selectedFile = file;
   convertBtn.disabled = false;
   dropzone.classList.add("has-file");
+
+  // Show the real preview inside the container immediately — this is the
+  // visible proof the state actually updated, which is exactly the thing
+  // that was failing to render before a mobile reload wiped it out.
+  dropzoneEmpty.classList.add("hidden");
+  dropzonePreview.classList.remove("hidden");
+  dropzonePreviewIcon.textContent = fileTypeIcon(file);
+  dropzonePreviewName.textContent = file.name;
+  dropzonePreviewSize.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
   if (!opts.skipPersist) {
-    savePendingFile(file, { target: convertTarget });
+    // Synchronous flag FIRST — sessionStorage writes are synchronous, so
+    // this lands even if the tab gets frozen/killed a moment later, before
+    // the async IndexedDB blob write below has a chance to finish. On
+    // reload we can tell "a file was picked but we lost the bytes" apart
+    // from "nothing was ever picked" and message the user accordingly
+    // instead of silently doing nothing.
+    try {
+      sessionStorage.setItem(
+        "seize_pending_flag",
+        JSON.stringify({
+          name: file.name,
+          size: file.size,
+          target: convertTarget,
+          ts: Date.now(),
+        }),
+      );
+    } catch {
+      /* ignore, sessionStorage can throw in some private-browsing modes */
+    }
+    savePendingFile(file, { target: convertTarget }).then(() => {
+      // blob safely in IndexedDB — the flag has done its job
+      try {
+        sessionStorage.removeItem("seize_pending_flag");
+      } catch {
+        /* ignore */
+      }
+    });
   }
-  const fileSize = (file.size / (1024 * 1024)).toFixed(2);
-  dropzoneLabel.textContent = `✅ ${file.name}`;
-  dropzoneHint.textContent = `${fileSize} MB — click to choose a different file`;
 }
+
+function clearSelectedFile() {
+  selectedFile = null;
+  fileInput.value = "";
+  convertBtn.disabled = true;
+  dropzone.classList.remove("has-file");
+  dropzoneEmpty.classList.remove("hidden");
+  dropzonePreview.classList.add("hidden");
+  clearPendingFile();
+  try {
+    sessionStorage.removeItem("seize_pending_flag");
+  } catch {
+    /* ignore */
+  }
+}
+
+dropzonePreviewRemove.addEventListener("click", (e) => {
+  e.stopPropagation(); // don't let this bubble to the dropzone and reopen the picker
+  clearSelectedFile();
+});
 
 dropzone.addEventListener("drop", (e) => {
   e.preventDefault();
@@ -1068,27 +1148,79 @@ fileInput.addEventListener("change", () => {
   }
 });
 
+function showRestoreBanner(text) {
+  convertRestoreBanner.textContent = text;
+  convertRestoreBanner.classList.remove("hidden");
+  setTimeout(() => convertRestoreBanner.classList.add("hidden"), 8000);
+}
+
 (async function restorePendingFile() {
   const pending = await loadPendingFile();
-  if (!pending || !pending.blob) return;
 
-  // rebuild a real File from the stashed blob
-  const file = new File([pending.blob], pending.name, { type: pending.type });
+  if (pending && pending.blob) {
+    // Happy path: the file survived (either no reload happened, or the
+    // IndexedDB write won the race against the OS killing the tab).
+    const file = new File([pending.blob], pending.name, { type: pending.type });
 
-  if (pending.target && pending.target !== convertTarget) {
-    document.querySelector(`[data-target="${pending.target}"]`)?.click();
+    if (pending.target && pending.target !== convertTarget) {
+      document.querySelector(`[data-target="${pending.target}"]`)?.click();
+    }
+
+    document.querySelector('[data-mode="convert"]')?.click();
+    applySelectedFile(file, { skipPersist: true });
+    showRestoreBanner(
+      "↺ Restored the file you picked before the app reloaded — hit Convert to continue.",
+    );
+    try {
+      sessionStorage.removeItem("seize_pending_flag");
+    } catch {
+      /* ignore */
+    }
+    return;
   }
 
-  document.querySelector('[data-mode="convert"]')?.click();
-  applySelectedFile(file, { skipPersist: true });
+  // No file recovered. Check whether one was actually mid-pick when this
+  // page loaded — if the flag is here but no blob made it into IndexedDB,
+  // the tab was killed by the OS before the async write finished (this is
+  // the real, unavoidable-at-the-JS-level mobile memory-reclaim case).
+  // Tell the person plainly what happened instead of leaving them staring
+  // at an empty dropzone with no explanation.
+  let flag = null;
+  try {
+    flag = JSON.parse(sessionStorage.getItem("seize_pending_flag") || "null");
+  } catch {
+    flag = null;
+  }
 
-  const banner = document.createElement("p");
-  banner.className = "mono small restored-banner";
-  banner.textContent =
-    "↺ Restored the file you picked before the app reloaded — hit Convert to continue.";
-  convertForm.insertAdjacentElement("beforebegin", banner);
-  setTimeout(() => banner.remove(), 8000);
+  if (flag) {
+    document.querySelector('[data-mode="convert"]')?.click();
+    if (flag.target && flag.target !== convertTarget) {
+      document.querySelector(`[data-target="${flag.target}"]`)?.click();
+    }
+    showRestoreBanner(
+      `⚠ Your browser closed the tab while "${flag.name}" was loading — this can happen on low-memory phones. Please pick it again.`,
+    );
+    try {
+      sessionStorage.removeItem("seize_pending_flag");
+    } catch {
+      /* ignore */
+    }
+  }
 })();
+
+// Best-effort early warning: if the tab is about to be frozen/hidden right
+// after a file was chosen but before the IndexedDB write resolves, at least
+// we tried to persist synchronously via sessionStorage already (see
+// applySelectedFile). There's nothing more JS can do once the OS actually
+// kills the process — this is a hard platform limitation, not a bug we can
+// "fix" away entirely, only work around.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && selectedFile) {
+    console.log(
+      "[seize] Tab hidden while a file is selected — persistence flag already written.",
+    );
+  }
+});
 
 function showConvertError(msg) {
   convertError.textContent = msg;
@@ -1099,8 +1231,7 @@ function clearConvertError() {
   convertError.textContent = "";
 }
 
-convertForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+convertBtn.addEventListener("click", async (e) => {
   clearConvertError();
   if (!selectedFile) return;
 
@@ -1261,7 +1392,6 @@ async function handleSharedFile(file) {
       fileInput.files = dataTransfer.files;
       fileInput.dispatchEvent(new Event("change"));
     }
-    if (dropzoneLabel) dropzoneLabel.textContent = file.name;
     if (convertBtn) {
       convertBtn.disabled = false;
       setTimeout(() => convertBtn.click(), 500);
@@ -1277,7 +1407,6 @@ async function handleSharedFile(file) {
       fileInput.files = dataTransfer.files;
       fileInput.dispatchEvent(new Event("change"));
     }
-    if (dropzoneLabel) dropzoneLabel.textContent = file.name;
     if (convertBtn) {
       convertBtn.disabled = false;
       setTimeout(() => convertBtn.click(), 500);

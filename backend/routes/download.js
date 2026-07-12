@@ -287,24 +287,51 @@ function downloadFile(url, filePath, redirects = 0) {
 
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
+
+  // --- most specific checks first ---
+  if (
+    s.includes("geo") ||
+    s.includes("not available in your country") ||
+    s.includes("blocked in your country") ||
+    s.includes("not available on this app or country")
+  )
+    return "This content is region-locked and isn't available from your location.";
   if (s.includes("private")) return "This post is private.";
   if (s.includes("age") && s.includes("restrict"))
-    return "This video is age-restricted and requires a signed-in account (cookies) to access.";
-  if (s.includes("unavailable") || s.includes("not available"))
-    return "Content removed or region-locked.";
+    return "This video is age-restricted and requires a signed-in account to access.";
   if (s.includes("sign in") || s.includes("login"))
-    return "This content requires a logged-in session to access (platform-side restriction).";
+    return "This content requires a logged-in session on the platform to view.";
+  if (s.includes("copyright") || s.includes("blocked it on copyright"))
+    return "This content was blocked due to a copyright claim.";
+  if (
+    s.includes("removed") ||
+    s.includes("video unavailable") ||
+    s.includes("this video is unavailable")
+  )
+    return "This content has been removed or deleted.";
+  if (s.includes("unavailable") || s.includes("not available"))
+    return "This content isn't available right now — it may have been removed or restricted.";
   if (s.includes("timed out") || s.includes("timeout"))
-    return "Platform took too long to respond. Try again.";
+    return "The platform took too long to respond. Try again in a moment.";
   if (s.includes("rate limit") || s.includes("429"))
     return "Rate limited by the platform. Please wait a bit and try again.";
+  if (
+    s.includes("econnrefused") ||
+    s.includes("enotfound") ||
+    s.includes("getaddrinfo") ||
+    s.includes("network") ||
+    s.includes("fetch failed") ||
+    s.includes("502") ||
+    s.includes("503")
+  )
+    return "The platform's service seems to be down right now. Try again shortly.";
   if (s.includes("no video") || s.includes("could not be found"))
     return "No downloadable media found at this link (it may be text-only or an unsupported post type).";
   if (s.includes("profile") || s.includes("channel"))
     return "Use a specific post/video URL, not a profile or channel link.";
   if (s.includes("unsupported url"))
-    return "This specific link format isn't recognized. Try copying the link directly from the app's share button.";
-  return "Could not resolve this link. It may have been deleted, made private, or the platform is temporarily blocking automated access.";
+    return "This link format isn't recognized. Try copying the link directly from the app's share button.";
+  return "Couldn't resolve this link. It may have been deleted, made private, or the platform is temporarily blocking automated access.";
 }
 
 function extractMediaUrls(info) {
@@ -418,6 +445,24 @@ function isUsableInfo(info) {
   return media.hasVideo || media.hasImage || media.audio.length > 0;
 }
 
+// media.videos is already sorted best->worst by extractMediaUrls. Slicing
+// by position used to just keep the top N, which — since platforms expose
+// many near-duplicate high-res formats — meant lower resolutions almost
+// never survived the cut. Dedupe by height instead so every distinct
+// quality tier gets one representative entry.
+function dedupeByHeight(videos, max = 12) {
+  const seen = new Set();
+  const out = [];
+  for (const v of videos) {
+    const key = v.height || v.width || 0;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 router.post("/resolve", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
@@ -481,7 +526,7 @@ router.post("/resolve", async (req, res) => {
       hasVideo: media.hasVideo,
       hasImage: media.hasImage,
       media: {
-        videos: media.videos.slice(0, 5),
+        videos: dedupeByHeight(media.videos, 12),
         images: media.images.slice(0, 10),
         audio: media.audio.slice(0, 3),
       },

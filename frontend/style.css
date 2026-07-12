@@ -337,15 +337,33 @@ main {
   background: var(--panel-raised);
   border: 1px solid var(--line);
   color: var(--text);
-  padding: 14px 16px;
+  padding: 18px 20px;
   border-radius: var(--radius);
   font-family: var(--font-body);
   font-size: 16px;
   /* iOS Safari auto-zooms the page below 16px on focus */
+  box-shadow: 0 0 0 0 rgba(127, 255, 176, 0);
+  animation: cta-glow 2.4s ease-in-out 3;
+}
+
+@keyframes cta-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(127, 255, 176, 0);
+    border-color: var(--line);
+  }
+
+  50% {
+    box-shadow: 0 0 16px 1px rgba(127, 255, 176, 0.25);
+    border-color: var(--phosphor-dim);
+  }
 }
 
 .text-input:focus {
   border-color: var(--phosphor);
+  box-shadow: 0 0 0 3px rgba(127, 255, 176, 0.15);
+  animation: none;
 }
 
 .text-input::placeholder {
@@ -359,7 +377,11 @@ main {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.05rem;
-  padding: 0 26px;
+  padding: 14px 26px;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius);
   cursor: pointer;
   transition: filter 0.15s, transform 0.1s;
@@ -393,6 +415,10 @@ main {
   font-family: var(--font-body);
   font-weight: 500;
   padding: 11px 18px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
@@ -515,6 +541,71 @@ main {
 
 .dropzone-hint {
   color: #565D59;
+}
+
+.dropzone-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dropzone-empty.hidden {
+  display: none;
+}
+
+.dropzone-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  cursor: default;
+}
+
+.dropzone-preview.hidden {
+  display: none;
+}
+
+.dropzone-preview-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+
+.dropzone-preview-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropzone-preview-name {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropzone-preview-size {
+  margin: 0;
+  color: var(--muted);
+}
+
+.dropzone-preview-remove {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.dropzone-preview-remove:hover {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 #dropzone-label {
@@ -712,8 +803,8 @@ main {
   border: 1px solid var(--line);
   color: var(--muted);
   padding: 6px 10px;
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 44px;
+  min-height: 44px;
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 0.9rem;
@@ -786,8 +877,12 @@ main {
   color: var(--amber);
   padding: 10px 14px;
   border-radius: var(--radius);
-  margin-bottom: 16px;
+  margin-top: 16px;
   line-height: 1.5;
+}
+
+.restored-banner.hidden {
+  display: none;
 }
 
 /* ---------- Clipboard auto-detect toast ---------- */
@@ -818,10 +913,10 @@ main {
   color: #06120a;
   border: none;
   font-weight: 600;
-  padding: 8px 14px;
+  padding: 10px 16px;
   border-radius: var(--radius);
   cursor: pointer;
-  min-height: 36px;
+  min-height: 44px;
 }
 
 .clipboard-dismiss-btn {
@@ -831,8 +926,8 @@ main {
   font-size: 1rem;
   cursor: pointer;
   padding: 8px;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 @keyframes slideUp {
@@ -954,9 +1049,9 @@ main {
   border: none;
   color: var(--muted);
   cursor: pointer;
-  min-width: 32px;
-  min-height: 32px;
-  font-size: 0.9rem;
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1rem;
 }
 
 /* ---------- Offline banner ---------- */

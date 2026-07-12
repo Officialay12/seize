@@ -6,6 +6,7 @@ const ytDlp = require("yt-dlp-exec");
 const ffmpegStaticPath = require("ffmpeg-static");
 const https = require("https");
 const http = require("http");
+const { execFile } = require("child_process");
 const { scheduleCleanup } = require("../utils/cleanup");
 
 const router = express.Router();
@@ -15,6 +16,62 @@ if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
 const jobs = new Map();
 scheduleCleanup({ jobs, tmpDir: TMP_DIR });
+
+// ============================================================
+// SELF-UPDATING YT-DLP BINARY
+// ============================================================
+// yt-dlp-exec ships a pinned yt-dlp binary. TikTok/Instagram/YouTube/
+// Twitter change their internal APIs constantly, and stale extractors
+// are BY FAR the most common cause of "requires authentication" or
+// "no video detected" on content that is genuinely public and fine.
+// yt-dlp ships its own self-updater; we run it once at boot and then
+// on an interval so the binary stays current without a redeploy.
+const YT_DLP_BIN =
+  (ytDlp && ytDlp.binPath) ||
+  path.join(
+    process.cwd(),
+    "node_modules",
+    "yt-dlp-exec",
+    "bin",
+    process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp",
+  );
+
+function updateYtDlpBinary() {
+  execFile(YT_DLP_BIN, ["-U"], { timeout: 30000 }, (err, stdout, stderr) => {
+    if (err) {
+      console.log("[seize] yt-dlp self-update skipped:", err.message);
+      return;
+    }
+    const out = (stdout || stderr || "").trim();
+    if (out) console.log("[seize] yt-dlp update check:", out.split("\n").pop());
+  });
+}
+
+// Run once shortly after boot (let the server finish starting first),
+// then every 6 hours for the lifetime of the process.
+setTimeout(updateYtDlpBinary, 5000);
+setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
+
+// ============================================================
+// OPTIONAL COOKIE SUPPORT
+// ============================================================
+// Some content (age-gated YouTube, some Instagram, some TikTok) cannot
+// be fetched by ANY tool without an authenticated session — that's a
+// platform-side restriction, not a bug. If you want to support that
+// content, export a browser cookie file (Netscape format) per platform
+// and point these env vars at them. Fully optional — everything else
+// works with none of this set.
+const COOKIE_FILES = {
+  youtube: process.env.YT_COOKIES_FILE,
+  tiktok: process.env.TIKTOK_COOKIES_FILE,
+  instagram: process.env.INSTAGRAM_COOKIES_FILE,
+  twitter: process.env.TWITTER_COOKIES_FILE,
+};
+
+function cookiesFor(platform) {
+  const file = COOKIE_FILES[platform];
+  return file && fs.existsSync(file) ? file : null;
+}
 
 const PLATFORM_PATTERNS = [
   { name: "youtube", re: /(youtube\.com|youtu\.be)/i },
@@ -28,71 +85,166 @@ function detectPlatform(url) {
   return match ? match.name : null;
 }
 
-function getPlatformOptions(platform) {
-  const base = {
+const DESKTOP_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const ANDROID_UA =
+  "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
+
+function baseOptions(platform) {
+  const opts = {
     noWarnings: true,
     noCheckCertificates: true,
     ffmpegLocation: ffmpegStaticPath,
     retries: 5,
     socketTimeout: 45,
   };
+  const cookies = cookiesFor(platform);
+  if (cookies) opts.cookies = cookies;
+  return opts;
+}
+
+// ============================================================
+// MULTI-STRATEGY EXTRACTION
+// ============================================================
+// Instead of one hard-coded option set per platform, we try a small
+// ordered list of strategies (different clients / extractor args /
+// headers) and use the first one that actually returns usable media.
+// This absorbs most transient "no video detected" / "requires
+// authentication" failures that are really "this particular client
+// simulation got blocked" rather than the content being gone.
+function getStrategies(platform) {
+  const base = baseOptions(platform);
 
   switch (platform) {
     case "youtube":
-      return {
-        ...base,
-        extractorArgs: "youtube:player_client=android",
-        addHeaders: {
-          "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
+      return [
+        {
+          ...base,
+          extractorArgs: "youtube:player_client=android",
+          addHeaders: { "User-Agent": ANDROID_UA },
         },
-      };
+        {
+          ...base,
+          extractorArgs: "youtube:player_client=ios",
+          addHeaders: { "User-Agent": ANDROID_UA },
+        },
+        {
+          ...base,
+          extractorArgs: "youtube:player_client=web",
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+      ];
     case "tiktok":
-      return {
-        ...base,
-        extractorArgs: "tiktok:device_id=auto",
-        addHeaders: {
-          "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36",
-          Accept: "application/json, text/plain, */*",
+      return [
+        {
+          ...base,
+          extractorArgs: "tiktok:device_id=auto",
+          addHeaders: {
+            "User-Agent": ANDROID_UA,
+            Accept: "application/json, text/plain, */*",
+            Referer: "https://www.tiktok.com/",
+          },
         },
-      };
+        {
+          ...base,
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Referer: "https://www.tiktok.com/",
+          },
+        },
+      ];
     case "instagram":
-      return {
-        ...base,
-        extractorArgs: "instagram:include_ads=false",
-        addHeaders: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      return [
+        {
+          ...base,
+          extractorArgs: "instagram:include_ads=false",
+          addHeaders: { "User-Agent": DESKTOP_UA },
         },
-      };
+        {
+          ...base,
+          addHeaders: { "User-Agent": ANDROID_UA },
+        },
+      ];
     case "twitter":
-      return {
-        ...base,
-        addHeaders: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Accept: "application/json, text/plain, */*",
+      return [
+        {
+          ...base,
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "application/json, text/plain, */*",
+          },
         },
-      };
+        {
+          ...base,
+          extractorArgs: "twitter:api=syndication",
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+      ];
     default:
-      return base;
+      return [{ ...base, addHeaders: { "User-Agent": DESKTOP_UA } }];
   }
 }
 
-function downloadFile(url, filePath) {
+// Runs each strategy in order; returns the first successful `info`.
+// `isUsable` lets callers decide what counts as a real success (e.g.
+// "must contain at least one format" for resolve, vs "just needs to
+// not throw" for other cases).
+async function resolveWithStrategies(url, platform, isUsable) {
+  const strategies = getStrategies(platform);
+  let lastErr;
+
+  for (let i = 0; i < strategies.length; i++) {
+    const options = {
+      dumpSingleJson: true,
+      preferFreeFormats: true,
+      ...strategies[i],
+    };
+    try {
+      const info = await ytDlp(url, options, { timeout: 60000 });
+      if (!isUsable || isUsable(info)) {
+        return { info, strategyIndex: i };
+      }
+      lastErr = new Error("Strategy returned no usable media");
+    } catch (err) {
+      lastErr = err;
+      const msg = (err.stderr || err.message || "").toLowerCase();
+      // Rate limits won't be fixed by trying another client strategy —
+      // fail fast instead of burning through all of them.
+      if (msg.includes("429") || msg.includes("rate limit")) throw err;
+    }
+    if (i < strategies.length - 1) {
+      await new Promise((r) => setTimeout(r, 800));
+    }
+  }
+  throw lastErr || new Error("All extraction strategies failed");
+}
+
+function downloadFile(url, filePath, redirects = 0) {
   return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error("Too many redirects"));
+      return;
+    }
     const protocol = url.startsWith("https") ? https : http;
     const file = fs.createWriteStream(filePath);
 
     protocol
-      .get(url, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          downloadFile(response.headers.location, filePath)
+      .get(url, { headers: { "User-Agent": DESKTOP_UA } }, (response) => {
+        if (
+          [301, 302, 303, 307, 308].includes(response.statusCode) &&
+          response.headers.location
+        ) {
+          file.close();
+          fs.unlink(filePath, () => {});
+          downloadFile(response.headers.location, filePath, redirects + 1)
             .then(resolve)
             .catch(reject);
           return;
         }
 
         if (response.statusCode !== 200) {
+          file.close();
+          fs.unlink(filePath, () => {});
           reject(new Error(`Download failed: ${response.statusCode}`));
           return;
         }
@@ -110,41 +262,26 @@ function downloadFile(url, filePath) {
   });
 }
 
-async function fetchWithRetry(url, options, maxRetries = 3) {
-  let lastError;
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await ytDlp(url, options, { timeout: 90000 });
-    } catch (err) {
-      lastError = err;
-      if (i < maxRetries - 1) {
-        const delay = 3000 * Math.pow(2, i);
-        console.log(`[seize] Retry ${i + 1}/${maxRetries} after ${delay}ms`);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-  }
-  throw lastError;
-}
-
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
   if (s.includes("private")) return "This post is private.";
   if (s.includes("age") && s.includes("restrict"))
-    return "This video is age-restricted.";
+    return "This video is age-restricted and requires a signed-in account (cookies) to access.";
   if (s.includes("unavailable") || s.includes("not available"))
     return "Content removed or region-locked.";
   if (s.includes("sign in") || s.includes("login"))
-    return "Requires authentication.";
+    return "This content requires a logged-in session to access (platform-side restriction).";
   if (s.includes("timed out") || s.includes("timeout"))
-    return "Platform took too long. Try again.";
+    return "Platform took too long to respond. Try again.";
   if (s.includes("rate limit") || s.includes("429"))
-    return "Rate limited. Please wait.";
+    return "Rate limited by the platform. Please wait a bit and try again.";
   if (s.includes("no video") || s.includes("could not be found"))
-    return "No video found (may be an image).";
+    return "No downloadable media found at this link (it may be text-only or an unsupported post type).";
   if (s.includes("profile") || s.includes("channel"))
-    return "Use a specific video URL, not profile.";
-  return "Could not resolve. Try again.";
+    return "Use a specific post/video URL, not a profile or channel link.";
+  if (s.includes("unsupported url"))
+    return "This specific link format isn't recognized. Try copying the link directly from the app's share button.";
+  return "Could not resolve this link. It may have been deleted, made private, or the platform is temporarily blocking automated access.";
 }
 
 function extractMediaUrls(info) {
@@ -157,56 +294,82 @@ function extractMediaUrls(info) {
     hasImage: false,
   };
 
-  if (info.thumbnail) {
-    media.thumbnail = info.thumbnail;
-  } else if (info.thumbnails && Array.isArray(info.thumbnails)) {
-    const largest = [...info.thumbnails].sort(
-      (a, b) => (b.width || 0) - (a.width || 0),
-    )[0];
-    media.thumbnail = largest?.url || null;
-  }
+  // Carousels / multi-image posts (Instagram sidecar, Twitter multi-photo,
+  // TikTok slideshows) come back as a playlist with `entries`. Flatten
+  // every entry's formats/thumbnail into the same media buckets instead
+  // of only looking at the top-level object.
+  const nodes =
+    Array.isArray(info.entries) && info.entries.length
+      ? info.entries.filter(Boolean)
+      : [info];
 
-  if (info.formats && Array.isArray(info.formats)) {
-    for (const format of info.formats) {
-      if (!format.url) continue;
-
-      if (format.vcodec && format.vcodec !== "none") {
-        media.videos.push({
-          url: format.url,
-          format: format.ext || "mp4",
-          quality: format.format_note || format.quality || "Unknown",
-          width: format.width || null,
-          height: format.height || null,
-        });
-        media.hasVideo = true;
+  for (const node of nodes) {
+    if (!media.thumbnail) {
+      if (node.thumbnail) {
+        media.thumbnail = node.thumbnail;
+      } else if (Array.isArray(node.thumbnails) && node.thumbnails.length) {
+        const largest = [...node.thumbnails].sort(
+          (a, b) => (b.width || 0) - (a.width || 0),
+        )[0];
+        media.thumbnail = largest?.url || null;
       }
+    }
 
-      if (
-        format.acodec &&
-        format.acodec !== "none" &&
-        (!format.vcodec || format.vcodec === "none")
-      ) {
-        media.audio.push({
-          url: format.url,
-          format: format.ext || "mp3",
-          bitrate: format.abr || null,
-        });
-      }
+    if (Array.isArray(node.formats)) {
+      for (const format of node.formats) {
+        if (!format.url) continue;
 
-      if (
-        format.ext &&
-        ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "tiff"].includes(
-          format.ext,
-        )
-      ) {
-        media.images.push({
-          url: format.url,
-          format: format.ext,
-          width: format.width || null,
-          height: format.height || null,
-        });
-        media.hasImage = true;
+        if (format.vcodec && format.vcodec !== "none") {
+          media.videos.push({
+            url: format.url,
+            format: format.ext || "mp4",
+            quality: format.format_note || format.quality || "Unknown",
+            width: format.width || null,
+            height: format.height || null,
+          });
+          media.hasVideo = true;
+        }
+
+        if (
+          format.acodec &&
+          format.acodec !== "none" &&
+          (!format.vcodec || format.vcodec === "none")
+        ) {
+          media.audio.push({
+            url: format.url,
+            format: format.ext || "mp3",
+            bitrate: format.abr || null,
+          });
+        }
+
+        if (
+          format.ext &&
+          ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "tiff"].includes(
+            format.ext,
+          )
+        ) {
+          media.images.push({
+            url: format.url,
+            format: format.ext,
+            width: format.width || null,
+            height: format.height || null,
+          });
+          media.hasImage = true;
+        }
       }
+    }
+
+    // Some image-only posts expose the image directly rather than as a
+    // "format" (common on Instagram/Twitter photo posts).
+    if (
+      node.url &&
+      (node.ext === "jpg" ||
+        node.ext === "jpeg" ||
+        node.ext === "png" ||
+        node.ext === "webp")
+    ) {
+      media.images.push({ url: node.url, format: node.ext });
+      media.hasImage = true;
     }
   }
 
@@ -228,6 +391,12 @@ function extractMediaUrls(info) {
   return media;
 }
 
+function isUsableInfo(info) {
+  if (!info) return false;
+  const media = extractMediaUrls(info);
+  return media.hasVideo || media.hasImage || media.audio.length > 0;
+}
+
 router.post("/resolve", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
@@ -239,78 +408,31 @@ router.post("/resolve", async (req, res) => {
     });
   }
 
-  // Check TikTok profile URL
   if (platform === "tiktok") {
-    const profileMatch = url.match(/tiktok\.com\/@([^\/]+)(\/?$)/);
-    if (profileMatch && !url.includes("/video/")) {
+    const profileMatch = url.match(/tiktok\.com\/@([^/]+)(\/?$)/);
+    if (profileMatch && !url.includes("/video/") && !url.includes("/photo/")) {
       return res.status(400).json({
-        error: "Please use a specific video URL, not a profile.",
+        error: "Please use a specific video/photo URL, not a profile.",
       });
     }
   }
 
   try {
-    const options = {
-      dumpSingleJson: true,
-      preferFreeFormats: true,
-      ...getPlatformOptions(platform),
-    };
-
-    let info;
-    let isImageOnly = false;
-
-    try {
-      console.log(`[seize] Resolving ${platform}...`);
-      info = await ytDlp(url, options, { timeout: 60000 });
-    } catch (err) {
-      const errorMsg = err.stderr || err.message || "";
-
-      // If it's a rate limit, return friendly error
-      if (errorMsg.includes("429") || errorMsg.includes("rate limit")) {
-        return res.status(429).json({
-          error: `${platform} is rate limiting. Please wait.`,
-        });
-      }
-
-      // Twitter image fallback
-      if (platform === "twitter" && errorMsg.includes("No video")) {
-        isImageOnly = true;
-        console.log("[seize] Twitter: image-only post detected");
-        info = {
-          title: "Twitter/X Post",
-          thumbnail: null,
-          description: "Image post",
-          uploader: "Unknown",
-          formats: [],
-          thumbnails: [],
-        };
-      } else {
-        throw err;
-      }
-    }
-
-    if (!info) {
-      throw new Error("Could not extract media info");
-    }
+    console.log(`[seize] Resolving ${platform}...`);
+    const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
 
     const media = extractMediaUrls(info);
 
-    // Get title
     let title = info.title || info.fulltitle || info.description || "Untitled";
     if (platform === "twitter") {
       title = info.description || info.tweet_text || title;
       title = title.replace(/^Tweets? from /i, "").trim();
       if (title.length > 100) title = title.substring(0, 100) + "...";
-      if (
-        title === "Untitled" ||
-        title === "Twitter" ||
-        title === "Twitter/X Post"
-      ) {
+      if (["Untitled", "Twitter", "Twitter/X Post"].includes(title)) {
         title = "Twitter/X Post";
       }
     }
 
-    // Get uploader
     let uploader =
       info.uploader ||
       info.channel ||
@@ -318,18 +440,12 @@ router.post("/resolve", async (req, res) => {
       info.creator ||
       info.owner ||
       null;
-    if (platform === "twitter") {
-      uploader =
-        info.uploader || info.author || info.creator || info.channel || null;
-    }
 
-    // Determine content type
     let contentType = "unknown";
     if (media.hasVideo) contentType = "video";
-    else if (media.hasImage || isImageOnly) contentType = "image";
+    else if (media.hasImage) contentType = "image";
     else if (media.audio.length > 0) contentType = "audio";
 
-    // Get thumbnail
     let thumbnail = media.thumbnail || "/icons/icon-192.png";
     if (thumbnail === "/icons/icon-192.png" && media.images.length > 0) {
       thumbnail = media.images[0].url;
@@ -342,21 +458,29 @@ router.post("/resolve", async (req, res) => {
       uploader: uploader || "Unknown",
       contentType,
       hasVideo: media.hasVideo,
-      hasImage: media.hasImage || isImageOnly,
+      hasImage: media.hasImage,
       media: {
         videos: media.videos.slice(0, 5),
-        images: media.images.slice(0, 5),
+        images: media.images.slice(0, 10),
         audio: media.audio.slice(0, 3),
       },
       formatsAvailable: Array.isArray(info.formats)
         ? [...new Set(info.formats.map((f) => f.ext).filter(Boolean))]
         : [],
       duration: info.duration || null,
-      isImageOnly: isImageOnly,
+      isImageOnly: contentType === "image",
     });
   } catch (err) {
     const stderr = err.stderr || err.message || "";
     console.error("[resolve] Failed:", stderr);
+    if (
+      stderr.toLowerCase().includes("429") ||
+      stderr.toLowerCase().includes("rate limit")
+    ) {
+      return res
+        .status(429)
+        .json({ error: `${platform} is rate limiting. Please wait.` });
+    }
     res.status(502).json({ error: friendlyError(stderr) });
   }
 });
@@ -378,33 +502,13 @@ router.post("/fetch", async (req, res) => {
   res.json({ jobId });
 
   try {
-    // Image mode - download image directly
+    // ---------- IMAGE MODE ----------
     if (mode === "image") {
-      const infoOptions = {
-        dumpSingleJson: true,
-        preferFreeFormats: true,
-        noWarnings: true,
-        noCheckCertificates: true,
-        ffmpegLocation: ffmpegStaticPath,
-        addHeaders: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-      };
-
-      let info = await ytDlp(url, infoOptions, { timeout: 60000 });
+      const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
       const media = extractMediaUrls(info);
 
       if (media.images.length === 0) {
-        if (media.thumbnail) {
-          media.images.push({
-            url: media.thumbnail,
-            format: "jpg",
-            isThumbnail: true,
-          });
-        } else {
-          throw new Error("No images found");
-        }
+        throw new Error("No images found");
       }
 
       const sortedImages = [...media.images].sort((a, b) => {
@@ -426,31 +530,25 @@ router.post("/fetch", async (req, res) => {
       return;
     }
 
-    // Video/Audio mode
-    let options = {
-      output: outputPath,
-      ...getPlatformOptions(platform),
+    // ---------- VIDEO / AUDIO MODE ----------
+    // Ordered fallback chain of format strings, weakest constraint last.
+    // Each is tried with each header/client strategy before giving up.
+    const formatChains = {
+      audio:
+        platform === "youtube"
+          ? ["bestaudio[ext=m4a]/bestaudio/best", "bestaudio/best", "best"]
+          : ["bestaudio/best", "best"],
+      video:
+        platform === "youtube"
+          ? [
+              "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+              "bestvideo+bestaudio/best",
+              "best",
+            ]
+          : ["bestvideo+bestaudio/best", "best[ext=mp4]/best", "best"],
     };
-
-    if (mode === "audio") {
-      options.extractAudio = true;
-      options.audioFormat = "mp3";
-      options.audioQuality = 0;
-      options.format = "bestaudio/best";
-
-      if (platform === "youtube") {
-        options.extractorArgs = "youtube:player_client=android";
-        options.format = "bestaudio[ext=m4a]/bestaudio/best";
-      }
-    } else {
-      if (platform === "youtube") {
-        options.format =
-          "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best";
-      } else {
-        options.format = "bestvideo+bestaudio/best";
-      }
-      options.mergeOutputFormat = "mp4";
-    }
+    const chain = formatChains[mode === "audio" ? "audio" : "video"];
+    const strategies = getStrategies(platform);
 
     let progress = 0;
     const progressInterval = setInterval(() => {
@@ -461,38 +559,45 @@ router.post("/fetch", async (req, res) => {
       }
     }, 3000);
 
-    try {
-      await ytDlp(url, options, { timeout: 120000 });
-    } catch (err) {
-      // Fallback with simpler options
-      console.log("[seize] Download failed, trying fallback...");
-      const fallbackOptions = {
-        output: outputPath,
-        noWarnings: true,
-        noCheckCertificates: true,
-        ffmpegLocation: ffmpegStaticPath,
-        retries: 3,
-        socketTimeout: 30,
-        addHeaders: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        },
-      };
-      if (mode === "audio") {
-        fallbackOptions.extractAudio = true;
-        fallbackOptions.audioFormat = "mp3";
-        fallbackOptions.audioQuality = 0;
-        fallbackOptions.format = "bestaudio/best";
-      } else {
-        fallbackOptions.format = "bestvideo+bestaudio/best";
-        fallbackOptions.mergeOutputFormat = "mp4";
+    let lastErr;
+    let succeeded = false;
+
+    outer: for (const strategy of strategies) {
+      for (const formatStr of chain) {
+        const options = {
+          output: outputPath,
+          ...strategy,
+          format: formatStr,
+        };
+        if (mode === "audio") {
+          options.extractAudio = true;
+          options.audioFormat = "mp3";
+          options.audioQuality = 0;
+        } else {
+          options.mergeOutputFormat = "mp4";
+        }
+
+        try {
+          await ytDlp(url, options, { timeout: 120000 });
+          succeeded = true;
+          break outer;
+        } catch (err) {
+          lastErr = err;
+          const msg = (err.stderr || err.message || "").toLowerCase();
+          if (msg.includes("429") || msg.includes("rate limit")) {
+            clearInterval(progressInterval);
+            throw err;
+          }
+          // clean up any partial file before trying the next combination
+          if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
+        }
       }
-      await ytDlp(url, fallbackOptions, { timeout: 120000 });
-    } finally {
-      clearInterval(progressInterval);
     }
 
-    // Find output file
+    clearInterval(progressInterval);
+    if (!succeeded)
+      throw lastErr || new Error("All download strategies failed");
+
     let finalPath = outputPath;
     if (!fs.existsSync(finalPath)) {
       const dirFiles = fs.readdirSync(TMP_DIR);

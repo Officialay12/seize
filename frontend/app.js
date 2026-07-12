@@ -320,6 +320,7 @@ convertTabs.forEach((tab) => {
     selectedFile = null;
     fileInput.value = "";
     convertBtn.disabled = true;
+    dropzone.classList.remove("has-file");
     if (convertTarget === "v2a") {
       dropzoneLabel.textContent = "Drop a video file, or click to browse";
       dropzoneHint.textContent = "MP4 · MOV · MKV · WEBM — up to 500MB";
@@ -335,7 +336,8 @@ convertTabs.forEach((tab) => {
   });
 });
 
-// Fix: Mobile file input - works when clicking dropzone
+fileInput.addEventListener("click", (e) => e.stopPropagation());
+
 dropzone.addEventListener("click", function (e) {
   e.preventDefault();
   fileInput.click();
@@ -350,26 +352,27 @@ dropzone.addEventListener("dragleave", () => {
   dropzone.classList.remove("dragover");
 });
 
+function applySelectedFile(file) {
+  selectedFile = file;
+  convertBtn.disabled = false;
+  dropzone.classList.add("has-file");
+  const fileSize = (file.size / (1024 * 1024)).toFixed(2);
+  dropzoneLabel.textContent = `✅ ${file.name}`;
+  dropzoneHint.textContent = `${fileSize} MB — click to choose a different file`;
+}
+
 dropzone.addEventListener("drop", (e) => {
   e.preventDefault();
   dropzone.classList.remove("dragover");
   if (e.dataTransfer.files.length) {
-    selectedFile = e.dataTransfer.files[0];
     fileInput.files = e.dataTransfer.files;
-    dropzoneLabel.textContent = selectedFile.name;
-    convertBtn.disabled = false;
-    const fileSize = (selectedFile.size / (1024 * 1024)).toFixed(2);
-    dropzoneHint.textContent = `${selectedFile.name} (${fileSize} MB)`;
+    applySelectedFile(e.dataTransfer.files[0]);
   }
 });
 
 fileInput.addEventListener("change", () => {
   if (fileInput.files.length) {
-    selectedFile = fileInput.files[0];
-    dropzoneLabel.textContent = selectedFile.name;
-    convertBtn.disabled = false;
-    const fileSize = (selectedFile.size / (1024 * 1024)).toFixed(2);
-    dropzoneHint.textContent = `${selectedFile.name} (${fileSize} MB)`;
+    applySelectedFile(fileInput.files[0]);
   }
 });
 
@@ -523,7 +526,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
   installBtn.classList.remove("hidden");
-  installBtn.textContent = "📲 Install App";
+  installBtn.textContent = "📲 Install Seize";
 });
 
 installBtn.addEventListener("click", async () => {
@@ -550,7 +553,7 @@ function showIOSInstallGuide() {
   modal.className = "ios-install-modal";
   modal.innerHTML = `
     <div class="ios-modal-content">
-      <h3>📱 Install seize on your iPhone</h3>
+      <h3>📱 Install seize by Ayocodes on your iPhone</h3>
       <ol>
         <li>Tap the <strong>Share</strong> button <span class="share-icon">⎔</span></li>
         <li>Scroll down and tap <strong>Add to Home Screen</strong></li>

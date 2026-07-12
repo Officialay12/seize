@@ -43,8 +43,22 @@
   <script>
     // Get URL parameters from share
     const params = new URLSearchParams(window.location.search);
-    const url = params.get('url') || params.get('text') || '';
+    const rawUrl = params.get('url') || '';
+    const rawText = params.get('text') || '';
     const title = params.get('title') || '';
+
+    // Many apps (Twitter/X, Instagram, etc.) share a caption with the
+    // link buried inside it — e.g. "Check this out! https://tiktok.com/..."
+    // — rather than a clean URL in the `url` field. Pull the first real
+    // http(s) link out of whichever field actually has one.
+    function extractUrl(str) {
+      if (!str) return '';
+      const match = str.match(/https?:\/\/[^\s]+/i);
+      return match ? match[0] : '';
+    }
+
+    const url =
+      extractUrl(rawUrl) || extractUrl(rawText) || extractUrl(title) || rawUrl || rawText;
 
     // Store in sessionStorage for the main app to pick up
     if (url) {

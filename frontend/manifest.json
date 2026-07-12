@@ -1,6 +1,6 @@
 {
-  "name": "seize — capture any signal",
-  "short_name": "seize",
+  "name": "Seize : capture any signal",
+  "short_name": "Seize",
   "description": "Convert video to audio, audio to video, and capture media from TikTok, Instagram, Twitter/X and YouTube.",
   "start_url": "/",
   "display": "standalone",

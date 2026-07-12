@@ -124,17 +124,31 @@ async function videoToAudio(inputPath, outputPath, format = "mp3", onProgress) {
   const { codec, bitrate } = AUDIO_CODECS[fmt];
 
   let canCopy = false;
+  let probeSucceeded = false;
+  let audioStream;
   try {
     const info = await probe(inputPath);
-    const audioStream = info.streams?.find((s) => s.codec_type === "audio");
+    probeSucceeded = true;
+    audioStream = info.streams?.find((s) => s.codec_type === "audio");
     const sourceCodec = audioStream?.codec_name;
     canCopy =
       !!sourceCodec &&
       (COMPATIBLE_SOURCE_CODECS[fmt] || []).includes(sourceCodec);
   } catch (e) {
     // If probing fails for any reason, just fall through to a normal
-    // re-encode rather than blocking the conversion entirely.
+    // re-encode rather than blocking the conversion entirely — ffmpeg's
+    // own error (if any) will surface naturally below.
     canCopy = false;
+  }
+
+  // Fail fast with a clear reason instead of letting ffmpeg run into a
+  // cryptic "no stream" error further down. A video-only file (muted
+  // export, screen recording with no mic track, etc.) is a real, common
+  // case — worth its own message rather than the generic catch-all.
+  if (probeSucceeded && !audioStream) {
+    const err = new Error("This file has no audio track to extract.");
+    err.seizeReason = "no-audio-track";
+    throw err;
   }
 
   return new Promise((resolve, reject) => {
@@ -168,6 +182,12 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
       .audioBitrate(192)
       .outputOptions([
         "-shortest",
+        // yuv420p requires even width/height. A branded cover asset with
+        // odd dimensions (or a resized/cropped one down the line) will
+        // otherwise fail every single conversion with an opaque ffmpeg
+        // error. This guarantees even dimensions regardless of source.
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-pix_fmt",
         "yuv420p",
         "-tune",
@@ -190,26 +210,17 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
   });
 }
 
+// Generates a single-frame solid-color placeholder cover using ffmpeg's
+// built-in lavfi "color" source. Previously this hand-built a raw rgb24
+// byte buffer and piped it into ffmpeg via a PassThrough stream — a much
+// flakier path (behavior varies across ffmpeg builds/platforms and was a
+// real source of silent, hard-to-diagnose failures). lavfi is a single,
+// well-supported ffmpeg feature and needs no manual buffer math.
 function generatePlainCoverFallback(destPath) {
   return new Promise((resolve, reject) => {
-    const { PassThrough } = require("stream");
-    const width = 720;
-    const height = 720;
-    const [r, g, b] = [0x0b, 0x0d, 0x0c]; // brand background color
-
-    const frame = Buffer.alloc(width * height * 3);
-    for (let i = 0; i < frame.length; i += 3) {
-      frame[i] = r;
-      frame[i + 1] = g;
-      frame[i + 2] = b;
-    }
-
-    const input = new PassThrough();
-    input.end(frame);
-
-    ffmpeg(input)
-      .inputFormat("rawvideo")
-      .inputOptions(["-pix_fmt", "rgb24", "-s", `${width}x${height}`])
+    ffmpeg()
+      .input("color=c=0x0B0D0C:s=720x720:d=1")
+      .inputFormat("lavfi")
       .outputOptions(["-frames:v", "1", "-update", "1"])
       .on("error", (err) => reject(err))
       .on("end", () => resolve(destPath))

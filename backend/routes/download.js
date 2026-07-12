@@ -17,15 +17,6 @@ if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 const jobs = new Map();
 scheduleCleanup({ jobs, tmpDir: TMP_DIR });
 
-// ============================================================
-// SELF-UPDATING YT-DLP BINARY
-// ============================================================
-// yt-dlp-exec ships a pinned yt-dlp binary. TikTok/Instagram/YouTube/
-// Twitter change their internal APIs constantly, and stale extractors
-// are BY FAR the most common cause of "requires authentication" or
-// "no video detected" on content that is genuinely public and fine.
-// yt-dlp ships its own self-updater; we run it once at boot and then
-// on an interval so the binary stays current without a redeploy.
 const YT_DLP_BIN =
   (ytDlp && ytDlp.binPath) ||
   path.join(
@@ -47,20 +38,9 @@ function updateYtDlpBinary() {
   });
 }
 
-// Run once shortly after boot (let the server finish starting first),
-// then every 6 hours for the lifetime of the process.
 setTimeout(updateYtDlpBinary, 5000);
 setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
-// ============================================================
-// OPTIONAL COOKIE SUPPORT
-// ============================================================
-// Some content (age-gated YouTube, some Instagram, some TikTok) cannot
-// be fetched by ANY tool without an authenticated session — that's a
-// platform-side restriction, not a bug. If you want to support that
-// content, export a browser cookie file (Netscape format) per platform
-// and point these env vars at them. Fully optional — everything else
-// works with none of this set.
 const COOKIE_FILES = {
   youtube: process.env.YT_COOKIES_FILE,
   tiktok: process.env.TIKTOK_COOKIES_FILE,
@@ -97,21 +77,13 @@ function baseOptions(platform) {
     ffmpegLocation: ffmpegStaticPath,
     retries: 5,
     socketTimeout: 45,
+    concurrentFragments: 8,
   };
   const cookies = cookiesFor(platform);
   if (cookies) opts.cookies = cookies;
   return opts;
 }
 
-// ============================================================
-// MULTI-STRATEGY EXTRACTION
-// ============================================================
-// Instead of one hard-coded option set per platform, we try a small
-// ordered list of strategies (different clients / extractor args /
-// headers) and use the first one that actually returns usable media.
-// This absorbs most transient "no video detected" / "requires
-// authentication" failures that are really "this particular client
-// simulation got blocked" rather than the content being gone.
 function getStrategies(platform) {
   const base = baseOptions(platform);
 
@@ -185,10 +157,6 @@ function getStrategies(platform) {
   }
 }
 
-// Runs each strategy in order; returns the first successful `info`.
-// `isUsable` lets callers decide what counts as a real success (e.g.
-// "must contain at least one format" for resolve, vs "just needs to
-// not throw" for other cases).
 async function resolveWithStrategies(url, platform, isUsable) {
   const strategies = getStrategies(platform);
   let lastErr;
@@ -213,10 +181,67 @@ async function resolveWithStrategies(url, platform, isUsable) {
       if (msg.includes("429") || msg.includes("rate limit")) throw err;
     }
     if (i < strategies.length - 1) {
-      await new Promise((r) => setTimeout(r, 800));
+      // Short, non-blocking gap between strategies — enough to dodge a
+      // transient block without meaningfully slowing down resolution.
+      await new Promise((r) => setTimeout(r, 250));
     }
   }
   throw lastErr || new Error("All extraction strategies failed");
+}
+
+// Runs a yt-dlp download while parsing its own stdout for real progress
+// percentages (yt-dlp prints lines like "[download]  42.3% of 12.34MiB")
+// instead of faking a linear progress bar — this reports what's actually
+// happening and adds no meaningful overhead.
+function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let child;
+    try {
+      child = ytDlp.exec(url, options);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already exited */
+      }
+      reject(new Error("Download timed out."));
+    }, timeoutMs);
+
+    const parseProgress = (chunk) => {
+      const text = chunk.toString();
+      const match = text.match(/\[download\]\s+([\d.]+)%/);
+      if (match) {
+        const pct = Math.min(99, Math.round(parseFloat(match[1])));
+        const job = jobs.get(jobId);
+        if (job && job.status === "processing") job.progress = pct;
+      }
+    };
+
+    if (child.stdout) child.stdout.on("data", parseProgress);
+    if (child.stderr) child.stderr.on("data", parseProgress);
+
+    child
+      .then((result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 }
 
 function downloadFile(url, filePath, redirects = 0) {
@@ -550,15 +575,6 @@ router.post("/fetch", async (req, res) => {
     const chain = formatChains[mode === "audio" ? "audio" : "video"];
     const strategies = getStrategies(platform);
 
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-      if (progress < 90) {
-        progress += 5;
-        const job = jobs.get(jobId);
-        if (job) job.progress = Math.min(90, progress);
-      }
-    }, 3000);
-
     let lastErr;
     let succeeded = false;
 
@@ -578,14 +594,13 @@ router.post("/fetch", async (req, res) => {
         }
 
         try {
-          await ytDlp(url, options, { timeout: 120000 });
+          await runYtDlpWithProgress(url, options, jobId, 120000);
           succeeded = true;
           break outer;
         } catch (err) {
           lastErr = err;
           const msg = (err.stderr || err.message || "").toLowerCase();
           if (msg.includes("429") || msg.includes("rate limit")) {
-            clearInterval(progressInterval);
             throw err;
           }
           // clean up any partial file before trying the next combination
@@ -594,7 +609,6 @@ router.post("/fetch", async (req, res) => {
       }
     }
 
-    clearInterval(progressInterval);
     if (!succeeded)
       throw lastErr || new Error("All download strategies failed");
 

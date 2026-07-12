@@ -1,6 +1,63 @@
 // ===== Config =====
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
+async function saveMediaToDevice(fileUrl, suggestedName) {
+  let blob;
+  try {
+    const res = await fetch(fileUrl);
+    if (!res.ok) throw new Error("Could not fetch the file.");
+    blob = await res.blob();
+  } catch (err) {
+    console.error("[seize] Failed to fetch file for saving:", err);
+    window.location.href = fileUrl; // last-resort fallback
+    return;
+  }
+
+  const file = new File([blob], suggestedName, {
+    type: blob.type || "application/octet-stream",
+  });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // user cancelled — not a failure
+      console.warn(
+        "[seize] Native share failed, falling back to direct download:",
+        err,
+      );
+    }
+  }
+
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+}
+
+function showSaveButton(container, fileUrl, suggestedName) {
+  const existing = container.querySelector(".seize-save-btn");
+  if (existing) existing.remove();
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn-primary full-width seize-save-btn";
+  btn.textContent = "📲 Save to device";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    await saveMediaToDevice(fileUrl, suggestedName);
+    btn.textContent = "✅ Done — tap to save again";
+    btn.disabled = false;
+  });
+  container.appendChild(btn);
+}
+
 // ===== Thumbnail Helper =====
 function loadThumbnail(url, imgElement) {
   if (!url) {
@@ -250,9 +307,16 @@ async function runCaptureFetch(mode) {
       captureProgressFill,
       captureProgressLabel,
     );
-    window.location.href = `${API_BASE}/download/file/${data.jobId}`;
     captureProgress.classList.add("hidden");
     setScopeState("done");
+
+    const fileExt = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
+    const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
+    showSaveButton(
+      captureResult,
+      fileUrl,
+      `seize-${mode}-${Date.now()}.${fileExt}`,
+    );
   } catch (err) {
     showCaptureError(err.message);
     captureProgress.classList.add("hidden");
@@ -419,9 +483,19 @@ convertForm.addEventListener("submit", async (e) => {
       convertProgressFill,
       convertProgressLabel,
     );
-    window.location.href = `${API_BASE}/convert/download/${data.jobId}`;
     convertProgress.classList.add("hidden");
     setScopeState("done");
+
+    const outExt =
+      convertTarget === "v2a"
+        ? document.getElementById("format-select").value
+        : "mp4";
+    const fileUrl = `${API_BASE}/convert/download/${data.jobId}`;
+    showSaveButton(
+      convertProgress.parentElement,
+      fileUrl,
+      `seize-converted-${Date.now()}.${outExt}`,
+    );
   } catch (err) {
     showConvertError(err.message);
     convertProgress.classList.add("hidden");
@@ -526,7 +600,7 @@ window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
   installBtn.classList.remove("hidden");
-  installBtn.textContent = "📲 Install Seize";
+  installBtn.textContent = "📲 Install App";
 });
 
 installBtn.addEventListener("click", async () => {

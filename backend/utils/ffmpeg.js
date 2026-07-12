@@ -2,6 +2,7 @@ const ffmpeg = require("fluent-ffmpeg");
 const ffmpegStatic = require("ffmpeg-static");
 const ffprobeStatic = require("ffprobe-static");
 const fs = require("fs");
+const os = require("os");
 
 let ffmpegPath = null;
 let ffprobePath = null;
@@ -86,6 +87,8 @@ if (ffprobePath) {
   );
 }
 
+const CPU_THREADS = Math.max(1, os.cpus()?.length || 1);
+
 const AUDIO_CODECS = {
   mp3: { codec: "libmp3lame", bitrate: 192 },
   aac: { codec: "aac", bitrate: 192 },
@@ -108,7 +111,10 @@ function videoToAudio(inputPath, outputPath, format = "mp3", onProgress) {
   const { codec, bitrate } = AUDIO_CODECS[fmt];
 
   return new Promise((resolve, reject) => {
-    const cmd = ffmpeg(inputPath).noVideo().audioCodec(codec);
+    const cmd = ffmpeg(inputPath)
+      .noVideo()
+      .audioCodec(codec)
+      .outputOptions(["-threads", String(CPU_THREADS)]);
     if (bitrate) cmd.audioBitrate(bitrate);
 
     cmd
@@ -136,6 +142,15 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
         "yuv420p",
         "-tune",
         "stillimage",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "28",
+        "-threads",
+        String(CPU_THREADS),
+
+        "-g",
+        "250",
       ])
       .on("progress", (p) => {
         if (onProgress) onProgress(Math.min(99, Math.round(p.percent || 0)));

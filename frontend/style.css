@@ -616,6 +616,11 @@ main {
   padding: 0 8px;
 }
 
+#paste-btn {
+  flex: 0 0 auto;
+  padding: 11px 16px;
+}
+
 @media (max-width: 480px) {
   .dropzone {
     padding: 32px 16px;

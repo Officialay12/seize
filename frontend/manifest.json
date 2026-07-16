@@ -8,7 +8,7 @@
   "theme_color": "#0B0D0C",
   "orientation": "portrait-primary",
   "share_target": {
-    "action": "/share-handler",
+    "action": "/share-handler.html",
     "method": "GET",
     "params": {
       "title": "title",

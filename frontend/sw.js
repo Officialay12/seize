@@ -1,4 +1,4 @@
-const CACHE_NAME = "seize-shell-v6";
+const CACHE_NAME = "seize-shell-v7";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -118,7 +118,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   // share handler: never cache this one
-  if (url.pathname === "/share-handler" || url.pathname === "/share-handler/") {
+  if (
+    url.pathname === "/share-handler.html" ||
+    url.pathname === "/share-handler" ||
+    url.pathname === "/share-handler/"
+  ) {
     event.respondWith(fetch(event.request));
     return;
   }

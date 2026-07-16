@@ -522,6 +522,7 @@ if (savedTab && panels[savedTab]) {
 
 // ===== Capture Panel =====
 const urlInput = document.getElementById("url-input");
+const pasteBtn = document.getElementById("paste-btn");
 const captureForm = document.getElementById("capture-form");
 const resolveBtn = document.getElementById("resolve-btn");
 const captureResult = document.getElementById("capture-result");
@@ -1440,6 +1441,17 @@ let lastClipboardSuggestion = "";
 
 async function checkClipboardForLink() {
   if (!navigator.clipboard || !navigator.clipboard.readText) return;
+
+  // Installed standalone PWAs on Android fire focus/visibilitychange
+  // events before document.hasFocus() actually flips true — readText()
+  // throws "Document is not focused" if called too early. A tab doesn't
+  // usually hit this race; a standalone window does. Retry briefly
+  // instead of giving up on the first tick.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (document.hasFocus()) break;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
   try {
     const text = await navigator.clipboard.readText();
     const match = text && text.match(CLIPBOARD_LINK_RE);
@@ -1450,7 +1462,9 @@ async function checkClipboardForLink() {
     lastClipboardSuggestion = found;
     showClipboardSuggestion(found);
   } catch {
-    // no permission or not focused, whatever — fail quietly
+    // Still no permission/focus after retrying — this is the case where
+    // standalone mode has no UI surface to grant clipboard access at all.
+    // The manual paste button (wired up below) is the reliable fallback.
   }
 }
 
@@ -1491,6 +1505,34 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") checkClipboardForLink();
 });
 window.addEventListener("focus", checkClipboardForLink);
+
+// Manual fallback: a real click is a genuine user gesture, so this works
+// reliably even in standalone/installed mode where the automatic
+// focus-based detection above can be permanently blocked (no address bar
+// = no surface for the browser to ever prompt for clipboard permission).
+pasteBtn?.addEventListener("click", async () => {
+  if (!navigator.clipboard || !navigator.clipboard.readText) {
+    showCaptureError("Clipboard access isn't supported in this browser.");
+    return;
+  }
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text) {
+      showCaptureError("Clipboard is empty.");
+      return;
+    }
+    const match = text.match(CLIPBOARD_LINK_RE);
+    const value = match ? match[0] : text.trim();
+    urlInput.value = value;
+    urlInput.dispatchEvent(new Event("input"));
+    urlInput.focus();
+    clearCaptureError();
+  } catch {
+    showCaptureError(
+      "Couldn't read the clipboard — your browser may have blocked it. Try pasting manually.",
+    );
+  }
+});
 
 // ===== Local notifications on job completion =====
 // so you can background the app on a long convert instead of staring

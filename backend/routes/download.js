@@ -104,6 +104,11 @@ function getStrategies(platform) {
         },
         {
           ...base,
+          extractorArgs: "youtube:player_client=tv_embedded",
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+        {
+          ...base,
           extractorArgs: "youtube:player_client=web",
           addHeaders: { "User-Agent": DESKTOP_UA },
         },
@@ -299,6 +304,11 @@ function friendlyError(stderr = "") {
   if (s.includes("private")) return "This post is private.";
   if (s.includes("age") && s.includes("restrict"))
     return "This video is age-restricted and requires a signed-in account to access.";
+  if (
+    s.includes("confirm you're not a bot") ||
+    s.includes("confirm you are not a bot")
+  )
+    return "YouTube is temporarily blocking our server as a suspected bot (this is IP-based, not about this specific video). Try again shortly, or a different link in the meantime.";
   if (s.includes("sign in") || s.includes("login"))
     return "This content requires a logged-in session on the platform to view.";
   if (s.includes("copyright") || s.includes("blocked it on copyright"))

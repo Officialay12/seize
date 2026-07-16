@@ -107,7 +107,15 @@ function ensureCoverImage() {
     );
     await generatePlainCoverFallback(FALLBACK_COVER_PATH);
     return FALLBACK_COVER_PATH;
-  })();
+  })().catch((err) => {
+    // Critical: do NOT leave a rejected promise cached. Without this, one
+    // transient failure (e.g. a cold-start race, a disk hiccup) would wedge
+    // every single audio-to-video request behind the same cached rejection
+    // until the server process restarted — "it just always fails" with no
+    // way to recover short of a redeploy.
+    coverReadyPromise = null;
+    throw err;
+  });
 
   return coverReadyPromise;
 }
@@ -116,6 +124,44 @@ function cleanupUploadedFile(req) {
   if (req.file?.path && fs.existsSync(req.file.path)) {
     fs.unlink(req.file.path, () => {});
   }
+}
+
+// The old behavior always returned the same generic sentence for every
+// ffmpeg failure, which actively hid real bugs (like the cover-cache issue
+// above) from both users and whoever's debugging this later. This maps
+// known failure signatures to accurate messages and otherwise surfaces a
+// trimmed version of the actual error instead of guessing.
+function convertFriendlyError(err) {
+  if (err?.seizeReason === "no-audio-track")
+    return "This file has no audio track to extract — it may be a video with muted/no sound.";
+
+  const raw = String(err?.message || err || "");
+  const s = raw.toLowerCase();
+
+  if (
+    s.includes("invalid data found when processing input") ||
+    s.includes("moov atom not found")
+  )
+    return "This file appears to be corrupt or incomplete.";
+  if (
+    s.includes("could not find codec parameters") ||
+    s.includes("unknown codec") ||
+    s.includes("decoder not found")
+  )
+    return "This file's codec isn't supported for conversion.";
+  if (s.includes("no such file or directory") && s.includes("upload-"))
+    return "The uploaded file couldn't be found on the server — please try uploading again.";
+  if (s.includes("enospc"))
+    return "The server ran out of temporary storage. Please try again in a moment.";
+  if (s.includes("permission denied") || s.includes("eacces"))
+    return "A server-side permissions issue prevented this conversion. This is a bug on our end.";
+
+  // Unknown cause — better to show a truncated real error than to lie
+  // about it being a "corrupt file", which was misleading users and
+  // masking genuine server bugs.
+  return raw
+    ? `Conversion failed: ${raw.slice(0, 200)}`
+    : "Conversion failed for an unknown reason.";
 }
 
 // ============================================================
@@ -154,11 +200,10 @@ router.post("/video-to-audio", uploadSingle, async (req, res) => {
       finishedAt: Date.now(),
     });
   } catch (err) {
-    console.error("[convert] video-to-audio failed:", err.message);
+    console.error("[convert] video-to-audio failed:", err.message || err);
     jobs.set(jobId, {
       status: "error",
-      error:
-        "Conversion failed. The file may be corrupt or an unsupported format.",
+      error: convertFriendlyError(err),
       finishedAt: Date.now(),
     });
     if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
@@ -201,11 +246,10 @@ router.post("/audio-to-video", uploadSingle, async (req, res) => {
       finishedAt: Date.now(),
     });
   } catch (err) {
-    console.error("[convert] audio-to-video failed:", err.message);
+    console.error("[convert] audio-to-video failed:", err.message || err);
     jobs.set(jobId, {
       status: "error",
-      error:
-        "Conversion failed. The file may be corrupt or an unsupported format.",
+      error: convertFriendlyError(err),
       finishedAt: Date.now(),
     });
     if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});

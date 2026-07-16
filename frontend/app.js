@@ -593,9 +593,7 @@ urlInput.addEventListener("input", () => {
     const matches =
       (p === "tiktok" && val.includes("tiktok")) ||
       (p === "instagram" && val.includes("instagram")) ||
-      (p === "twitter" && (val.includes("twitter") || val.includes("x.com"))) ||
-      (p === "youtube" &&
-        (val.includes("youtube") || val.includes("youtu.be")));
+      (p === "twitter" && (val.includes("twitter") || val.includes("x.com")));
     chip.classList.toggle("match", matches);
   });
 });
@@ -1436,7 +1434,7 @@ window.addEventListener("load", () => {
 // check the clipboard when the app comes back to foreground, offer to
 // autofill if there's a link on it. saves a paste every time
 const CLIPBOARD_LINK_RE =
-  /https?:\/\/[^\s]*(tiktok\.com|instagram\.com|twitter\.com|x\.com|youtube\.com|youtu\.be)[^\s]*/i;
+  /https?:\/\/[^\s]*(tiktok\.com|instagram\.com|twitter\.com|x\.com)[^\s]*/i;
 let lastClipboardSuggestion = "";
 
 async function checkClipboardForLink() {

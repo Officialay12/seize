@@ -41,8 +41,13 @@ function updateYtDlpBinary() {
 setTimeout(updateYtDlpBinary, 5000);
 setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
+// ===
+// Render Secret Files (and similar mounts on other hosts) are read-only.
+// yt-dlp writes updated session data back to the cookies file after every
+// run — pointed directly at a read-only mount, that write throws an
+// unhandled OSError that crashes the whole request. Copy each configured
+// cookies file into the writable tmp dir once at boot, and use that copy.
 const COOKIE_SOURCE_FILES = {
-  youtube: process.env.YT_COOKIES_FILE,
   tiktok: process.env.TIKTOK_COOKIES_FILE,
   instagram: process.env.INSTAGRAM_COOKIES_FILE,
   twitter: process.env.TWITTER_COOKIES_FILE,
@@ -75,7 +80,6 @@ function cookiesFor(platform) {
 }
 
 const PLATFORM_PATTERNS = [
-  { name: "youtube", re: /(youtube\.com|youtu\.be)/i },
   { name: "tiktok", re: /tiktok\.com/i },
   { name: "instagram", re: /instagram\.com/i },
   { name: "twitter", re: /(twitter\.com|x\.com)/i },
@@ -110,32 +114,6 @@ function getStrategies(platform) {
   const base = baseOptions(platform);
 
   switch (platform) {
-    case "youtube": {
-      const androidStrategy = {
-        ...base,
-        extractorArgs: "youtube:player_client=android",
-        addHeaders: { "User-Agent": ANDROID_UA },
-      };
-      const iosStrategy = {
-        ...base,
-        extractorArgs: "youtube:player_client=ios",
-        addHeaders: { "User-Agent": ANDROID_UA },
-      };
-      const tvEmbeddedStrategy = {
-        ...base,
-        extractorArgs: "youtube:player_client=tv_embedded",
-        addHeaders: { "User-Agent": DESKTOP_UA },
-      };
-      const webStrategy = {
-        ...base,
-        extractorArgs: "youtube:player_client=web",
-        addHeaders: { "User-Agent": DESKTOP_UA },
-      };
-
-      return base.cookies
-        ? [webStrategy, tvEmbeddedStrategy, androidStrategy, iosStrategy]
-        : [androidStrategy, iosStrategy, tvEmbeddedStrategy, webStrategy];
-    }
     case "tiktok":
       return [
         {
@@ -327,11 +305,6 @@ function friendlyError(stderr = "") {
   if (s.includes("private")) return "This post is private.";
   if (s.includes("age") && s.includes("restrict"))
     return "This video is age-restricted and requires a signed-in account to access.";
-  if (
-    s.includes("confirm you're not a bot") ||
-    s.includes("confirm you are not a bot")
-  )
-    return "YouTube is temporarily blocking our server as a suspected bot (this is IP-based, not about this specific video). Try again shortly, or a different link in the meantime.";
   if (s.includes("sign in") || s.includes("login"))
     return "This content requires a logged-in session on the platform to view.";
   if (s.includes("copyright") || s.includes("blocked it on copyright"))
@@ -503,7 +476,7 @@ router.post("/resolve", async (req, res) => {
   const platform = detectPlatform(url);
   if (!platform) {
     return res.status(400).json({
-      error: "Unsupported. Only YouTube, TikTok, Instagram, Twitter/X.",
+      error: "Unsupported. Only TikTok, Instagram, and Twitter/X.",
     });
   }
 
@@ -649,18 +622,10 @@ router.post("/fetch", async (req, res) => {
     };
 
     const formatChains = {
-      audio:
-        platform === "youtube"
-          ? ["bestaudio[ext=m4a]/bestaudio/best", "bestaudio/best", "best"]
-          : ["bestaudio/best", "best"],
-      video: (platform === "youtube"
-        ? [
-            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
-            "bestvideo+bestaudio/best",
-            "best",
-          ]
-        : ["bestvideo+bestaudio/best", "best[ext=mp4]/best", "best"]
-      ).map(capFmt),
+      audio: ["bestaudio/best", "best"],
+      video: ["bestvideo+bestaudio/best", "best[ext=mp4]/best", "best"].map(
+        capFmt,
+      ),
     };
     const chain = formatChains[mode === "audio" ? "audio" : "video"];
     const strategies = getStrategies(platform);

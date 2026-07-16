@@ -41,13 +41,33 @@ function updateYtDlpBinary() {
 setTimeout(updateYtDlpBinary, 5000);
 setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
-// ===
-const COOKIE_FILES = {
+const COOKIE_SOURCE_FILES = {
   youtube: process.env.YT_COOKIES_FILE,
   tiktok: process.env.TIKTOK_COOKIES_FILE,
   instagram: process.env.INSTAGRAM_COOKIES_FILE,
   twitter: process.env.TWITTER_COOKIES_FILE,
 };
+
+const COOKIE_FILES = {};
+for (const [platform, sourcePath] of Object.entries(COOKIE_SOURCE_FILES)) {
+  if (!sourcePath) continue;
+  try {
+    if (fs.existsSync(sourcePath)) {
+      const writablePath = path.join(TMP_DIR, `${platform}-cookies.txt`);
+      fs.copyFileSync(sourcePath, writablePath);
+      COOKIE_FILES[platform] = writablePath;
+      console.log(
+        `[seize] ${platform} cookies loaded (writable copy at ${writablePath})`,
+      );
+    } else {
+      console.warn(
+        `[seize] ${platform} cookies env var set but file not found: ${sourcePath}`,
+      );
+    }
+  } catch (e) {
+    console.warn(`[seize] Failed to prepare ${platform} cookies:`, e.message);
+  }
+}
 
 function cookiesFor(platform) {
   const file = COOKIE_FILES[platform];
@@ -90,29 +110,32 @@ function getStrategies(platform) {
   const base = baseOptions(platform);
 
   switch (platform) {
-    case "youtube":
-      return [
-        {
-          ...base,
-          extractorArgs: "youtube:player_client=android",
-          addHeaders: { "User-Agent": ANDROID_UA },
-        },
-        {
-          ...base,
-          extractorArgs: "youtube:player_client=ios",
-          addHeaders: { "User-Agent": ANDROID_UA },
-        },
-        {
-          ...base,
-          extractorArgs: "youtube:player_client=tv_embedded",
-          addHeaders: { "User-Agent": DESKTOP_UA },
-        },
-        {
-          ...base,
-          extractorArgs: "youtube:player_client=web",
-          addHeaders: { "User-Agent": DESKTOP_UA },
-        },
-      ];
+    case "youtube": {
+      const androidStrategy = {
+        ...base,
+        extractorArgs: "youtube:player_client=android",
+        addHeaders: { "User-Agent": ANDROID_UA },
+      };
+      const iosStrategy = {
+        ...base,
+        extractorArgs: "youtube:player_client=ios",
+        addHeaders: { "User-Agent": ANDROID_UA },
+      };
+      const tvEmbeddedStrategy = {
+        ...base,
+        extractorArgs: "youtube:player_client=tv_embedded",
+        addHeaders: { "User-Agent": DESKTOP_UA },
+      };
+      const webStrategy = {
+        ...base,
+        extractorArgs: "youtube:player_client=web",
+        addHeaders: { "User-Agent": DESKTOP_UA },
+      };
+
+      return base.cookies
+        ? [webStrategy, tvEmbeddedStrategy, androidStrategy, iosStrategy]
+        : [androidStrategy, iosStrategy, tvEmbeddedStrategy, webStrategy];
+    }
     case "tiktok":
       return [
         {

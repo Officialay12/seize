@@ -310,109 +310,169 @@ function processSharedUrl(url, mode) {
 }
 
 // ============================================================
-// SAVE TO DEVICE - actually saves to phone storage
+// SAVE TO DEVICE
+// the goal here: whatever the user downloads should actually show
+// up in their Photos/gallery or file manager, not just vanish into
+// some sandboxed browser cache. web share api is the only real way
+// to do that from a PWA without a native wrapper, so it goes first.
+// everything after it is a fallback for browsers that don't support it.
 // ============================================================
+
+// figures out the real extension + mimetype instead of trusting
+// whatever name we were handed. the server already knows the actual
+// output format (see downloadName / content-disposition) — this just
+// makes sure the client doesn't quietly slap the wrong extension on
+// a file, which is what was breaking "save" before.
+const MIME_BY_EXT = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  mkv: "video/x-matroska",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+
+const EXT_BY_MIME = Object.fromEntries(
+  Object.entries(MIME_BY_EXT).map(([ext, mime]) => [mime, ext]),
+);
+
+// pulls filename + extension straight from the response instead of
+// guessing. content-disposition header wins if it's there (server
+// sets this via res.download), falls back to sniffing the blob's
+// mimetype, falls back to whatever name we were passed in.
+function resolveFileInfo(response, blob, fallbackName) {
+  let name = fallbackName;
+
+  const disposition = response.headers?.get?.("content-disposition") || "";
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  if (match && match[1]) {
+    name = decodeURIComponent(match[1]);
+  }
+
+  let ext = (name.split(".").pop() || "").toLowerCase();
+
+  // name had no real extension, or one we don't recognize — fall
+  // back to sniffing the blob's actual mimetype instead of just
+  // trusting whatever string was passed in.
+  if (!MIME_BY_EXT[ext]) {
+    const sniffedExt = EXT_BY_MIME[blob.type];
+    if (sniffedExt) {
+      ext = sniffedExt;
+      const base = name.includes(".")
+        ? name.slice(0, name.lastIndexOf("."))
+        : name;
+      name = `${base}.${ext}`;
+    }
+  }
+
+  const mimeType = MIME_BY_EXT[ext] || blob.type || "application/octet-stream";
+  return { name, mimeType };
+}
+
 async function saveMediaToDevice(fileUrl, suggestedName) {
-  let blob;
+  let res, blob;
   try {
-    const res = await fetch(fileUrl);
-    if (!res.ok) throw new Error("Could not fetch the file.");
+    res = await fetch(fileUrl);
+    if (!res.ok) throw new Error("couldn't grab the file from the server");
     blob = await res.blob();
   } catch (err) {
-    console.error("[seize] Failed to fetch file for saving:", err);
+    console.error("[seize] fetch for save failed:", err);
+    // last-ditch effort, just let the browser handle it directly
     window.open(fileUrl, "_blank");
     return;
   }
 
-  const ext = suggestedName.split(".").pop() || "mp4";
-  const mimeTypes = {
-    mp4: "video/mp4",
-    mp3: "audio/mpeg",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    png: "image/png",
-    webp: "image/webp",
-    gif: "image/gif",
-    mov: "video/quicktime",
-    webm: "video/webm",
-    wav: "audio/wav",
-    aac: "audio/aac",
-    flac: "audio/flac",
-    ogg: "audio/ogg",
-    m4a: "audio/mp4",
-  };
-  const mimeType = mimeTypes[ext] || blob.type || "application/octet-stream";
-  const file = new File([blob], suggestedName, { type: mimeType });
+  const { name, mimeType } = resolveFileInfo(res, blob, suggestedName);
+  const file = new File([blob], name, { type: mimeType });
 
-  // try native share first
+  // plan A: web share. this is the one that actually reaches the
+  // native "save to photos/gallery" sheet on android and ios. if
+  // canShare comes back false (older webview, weird mimetype, etc)
+  // we just fall through — no error, just try the next thing.
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      console.log("[seize] File saved via native share");
+      console.log("[seize] saved via share sheet");
       return;
     } catch (err) {
-      if (err && err.name === "AbortError") {
-        console.log("[seize] User cancelled");
+      if (err?.name === "AbortError") {
+        // they just closed the sheet, not an error
         return;
       }
-      console.warn("[seize] Native share failed:", err);
+      console.warn("[seize] share sheet bailed, trying next option:", err);
     }
   }
 
-  // anchor download
-  try {
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = suggestedName;
-    a.target = "_blank";
-    document.body.appendChild(a);
-
-    const isIOS =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    a.click();
-    setTimeout(
-      () => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-      },
-      isIOS ? 1000 : 5000,
-    );
-
-    console.log("[seize] Download triggered");
-    return;
-  } catch (err) {
-    console.warn("[seize] Anchor download failed:", err);
-  }
-
-  // file system access api
-  try {
-    if ("showSaveFilePicker" in window) {
+  // plan B: file system access api (desktop chrome/edge mostly).
+  // lets the user actually pick where it lands instead of it
+  // disappearing into a default downloads folder.
+  if ("showSaveFilePicker" in window) {
+    try {
       const handle = await window.showSaveFilePicker({
-        suggestedName: suggestedName,
+        suggestedName: name,
         types: [
           {
-            description: ext.toUpperCase() + " File",
-            accept: { [mimeType]: ["." + ext] },
+            description: mimeType.split("/")[0] + " file",
+            accept: { [mimeType]: ["." + name.split(".").pop()] },
           },
         ],
       });
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
-      console.log("[seize] File saved via File System API");
+      console.log("[seize] saved via file system picker");
       return;
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      console.warn(
+        "[seize] file system picker bailed, trying next option:",
+        err,
+      );
     }
-  } catch (err) {
-    if (err.name === "AbortError") {
-      console.log("[seize] User cancelled");
-      return;
-    }
-    console.warn("[seize] File System API failed:", err);
   }
 
-  // last resort - open in new tab
-  console.warn("[seize] All strategies failed, opening in new tab");
+  // plan C: plain anchor download. works everywhere but on mobile
+  // this usually lands in the browser's own Downloads app storage,
+  // not the actual gallery — so this is the fallback, not the plan.
+  try {
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+
+    const isIOS =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    setTimeout(
+      () => {
+        a.remove();
+        URL.revokeObjectURL(blobUrl);
+      },
+      isIOS ? 1000 : 5000,
+    );
+
+    console.log("[seize] triggered plain download");
+    return;
+  } catch (err) {
+    console.warn("[seize] anchor download bailed:", err);
+  }
+
+  // plan D: we're out of good options, just open it in a tab so
+  // the user can long-press → save themselves
+  console.warn(
+    "[seize] everything failed, opening in a new tab as last resort",
+  );
   if (blob.type.startsWith("image/")) {
     const imgUrl = URL.createObjectURL(blob);
     const win = window.open("");
@@ -420,7 +480,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
       win.document.write(
         `<img src="${imgUrl}" style="max-width:100%;height:auto;" />`,
       );
-      win.document.title = suggestedName;
+      win.document.title = name;
     } else {
       window.open(fileUrl, "_blank");
     }

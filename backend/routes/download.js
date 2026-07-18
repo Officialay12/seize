@@ -107,8 +107,8 @@ function baseOptions(platform) {
     noWarnings: true,
     noCheckCertificates: true,
     ffmpegLocation: ffmpegStaticPath,
-    retries: 5,
-    socketTimeout: 45,
+    retries: 3,
+    socketTimeout: 30,
     concurrentFragments: 16,
     throttledRate: "50M",
   };
@@ -354,9 +354,6 @@ function getStrategies(platform) {
   }
 }
 
-// ============================================================
-// DIRECT PINTEREST EXTRACTION
-// ============================================================
 async function extractPinterestDirect(url) {
   console.log("[seize] Direct Pinterest extraction...");
 
@@ -486,9 +483,6 @@ async function extractPinterestDirect(url) {
   return null;
 }
 
-// ============================================================
-// RESOLVE WITH STRATEGIES
-// ============================================================
 async function resolveWithStrategies(url, platform, isUsable) {
   if (platform === "pinterest") {
     const directResult = await extractPinterestDirect(url);
@@ -535,9 +529,6 @@ async function resolveWithStrategies(url, platform, isUsable) {
   throw lastErr || new Error("All extraction strategies failed");
 }
 
-// ============================================================
-// RUN YT-DLP WITH PROGRESS
-// ============================================================
 function runYtDlpWithProgress(url, options, jobId, timeoutMs = 90000) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -589,9 +580,6 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 90000) {
   });
 }
 
-// ============================================================
-// DOWNLOAD FILE HELPER
-// ============================================================
 function downloadFile(url, filePath, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
@@ -635,9 +623,6 @@ function downloadFile(url, filePath, redirects = 0) {
   });
 }
 
-// ============================================================
-// FRIENDLY ERROR MESSAGES
-// ============================================================
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
@@ -745,9 +730,6 @@ function friendlyError(stderr = "") {
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";
 }
 
-// ============================================================
-// EXTRACT MEDIA URLS
-// ============================================================
 function extractMediaUrls(info) {
   const media = {
     images: [],
@@ -900,9 +882,6 @@ function extractMediaUrls(info) {
   return media;
 }
 
-// ============================================================
-// IS USABLE INFO
-// ============================================================
 function isUsableInfo(info) {
   if (!info) return false;
   if (info.directExtract) {
@@ -933,9 +912,6 @@ function isUsableInfo(info) {
   return media.hasVideo || media.hasImage || media.audio.length > 0;
 }
 
-// ============================================================
-// DEDUPE BY HEIGHT
-// ============================================================
 function dedupeByHeight(videos, max = 12) {
   const seen = new Set();
   const out = [];
@@ -949,9 +925,6 @@ function dedupeByHeight(videos, max = 12) {
   return out;
 }
 
-// ============================================================
-// SANITIZE FILENAME
-// ============================================================
 function sanitizeFilename(name) {
   return (
     String(name || "seize")
@@ -1250,7 +1223,7 @@ router.get("/file/:jobId", (req, res) => {
 });
 
 // ============================================================
-// CREATOR ARCHIVE - FIXED
+// CREATOR ARCHIVE - FAST & OPTIMIZED
 // ============================================================
 router.post("/profile", async (req, res) => {
   const { url, platform, limit = 50, mode = "all" } = req.body;
@@ -1281,43 +1254,47 @@ router.post("/profile", async (req, res) => {
     createdAt: Date.now(),
   });
 
+  // Process in background
   (async () => {
     try {
-      console.log(`[seize] Scanning profile from ${detectedPlatform}: ${url}`);
+      console.log(
+        `[seize] Fast scanning profile from ${detectedPlatform}: ${url}`,
+      );
 
       let items = [];
+      const maxItems = Math.min(limit, 100);
 
-      // Different approaches for different platforms
       if (detectedPlatform === "tiktok") {
-        // TikTok: use the flat playlist extraction with proper headers
+        // TikTok - use flat playlist with minimal data
         const options = {
           dumpSingleJson: true,
           noWarnings: true,
           noCheckCertificates: true,
           ffmpegLocation: ffmpegStaticPath,
-          retries: 3,
-          socketTimeout: 30,
+          retries: 2,
+          socketTimeout: 20,
           playlistItems: true,
-          playlistEnd: Math.min(limit, 100),
+          playlistEnd: maxItems,
           extractorArgs: "tiktok:device_id=auto",
           addHeaders: {
             "User-Agent": ANDROID_UA,
             Accept: "application/json, text/plain, */*",
             Referer: "https://www.tiktok.com/",
           },
+          // Skip downloading media - just metadata
+          skipDownload: true,
         };
 
         const cookies = cookiesFor(detectedPlatform);
         if (cookies) options.cookies = cookies;
 
-        const info = await ytDlp(url, options, { timeout: 60000 });
+        const info = await ytDlp(url, options, { timeout: 30000 });
 
         const entries = Array.isArray(info.entries) ? info.entries : [info];
 
         for (const entry of entries) {
-          if (!entry) continue;
+          if (!entry || items.length >= maxItems) continue;
 
-          // Check if this is a video or photo
           const hasVideo = !!(
             entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
             entry.ext === "mp4" ||
@@ -1334,7 +1311,6 @@ router.post("/profile", async (req, res) => {
             entry.ext === "webp"
           );
 
-          // Get thumbnail
           let thumbnail = entry.thumbnail || null;
           if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
             const largest = [...entry.thumbnails].sort(
@@ -1365,33 +1341,34 @@ router.post("/profile", async (req, res) => {
           }
         }
       } else if (detectedPlatform === "instagram") {
-        // Instagram: use flat playlist
+        // Instagram - fast playlist extraction
         const options = {
           dumpSingleJson: true,
           noWarnings: true,
           noCheckCertificates: true,
           ffmpegLocation: ffmpegStaticPath,
-          retries: 3,
-          socketTimeout: 30,
+          retries: 2,
+          socketTimeout: 20,
           playlistItems: true,
-          playlistEnd: Math.min(limit, 100),
+          playlistEnd: maxItems,
           extractorArgs: "instagram:include_ads=false",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
+          skipDownload: true,
         };
 
         const cookies = cookiesFor(detectedPlatform);
         if (cookies) options.cookies = cookies;
 
-        const info = await ytDlp(url, options, { timeout: 60000 });
+        const info = await ytDlp(url, options, { timeout: 30000 });
 
         const entries = Array.isArray(info.entries) ? info.entries : [info];
 
         for (const entry of entries) {
-          if (!entry) continue;
+          if (!entry || items.length >= maxItems) continue;
 
           const hasVideo = !!(
             entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
@@ -1439,32 +1416,33 @@ router.post("/profile", async (req, res) => {
           }
         }
       } else if (detectedPlatform === "twitter") {
-        // Twitter/X: use flat playlist
+        // Twitter/X - fast playlist extraction
         const options = {
           dumpSingleJson: true,
           noWarnings: true,
           noCheckCertificates: true,
           ffmpegLocation: ffmpegStaticPath,
-          retries: 3,
-          socketTimeout: 30,
+          retries: 2,
+          socketTimeout: 20,
           playlistItems: true,
-          playlistEnd: Math.min(limit, 100),
+          playlistEnd: maxItems,
           extractorArgs: "twitter:api=syndication",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept: "application/json, text/plain, */*",
           },
+          skipDownload: true,
         };
 
         const cookies = cookiesFor(detectedPlatform);
         if (cookies) options.cookies = cookies;
 
-        const info = await ytDlp(url, options, { timeout: 60000 });
+        const info = await ytDlp(url, options, { timeout: 30000 });
 
         const entries = Array.isArray(info.entries) ? info.entries : [info];
 
         for (const entry of entries) {
-          if (!entry) continue;
+          if (!entry || items.length >= maxItems) continue;
 
           const hasVideo = !!(
             entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
@@ -1512,14 +1490,14 @@ router.post("/profile", async (req, res) => {
           }
         }
       } else if (detectedPlatform === "pinterest") {
-        // Pinterest: use generic extractor with pagination
+        // Pinterest - use direct extraction or generic
         const options = {
           dumpSingleJson: true,
           noWarnings: true,
           noCheckCertificates: true,
           ffmpegLocation: ffmpegStaticPath,
-          retries: 3,
-          socketTimeout: 30,
+          retries: 2,
+          socketTimeout: 20,
           extractorArgs: "generic",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
@@ -1528,24 +1506,24 @@ router.post("/profile", async (req, res) => {
             "Accept-Language": "en-US,en;q=0.9",
             "Cache-Control": "no-cache",
           },
+          skipDownload: true,
         };
 
         const cookies = cookiesFor(detectedPlatform);
         if (cookies) options.cookies = cookies;
 
-        // For Pinterest, we need to use the pin feed URL
+        // Try to get the pin feed
         let pinterestUrl = url;
         if (!url.includes("/feed/") && !url.includes("/pins/")) {
-          // Try to get the feed
           pinterestUrl = url.replace(/\/$/, "") + "/pins/";
         }
 
-        const info = await ytDlp(pinterestUrl, options, { timeout: 60000 });
+        const info = await ytDlp(pinterestUrl, options, { timeout: 30000 });
 
         const entries = Array.isArray(info.entries) ? info.entries : [info];
 
         for (const entry of entries) {
-          if (!entry) continue;
+          if (!entry || items.length >= maxItems) continue;
 
           const hasVideo = !!(
             entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
@@ -1608,7 +1586,7 @@ router.post("/profile", async (req, res) => {
       }
 
       console.log(
-        `[seize] Scan complete: ${items.length} items from ${detectedPlatform}`,
+        `[seize] Fast scan complete: ${items.length} items from ${detectedPlatform} in ${Date.now() - job.createdAt}ms`,
       );
     } catch (err) {
       console.error("[seize] Profile scan failed:", err.message);

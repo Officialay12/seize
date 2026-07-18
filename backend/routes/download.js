@@ -117,10 +117,6 @@ function baseOptions(platform) {
   return opts;
 }
 
-// ============================================================
-// PLATFORM-SPECIFIC EXTRACTION STRATEGIES
-// ============================================================
-
 function getStrategies(platform) {
   const base = baseOptions(platform);
 
@@ -1254,7 +1250,7 @@ router.get("/file/:jobId", (req, res) => {
 });
 
 // ============================================================
-// CREATOR ARCHIVE - FAST PROFILE SCAN
+// CREATOR ARCHIVE - FIXED
 // ============================================================
 router.post("/profile", async (req, res) => {
   const { url, platform, limit = 50, mode = "all" } = req.body;
@@ -1287,114 +1283,325 @@ router.post("/profile", async (req, res) => {
 
   (async () => {
     try {
-      const options = {
-        dumpSingleJson: true,
-        noWarnings: true,
-        noCheckCertificates: true,
-        ffmpegLocation: ffmpegStaticPath,
-        retries: 2,
-        socketTimeout: 30,
-        playlistItems: true,
-        playlistEnd: Math.min(limit, 100),
-        extractorArgs: `${detectedPlatform}:include_ads=false`,
-        addHeaders: {
-          "User-Agent": DESKTOP_UA,
-          Accept: "application/json, text/plain, */*",
-        },
-        skipDownload: true,
-      };
-
-      const cookies = cookiesFor(detectedPlatform);
-      if (cookies) options.cookies = cookies;
-
       console.log(`[seize] Scanning profile from ${detectedPlatform}: ${url}`);
 
-      const info = await ytDlp(url, options, { timeout: 45000 });
+      let items = [];
 
-      const entries = Array.isArray(info.entries) ? info.entries : [info];
-      const items = [];
-      const batchSize = 10;
+      // Different approaches for different platforms
+      if (detectedPlatform === "tiktok") {
+        // TikTok: use the flat playlist extraction with proper headers
+        const options = {
+          dumpSingleJson: true,
+          noWarnings: true,
+          noCheckCertificates: true,
+          ffmpegLocation: ffmpegStaticPath,
+          retries: 3,
+          socketTimeout: 30,
+          playlistItems: true,
+          playlistEnd: Math.min(limit, 100),
+          extractorArgs: "tiktok:device_id=auto",
+          addHeaders: {
+            "User-Agent": ANDROID_UA,
+            Accept: "application/json, text/plain, */*",
+            Referer: "https://www.tiktok.com/",
+          },
+        };
 
-      for (let i = 0; i < entries.length; i += batchSize) {
-        const batch = entries.slice(i, i + batchSize);
-        const results = await Promise.all(
-          batch.map(async (entry) => {
-            if (!entry) return null;
+        const cookies = cookiesFor(detectedPlatform);
+        if (cookies) options.cookies = cookies;
 
-            try {
-              const hasVideo = !!(
-                entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
-                entry.ext === "mp4" ||
-                entry.ext === "mov" ||
-                entry.ext === "webm"
-              );
-              const hasImage = !!(
-                entry.formats?.some(
-                  (f) =>
-                    f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
-                ) ||
-                entry.ext === "jpg" ||
-                entry.ext === "jpeg" ||
-                entry.ext === "png" ||
-                entry.ext === "webp"
-              );
+        const info = await ytDlp(url, options, { timeout: 60000 });
 
-              let thumbnail = entry.thumbnail || null;
-              if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
-                const largest = [...entry.thumbnails].sort(
-                  (a, b) => (b.width || 0) - (a.width || 0),
-                )[0];
-                thumbnail = largest?.url || null;
-              }
+        const entries = Array.isArray(info.entries) ? info.entries : [info];
 
-              return {
-                id: entry.id || entry.webpage_url || `item-${Date.now()}`,
-                title: entry.title || entry.fulltitle || "Untitled",
-                url: entry.webpage_url || entry.url || null,
-                thumbnail: thumbnail,
-                duration: entry.duration || null,
-                hasVideo: hasVideo,
-                hasImage: hasImage || (!hasVideo && !!thumbnail),
-                contentType: hasVideo
-                  ? "video"
-                  : hasImage
-                    ? "image"
-                    : "unknown",
-                uploader: info.uploader || info.channel || info.author || null,
-                viewCount: entry.view_count || entry.views || null,
-                likeCount: entry.like_count || entry.likes || null,
-                timestamp: entry.timestamp || entry.upload_date || null,
-              };
-            } catch {
-              return null;
-            }
-          }),
-        );
+        for (const entry of entries) {
+          if (!entry) continue;
 
-        const validResults = results.filter((r) => r !== null);
-        for (const item of validResults) {
+          // Check if this is a video or photo
+          const hasVideo = !!(
+            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
+            entry.ext === "mp4" ||
+            entry.ext === "mov" ||
+            entry.ext === "webm"
+          );
+          const hasImage = !!(
+            entry.formats?.some(
+              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
+            ) ||
+            entry.ext === "jpg" ||
+            entry.ext === "jpeg" ||
+            entry.ext === "png" ||
+            entry.ext === "webp"
+          );
+
+          // Get thumbnail
+          let thumbnail = entry.thumbnail || null;
+          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
+            const largest = [...entry.thumbnails].sort(
+              (a, b) => (b.width || 0) - (a.width || 0),
+            )[0];
+            thumbnail = largest?.url || null;
+          }
+
+          const item = {
+            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
+            title: entry.title || entry.fulltitle || "Untitled",
+            url: entry.webpage_url || entry.url || null,
+            thumbnail: thumbnail,
+            duration: entry.duration || null,
+            hasVideo: hasVideo,
+            hasImage: hasImage || (!hasVideo && !!thumbnail),
+            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
+            uploader: info.uploader || info.channel || info.author || null,
+            viewCount: entry.view_count || entry.views || null,
+            likeCount: entry.like_count || entry.likes || null,
+            timestamp: entry.timestamp || entry.upload_date || null,
+          };
+
           if (mode === "videos" && !item.hasVideo) continue;
           if (mode === "images" && !item.hasImage) continue;
           if (mode === "all" || item.hasVideo || item.hasImage) {
             items.push(item);
           }
         }
+      } else if (detectedPlatform === "instagram") {
+        // Instagram: use flat playlist
+        const options = {
+          dumpSingleJson: true,
+          noWarnings: true,
+          noCheckCertificates: true,
+          ffmpegLocation: ffmpegStaticPath,
+          retries: 3,
+          socketTimeout: 30,
+          playlistItems: true,
+          playlistEnd: Math.min(limit, 100),
+          extractorArgs: "instagram:include_ads=false",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          },
+        };
 
-        const job = jobs.get(jobId);
-        if (job) {
-          job.progress = Math.min(
-            90,
-            Math.round(((i + batch.length) / entries.length) * 90),
+        const cookies = cookiesFor(detectedPlatform);
+        if (cookies) options.cookies = cookies;
+
+        const info = await ytDlp(url, options, { timeout: 60000 });
+
+        const entries = Array.isArray(info.entries) ? info.entries : [info];
+
+        for (const entry of entries) {
+          if (!entry) continue;
+
+          const hasVideo = !!(
+            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
+            entry.ext === "mp4" ||
+            entry.ext === "mov" ||
+            entry.ext === "webm"
           );
-          job.processed = items.length;
+          const hasImage = !!(
+            entry.formats?.some(
+              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
+            ) ||
+            entry.ext === "jpg" ||
+            entry.ext === "jpeg" ||
+            entry.ext === "png" ||
+            entry.ext === "webp"
+          );
+
+          let thumbnail = entry.thumbnail || null;
+          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
+            const largest = [...entry.thumbnails].sort(
+              (a, b) => (b.width || 0) - (a.width || 0),
+            )[0];
+            thumbnail = largest?.url || null;
+          }
+
+          const item = {
+            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
+            title: entry.title || entry.fulltitle || "Untitled",
+            url: entry.webpage_url || entry.url || null,
+            thumbnail: thumbnail,
+            duration: entry.duration || null,
+            hasVideo: hasVideo,
+            hasImage: hasImage || (!hasVideo && !!thumbnail),
+            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
+            uploader: info.uploader || info.channel || info.author || null,
+            viewCount: entry.view_count || entry.views || null,
+            likeCount: entry.like_count || entry.likes || null,
+            timestamp: entry.timestamp || entry.upload_date || null,
+          };
+
+          if (mode === "videos" && !item.hasVideo) continue;
+          if (mode === "images" && !item.hasImage) continue;
+          if (mode === "all" || item.hasVideo || item.hasImage) {
+            items.push(item);
+          }
+        }
+      } else if (detectedPlatform === "twitter") {
+        // Twitter/X: use flat playlist
+        const options = {
+          dumpSingleJson: true,
+          noWarnings: true,
+          noCheckCertificates: true,
+          ffmpegLocation: ffmpegStaticPath,
+          retries: 3,
+          socketTimeout: 30,
+          playlistItems: true,
+          playlistEnd: Math.min(limit, 100),
+          extractorArgs: "twitter:api=syndication",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "application/json, text/plain, */*",
+          },
+        };
+
+        const cookies = cookiesFor(detectedPlatform);
+        if (cookies) options.cookies = cookies;
+
+        const info = await ytDlp(url, options, { timeout: 60000 });
+
+        const entries = Array.isArray(info.entries) ? info.entries : [info];
+
+        for (const entry of entries) {
+          if (!entry) continue;
+
+          const hasVideo = !!(
+            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
+            entry.ext === "mp4" ||
+            entry.ext === "mov" ||
+            entry.ext === "webm"
+          );
+          const hasImage = !!(
+            entry.formats?.some(
+              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
+            ) ||
+            entry.ext === "jpg" ||
+            entry.ext === "jpeg" ||
+            entry.ext === "png" ||
+            entry.ext === "webp"
+          );
+
+          let thumbnail = entry.thumbnail || null;
+          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
+            const largest = [...entry.thumbnails].sort(
+              (a, b) => (b.width || 0) - (a.width || 0),
+            )[0];
+            thumbnail = largest?.url || null;
+          }
+
+          const item = {
+            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
+            title: entry.title || entry.fulltitle || "Untitled",
+            url: entry.webpage_url || entry.url || null,
+            thumbnail: thumbnail,
+            duration: entry.duration || null,
+            hasVideo: hasVideo,
+            hasImage: hasImage || (!hasVideo && !!thumbnail),
+            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
+            uploader: info.uploader || info.channel || info.author || null,
+            viewCount: entry.view_count || entry.views || null,
+            likeCount: entry.like_count || entry.likes || null,
+            timestamp: entry.timestamp || entry.upload_date || null,
+          };
+
+          if (mode === "videos" && !item.hasVideo) continue;
+          if (mode === "images" && !item.hasImage) continue;
+          if (mode === "all" || item.hasVideo || item.hasImage) {
+            items.push(item);
+          }
+        }
+      } else if (detectedPlatform === "pinterest") {
+        // Pinterest: use generic extractor with pagination
+        const options = {
+          dumpSingleJson: true,
+          noWarnings: true,
+          noCheckCertificates: true,
+          ffmpegLocation: ffmpegStaticPath,
+          retries: 3,
+          socketTimeout: 30,
+          extractorArgs: "generic",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+          },
+        };
+
+        const cookies = cookiesFor(detectedPlatform);
+        if (cookies) options.cookies = cookies;
+
+        // For Pinterest, we need to use the pin feed URL
+        let pinterestUrl = url;
+        if (!url.includes("/feed/") && !url.includes("/pins/")) {
+          // Try to get the feed
+          pinterestUrl = url.replace(/\/$/, "") + "/pins/";
+        }
+
+        const info = await ytDlp(pinterestUrl, options, { timeout: 60000 });
+
+        const entries = Array.isArray(info.entries) ? info.entries : [info];
+
+        for (const entry of entries) {
+          if (!entry) continue;
+
+          const hasVideo = !!(
+            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
+            entry.ext === "mp4" ||
+            entry.ext === "mov" ||
+            entry.ext === "webm"
+          );
+          const hasImage = !!(
+            entry.formats?.some(
+              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
+            ) ||
+            entry.ext === "jpg" ||
+            entry.ext === "jpeg" ||
+            entry.ext === "png" ||
+            entry.ext === "webp"
+          );
+
+          let thumbnail = entry.thumbnail || null;
+          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
+            const largest = [...entry.thumbnails].sort(
+              (a, b) => (b.width || 0) - (a.width || 0),
+            )[0];
+            thumbnail = largest?.url || null;
+          }
+
+          const item = {
+            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
+            title: entry.title || entry.fulltitle || "Untitled",
+            url: entry.webpage_url || entry.url || null,
+            thumbnail: thumbnail,
+            duration: entry.duration || null,
+            hasVideo: hasVideo,
+            hasImage: hasImage || (!hasVideo && !!thumbnail),
+            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
+            uploader: info.uploader || info.channel || info.author || null,
+            viewCount: entry.view_count || entry.views || null,
+            likeCount: entry.like_count || entry.likes || null,
+            timestamp: entry.timestamp || entry.upload_date || null,
+          };
+
+          if (mode === "videos" && !item.hasVideo) continue;
+          if (mode === "images" && !item.hasImage) continue;
+          if (mode === "all" || item.hasVideo || item.hasImage) {
+            items.push(item);
+          }
         }
       }
+
+      // Limit items
+      items = items.slice(0, limit);
 
       const job = jobs.get(jobId);
       if (job) {
         job.status = "done";
         job.progress = 100;
-        job.items = items.slice(0, limit);
+        job.items = items;
         job.total = items.length;
         job.processed = items.length;
         job.finishedAt = Date.now();
@@ -1405,6 +1612,8 @@ router.post("/profile", async (req, res) => {
       );
     } catch (err) {
       console.error("[seize] Profile scan failed:", err.message);
+      console.error("[seize] Error details:", err.stderr || err);
+
       const job = jobs.get(jobId);
       if (job) {
         job.status = "error";

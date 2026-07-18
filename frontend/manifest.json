@@ -1,7 +1,7 @@
 {
   "name": "Seize : capture any signal",
   "short_name": "Seize",
-  "description": "Convert video to audio, audio to video, and capture media from TikTok, Instagram, and Twitter/X.",
+  "description": "Convert video to audio, audio to video, and capture media from TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0B0D0C",

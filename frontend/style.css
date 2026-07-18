@@ -347,17 +347,8 @@ main {
 }
 
 @keyframes cta-glow {
-
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(127, 255, 176, 0);
-    border-color: var(--line);
-  }
-
-  50% {
-    box-shadow: 0 0 16px 1px rgba(127, 255, 176, 0.25);
-    border-color: var(--phosphor-dim);
-  }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(127, 255, 176, 0); border-color: var(--line); }
+  50% { box-shadow: 0 0 16px 1px rgba(127, 255, 176, 0.25); border-color: var(--phosphor-dim); }
 }
 
 .text-input:focus {
@@ -888,6 +879,30 @@ main {
 
 .restored-banner.hidden {
   display: none;
+}
+
+/* ---------- Song ID recognized-track card ---------- */
+.recognized-track {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  background: rgba(127, 255, 176, 0.06);
+  border: 1px solid var(--phosphor-dim);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  margin-top: 14px;
+  line-height: 1.5;
+}
+
+.recognized-track strong {
+  color: var(--phosphor);
+  font-weight: 600;
+}
+
+.recognized-track-album {
+  color: var(--muted);
 }
 
 /* ---------- Clipboard auto-detect toast ---------- */

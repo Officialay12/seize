@@ -265,6 +265,35 @@ function showSaveButton(container, fileUrl, suggestedName) {
   container.appendChild(btn);
 }
 
+// title/artist/album come back from an external recognition API — always
+// set via textContent, never innerHTML, since this is untrusted input.
+function showRecognizedTrack(track, container) {
+  const target = container || convertProgress.parentElement;
+  const existing = target.querySelector(".recognized-track");
+  if (existing) existing.remove();
+
+  const card = document.createElement("div");
+  card.className = "recognized-track mono small";
+
+  const label = document.createElement("span");
+  label.textContent = "🎵 Identified: ";
+  card.appendChild(label);
+
+  const name = document.createElement("strong");
+  const parts = [track.artist, track.title].filter(Boolean);
+  name.textContent = parts.length ? parts.join(" – ") : "Unknown track";
+  card.appendChild(name);
+
+  if (track.album) {
+    const album = document.createElement("span");
+    album.className = "recognized-track-album";
+    album.textContent = ` (${track.album})`;
+    card.appendChild(album);
+  }
+
+  target.appendChild(card);
+}
+
 // ===== History (local to this device only) =====
 const HISTORY_KEY = "seize_history";
 const MAX_HISTORY_ITEMS = 50;
@@ -593,7 +622,12 @@ urlInput.addEventListener("input", () => {
     const matches =
       (p === "tiktok" && val.includes("tiktok")) ||
       (p === "instagram" && val.includes("instagram")) ||
-      (p === "twitter" && (val.includes("twitter") || val.includes("x.com")));
+      (p === "twitter" && (val.includes("twitter") || val.includes("x.com"))) ||
+      (p === "pinterest" &&
+        (val.includes("pinterest") || val.includes("pin.it"))) ||
+      (p === "snapchat" && val.includes("snapchat")) ||
+      (p === "facebook" &&
+        (val.includes("facebook") || val.includes("fb.watch")));
     chip.classList.toggle("match", matches);
   });
 });
@@ -764,7 +798,7 @@ function pollJob(statusUrl, fillEl, labelEl) {
         if (data.status === "done") {
           clearInterval(interval);
           fillEl.style.width = "100%";
-          resolve();
+          resolve(data);
         } else if (data.status === "error") {
           clearInterval(interval);
           reject(new Error(data.error || "Processing failed."));
@@ -969,9 +1003,7 @@ const dropzonePreview = document.getElementById("dropzone-preview");
 const dropzonePreviewIcon = document.getElementById("dropzone-preview-icon");
 const dropzonePreviewName = document.getElementById("dropzone-preview-name");
 const dropzonePreviewSize = document.getElementById("dropzone-preview-size");
-const dropzonePreviewRemove = document.getElementById(
-  "dropzone-preview-remove",
-);
+const dropzonePreviewRemove = document.getElementById("dropzone-preview-remove");
 const dropzoneLabel = document.getElementById("dropzone-label");
 const dropzoneHint = document.getElementById("dropzone-hint");
 const fileInput = document.getElementById("file-input");
@@ -1215,9 +1247,7 @@ function showRestoreBanner(text) {
 // "fix" away entirely, only work around.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && selectedFile) {
-    console.log(
-      "[seize] Tab hidden while a file is selected — persistence flag already written.",
-    );
+    console.log("[seize] Tab hidden while a file is selected — persistence flag already written.");
   }
 });
 
@@ -1300,7 +1330,7 @@ convertBtn.addEventListener("click", async (e) => {
       `${API_BASE}/convert/${endpoint}`,
       formData,
     );
-    await pollJob(
+    const statusData = await pollJob(
       `${API_BASE}/convert/status/${data.jobId}`,
       convertProgressFill,
       convertProgressLabel,
@@ -1313,6 +1343,11 @@ convertBtn.addEventListener("click", async (e) => {
         ? document.getElementById("format-select").value
         : "mp4";
     const fileUrl = `${API_BASE}/convert/download/${data.jobId}`;
+
+    if (statusData?.recognizedTrack?.title || statusData?.recognizedTrack?.artist) {
+      showRecognizedTrack(statusData.recognizedTrack);
+    }
+
     showSaveButton(
       convertProgress.parentElement,
       fileUrl,
@@ -1434,7 +1469,7 @@ window.addEventListener("load", () => {
 // check the clipboard when the app comes back to foreground, offer to
 // autofill if there's a link on it. saves a paste every time
 const CLIPBOARD_LINK_RE =
-  /https?:\/\/[^\s]*(tiktok\.com|instagram\.com|twitter\.com|x\.com)[^\s]*/i;
+  /https?:\/\/[^\s]*(tiktok\.com|instagram\.com|twitter\.com|x\.com|pinterest\.com|pin\.it|snapchat\.com|facebook\.com|fb\.watch)[^\s]*/i;
 let lastClipboardSuggestion = "";
 
 async function checkClipboardForLink() {

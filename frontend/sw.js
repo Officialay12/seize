@@ -1,4 +1,4 @@
-const CACHE_NAME = "seize-shell-v7";
+const CACHE_NAME = "seize-shell-v9";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -162,32 +162,36 @@ self.addEventListener("fetch", (event) => {
     }
   }
 
-  // everything else: cache first, network as backup
+  // everything else: network first (so deploys show up immediately),
+  // cache as a fallback for offline use only. The old cache-first
+  // approach meant the install-time precache (index.html, app.js,
+  // style.css, manifest.json) could get stuck serving a stale version
+  // indefinitely — production runtime never re-populated the cache here
+  // (that branch below only fires for localhost), so once something was
+  // precached, only a sw.js byte-change (i.e. remembering to bump
+  // CACHE_NAME) would ever refresh it. Network-first removes that trap.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-      return fetch(event.request)
-        .then((response) => {
-          // only cache successful local-asset responses
-          if (
-            response &&
-            response.ok &&
-            (url.hostname === "localhost" || url.hostname === "127.0.0.1")
-          ) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              try {
-                cache.put(event.request, clone);
-              } catch (e) {
-                // some responses just refuse to be cached
-              }
-            });
-          }
-          return response;
-        })
-        .catch(() => {
+    fetch(event.request)
+      .then((response) => {
+        if (
+          response &&
+          response.ok &&
+          (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+        ) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            try {
+              cache.put(event.request, clone);
+            } catch (e) {
+              // some responses just refuse to be cached
+            }
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
           // offline fallback
           if (url.pathname.endsWith(".html")) {
             return new Response("Page not available offline", {
@@ -197,6 +201,6 @@ self.addEventListener("fetch", (event) => {
           }
           return new Response("Offline", { status: 503 });
         });
-    }),
+      }),
   );
 });

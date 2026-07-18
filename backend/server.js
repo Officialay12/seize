@@ -12,6 +12,7 @@ const path = require("path");
 const convertRoutes = require("./routes/convert");
 const downloadRoutes = require("./routes/download");
 const authRoutes = require("./routes/auth");
+const collectionsRoutes = require("./routes/collections");
 
 // ===== Middleware =====
 const { trackUser, adminRateLimit } = require("./utils/middleware");
@@ -133,13 +134,14 @@ app.get("/api/health", (req, res) =>
 app.get("/api/status", (req, res) => {
   res.json({
     name: "seize-backend",
-    version: "3.0.0",
+    version: "3.1.0",
     status: "online",
     endpoints: {
       health: "/api/health",
       resolve: "/api/download/resolve",
       convert: "/api/convert/video-to-audio",
       auth: "/api/auth/login",
+      collections: "/api/collections",
     },
   });
 });
@@ -154,6 +156,7 @@ app.use("/api/auth", authRoutes);
 // ============================================================
 app.use("/api/convert", trackUser, adminRateLimit(200), convertRoutes);
 app.use("/api/download", trackUser, adminRateLimit(200), downloadRoutes);
+app.use("/api/collections", trackUser, collectionsRoutes);
 
 // ============================================================
 // SHARE HANDLER

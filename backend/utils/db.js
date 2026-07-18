@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const DB_PATH = path.join(__dirname, "..", "data", "seize.json");
 
@@ -59,6 +60,7 @@ let db = {
   ],
   access_rules: [],
   adminAuth: null, // { passwordHash, updatedAt } — persists a changed admin password across restarts
+  collections: [],
 };
 
 // Load existing data if it exists
@@ -799,9 +801,119 @@ function checkAdminRateLimit(ip, action, limit = 5, windowMs = 60 * 60 * 1000) {
 }
 
 // ============================================================
+// COLLECTIONS (shareable public galleries)
+// ============================================================
+const COLLECTION_MAX_ITEMS = 50;
+const COLLECTION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function generateCollectionId() {
+  let id;
+  do {
+    id = crypto.randomBytes(4).toString("hex"); // 8 hex chars
+  } while (db.collections.some((c) => c.id === id));
+  return id;
+}
+
+// Collections are read by anyone with the link — every field here is
+// displayed to strangers. Cap lengths and require http(s) URLs so a
+// crafted item can't inject a javascript: URL, an oversized string, or
+// otherwise abuse what's meant to be a small public gallery entry.
+function sanitizeCollectionItem(item) {
+  const str = (v, max) =>
+    typeof v === "string" ? v.slice(0, max).trim() : "";
+  const isHttpUrl = (v) =>
+    typeof v === "string" && /^https?:\/\//i.test(v) && v.length < 2000;
+
+  // Store the original post/source page URL, NOT a raw platform CDN media
+  // link — those are frequently short-lived signed URLs that can expire
+  // within hours. A collection can live up to 30 days; the gallery
+  // re-resolves fresh from sourceUrl at click-time (same as a normal
+  // capture), which is the only way to guarantee the link still works by
+  // the time someone opens the collection.
+  const sourceUrl = isHttpUrl(item?.sourceUrl) ? item.sourceUrl : null;
+  const thumbnail = isHttpUrl(item?.thumbnail) ? item.thumbnail : null;
+  if (!sourceUrl) return null; // an item with nothing to re-resolve is useless
+
+  return {
+    platform: str(item.platform, 20) || "unknown",
+    title: str(item.title, 200) || "Untitled",
+    thumbnail,
+    sourceUrl,
+    contentType: ["video", "audio", "image"].includes(item?.contentType)
+      ? item.contentType
+      : "video",
+  };
+}
+
+function pruneExpiredCollections() {
+  const now = Date.now();
+  const before = db.collections.length;
+  db.collections = db.collections.filter(
+    (c) => new Date(c.expiresAt).getTime() > now,
+  );
+  if (db.collections.length !== before) saveDB();
+}
+
+function createCollection(items, name) {
+  pruneExpiredCollections();
+
+  const cleanItems = (Array.isArray(items) ? items : [])
+    .slice(0, COLLECTION_MAX_ITEMS)
+    .map(sanitizeCollectionItem)
+    .filter(Boolean);
+
+  if (cleanItems.length === 0) {
+    return { error: "No valid items to save." };
+  }
+
+  const now = new Date();
+  const collection = {
+    id: generateCollectionId(),
+    ownerToken: crypto.randomBytes(16).toString("hex"),
+    name:
+      typeof name === "string" && name.trim()
+        ? name.trim().slice(0, 80)
+        : "Untitled collection",
+    items: cleanItems,
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + COLLECTION_TTL_MS).toISOString(),
+    views: 0,
+  };
+
+  db.collections.push(collection);
+  saveDB();
+
+  return { id: collection.id, ownerToken: collection.ownerToken };
+}
+
+function getCollection(id) {
+  pruneExpiredCollections();
+  const collection = db.collections.find((c) => c.id === id);
+  if (!collection) return null;
+
+  collection.views = (collection.views || 0) + 1;
+  saveDB();
+
+  // never return the owner token on a read — it's the delete credential
+  const { ownerToken, ...publicView } = collection;
+  return publicView;
+}
+
+function deleteCollection(id, ownerToken) {
+  const index = db.collections.findIndex(
+    (c) => c.id === id && c.ownerToken === ownerToken,
+  );
+  if (index === -1) return false;
+  db.collections.splice(index, 1);
+  saveDB();
+  return true;
+}
+
+
+
+// ============================================================
 // EXPORTS
 // ============================================================
-
 module.exports = {
   db,
   saveDB,
@@ -853,4 +965,8 @@ module.exports = {
   checkAdminRateLimit,
   getAdminAuth,
   setAdminAuth,
+  createCollection,
+  getCollection,
+  deleteCollection,
+  pruneExpiredCollections,
 };

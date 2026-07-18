@@ -49,6 +49,7 @@ const COOKIE_SOURCE_FILES = {
   twitter: process.env.TWITTER_COOKIES_FILE,
   facebook: process.env.FACEBOOK_COOKIES_FILE,
   pinterest: process.env.PINTEREST_COOKIES_FILE,
+  youtube: process.env.YT_COOKIES_FILE,
 };
 
 const COOKIE_FILES = {};
@@ -73,7 +74,6 @@ function cookiesFor(platform) {
   return file && fs.existsSync(file) ? file : null;
 }
 
-// platforms we support. pinterest gets extra love for all those country TLDs
 const PLATFORM_PATTERNS = [
   { name: "tiktok", re: /tiktok\.com/i },
   { name: "instagram", re: /instagram\.com/i },
@@ -103,7 +103,6 @@ function baseOptions(platform) {
     ffmpegLocation: ffmpegStaticPath,
     retries: 5,
     socketTimeout: 45,
-
     concurrentFragments: 8,
   };
   const cookies = cookiesFor(platform);
@@ -111,8 +110,6 @@ function baseOptions(platform) {
   return opts;
 }
 
-// different platforms need different approaches. pinterest is fussy so it gets
-// extra strategies with different user agents.
 function getStrategies(platform) {
   const base = baseOptions(platform);
 
@@ -164,30 +161,48 @@ function getStrategies(platform) {
         },
       ];
     case "pinterest":
+      // Pinterest needs multiple strategies because some pins are public,
+      // some need auth, some are videos, some are images.
       return [
+        // Strategy 1: With cookies, desktop UA - best for authenticated content
         {
           ...base,
           extractorArgs: "pinterest:include_ads=false",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
-            Accept: "application/json, text/plain, */*",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            Accept_Language: "en-US,en;q=0.9",
             Referer: "https://www.pinterest.com/",
           },
         },
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Referer: "https://www.pinterest.com/",
-          },
-        },
+        // Strategy 2: With cookies, mobile UA - sometimes mobile works better
         {
           ...base,
           extractorArgs: "pinterest:include_ads=false",
           addHeaders: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "User-Agent": ANDROID_UA,
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             Referer: "https://www.pinterest.com/",
+          },
+        },
+        // Strategy 3: Without cookies, desktop UA - for public pins
+        {
+          ...base,
+          cookies: undefined,
+          extractorArgs: "pinterest:include_ads=false",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            Referer: "https://www.pinterest.com/",
+          },
+        },
+        // Strategy 4: Generic extractor - last resort
+        {
+          ...base,
+          extractorArgs: "generic",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
         },
       ];
@@ -255,7 +270,6 @@ async function resolveWithStrategies(url, platform, isUsable) {
   throw lastErr || new Error("All extraction strategies failed");
 }
 
-// pulls real progress from yt-dlp's stdout instead of guessing
 function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -350,34 +364,41 @@ function downloadFile(url, filePath, redirects = 0) {
   });
 }
 
-// turns cryptic yt-dlp errors into something a human can actually understand.
-// pinterest and snapchat get their own messages now.
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
-  // pinterest being pinterest
+  // pinterest specific
   if (s.includes("pinterest") && (s.includes("login") || s.includes("sign in"))) {
-    return "This Pinterest post requires authentication. The pin may be private or from a private board.";
+    return "This Pinterest pin is private or from a private board. Try a different pin.";
   }
   if (s.includes("pinterest") && s.includes("not found")) {
     return "This Pinterest pin doesn't exist or has been removed.";
   }
   if (s.includes("pinterest") && s.includes("rate limit")) {
-    return "Pinterest is rate limiting. Please wait a few moments and try again.";
+    return "Pinterest is rate limiting. Wait a bit and try again.";
+  }
+  if (s.includes("pinterest") && s.includes("403")) {
+    return "Pinterest is blocking this request. Try a different pin or wait a moment.";
+  }
+  if (s.includes("pinterest") && s.includes("no video") && !s.includes("image")) {
+    return "This Pinterest pin is an image, not a video. Use the image download option.";
+  }
+  if (s.includes("pinterest") && s.includes("unavailable")) {
+    return "This Pinterest pin is unavailable or has been deleted.";
   }
 
-  // snapchat things
+  // snapchat specific
   if (s.includes("snapchat") && s.includes("private")) {
-    return "This Snapchat post is private. Only public Spotlight or Story links can be accessed.";
+    return "This Snapchat post is private. Only public Spotlight or Story links work.";
   }
   if (s.includes("snapchat") && s.includes("expired")) {
-    return "This Snapchat link has expired. Snapchat stories typically expire after 24 hours.";
+    return "This Snapchat link has expired. Stories expire after 24 hours.";
   }
   if (s.includes("snapchat") && s.includes("not found")) {
     return "This Snapchat post doesn't exist or has been removed.";
   }
 
-  // the usual suspects
+  // general errors
   if (
     s.includes("geo") ||
     s.includes("not available in your country") ||
@@ -423,8 +444,6 @@ function friendlyError(stderr = "") {
   return "Couldn't resolve this link. It may have been deleted, made private, or the platform is temporarily blocking automated access.";
 }
 
-// extracts all the actual media URLs from whatever yt-dlp spat out.
-// snapchat and pinterest have weird formats so we handle those specially.
 function extractMediaUrls(info) {
   const media = {
     images: [],
@@ -452,11 +471,33 @@ function extractMediaUrls(info) {
       }
     }
 
+    // Pinterest often puts everything in the main node
+    if (node.url && node.ext) {
+      const ext = node.ext.toLowerCase();
+      if (["mp4", "mov", "webm", "mkv"].includes(ext)) {
+        media.videos.push({
+          url: node.url,
+          format: ext,
+          quality: node.format_note || "Unknown",
+          width: node.width || null,
+          height: node.height || null,
+        });
+        media.hasVideo = true;
+      } else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
+        media.images.push({
+          url: node.url,
+          format: ext,
+          width: node.width || null,
+          height: node.height || null,
+        });
+        media.hasImage = true;
+      }
+    }
+
     if (Array.isArray(node.formats)) {
       for (const format of node.formats) {
         if (!format.url) continue;
 
-        // snapchat sometimes marks videos as mp4 with vcodec "none" - still a video
         const isVideoFormat = format.vcodec && format.vcodec !== "none";
         const isVideoExt = format.ext && ["mp4", "mov", "webm", "mkv", "avi", "3gp"].includes(format.ext.toLowerCase());
         const hasVideoQuality = format.format_note && /(h264|h265|video|1080|720|480|360|240)/i.test(format.format_note);
@@ -485,7 +526,6 @@ function extractMediaUrls(info) {
           });
         }
 
-        // pinterest puts images in weird places too
         const isImageExt = format.ext &&
           ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "tiff"].includes(
             format.ext.toLowerCase()
@@ -504,30 +544,7 @@ function extractMediaUrls(info) {
       }
     }
 
-    // pinterest sometimes puts images right on the node
-    if (node.url && (
-      node.ext === "jpg" ||
-      node.ext === "jpeg" ||
-      node.ext === "png" ||
-      node.ext === "webp"
-    )) {
-      media.images.push({ url: node.url, format: node.ext });
-      media.hasImage = true;
-    }
-
-    // snapchat video on the node
-    if (node.url && node.ext === "mp4" && !node.vcodec) {
-      media.videos.push({
-        url: node.url,
-        format: "mp4",
-        quality: "Unknown",
-        width: node.width || null,
-        height: node.height || null,
-      });
-      media.hasVideo = true;
-    }
-
-    // pinterest responses sometimes have formats as an object instead of array
+    // Pinterest specific: formats can be an object
     if (node.formats && !Array.isArray(node.formats) && typeof node.formats === 'object') {
       const formatValues = Object.values(node.formats);
       for (const format of formatValues) {
@@ -554,6 +571,25 @@ function extractMediaUrls(info) {
             media.hasImage = true;
           }
         }
+      }
+    }
+
+    // Pinterest specific: check for _type "url" with direct media
+    if (node._type === "url" && node.url) {
+      const url = node.url;
+      if (/\.(mp4|mov|webm)(\?|$)/i.test(url)) {
+        media.videos.push({
+          url: url,
+          format: "mp4",
+          quality: "Unknown",
+        });
+        media.hasVideo = true;
+      } else if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(url)) {
+        media.images.push({
+          url: url,
+          format: "jpg",
+        });
+        media.hasImage = true;
       }
     }
   }
@@ -587,18 +623,33 @@ function extractMediaUrls(info) {
   return media;
 }
 
-// snapchat videos don't always get detected properly, so we check for
-// mp4 extensions and video-related format notes explicitly
 function isUsableInfo(info) {
   if (!info) return false;
   const media = extractMediaUrls(info);
 
+  // snapchat video detection
   if (info.formats && Array.isArray(info.formats)) {
     const hasSnapchatVideo = info.formats.some(f =>
       (f.ext && f.ext.toLowerCase() === 'mp4') ||
       (f.format_note && /(video|story|snap)/i.test(f.format_note))
     );
     if (hasSnapchatVideo) return true;
+  }
+
+  // pinterest: check for direct media URLs
+  if (info.url && info.ext) {
+    const ext = info.ext.toLowerCase();
+    if (["mp4", "mov", "webm", "mkv", "jpg", "jpeg", "png", "webp"].includes(ext)) {
+      return true;
+    }
+  }
+
+  // check for _type url with media extension
+  if (info._type === "url" && info.url) {
+    const url = info.url.toLowerCase();
+    if (/\.(mp4|mov|webm|jpg|jpeg|png|webp)(\?|$)/i.test(url)) {
+      return true;
+    }
   }
 
   return media.hasVideo || media.hasImage || media.audio.length > 0;

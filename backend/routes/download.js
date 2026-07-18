@@ -41,8 +41,6 @@ function updateYtDlpBinary() {
 setTimeout(updateYtDlpBinary, 5000);
 setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
-// cookies on render are read-only, yt-dlp tries to write back to them
-// and crashes. so we copy 'em to tmp and use that instead.
 const COOKIE_SOURCE_FILES = {
   tiktok: process.env.TIKTOK_COOKIES_FILE,
   instagram: process.env.INSTAGRAM_COOKIES_FILE,
@@ -161,10 +159,9 @@ function getStrategies(platform) {
         },
       ];
     case "pinterest":
-      // Pinterest needs multiple strategies because some pins are public,
-      // some need auth, some are videos, some are images.
+      // Pinterest is aggressively blocking. Try everything.
       return [
-        // Strategy 1: With cookies, desktop UA - best for authenticated content
+        // Try with cookies first
         {
           ...base,
           extractorArgs: "pinterest:include_ads=false",
@@ -173,19 +170,10 @@ function getStrategies(platform) {
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             Accept_Language: "en-US,en;q=0.9",
             Referer: "https://www.pinterest.com/",
+            "Cache-Control": "no-cache",
           },
         },
-        // Strategy 2: With cookies, mobile UA - sometimes mobile works better
-        {
-          ...base,
-          extractorArgs: "pinterest:include_ads=false",
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            Referer: "https://www.pinterest.com/",
-          },
-        },
-        // Strategy 3: Without cookies, desktop UA - for public pins
+        // Try without cookies
         {
           ...base,
           cookies: undefined,
@@ -196,12 +184,33 @@ function getStrategies(platform) {
             Referer: "https://www.pinterest.com/",
           },
         },
-        // Strategy 4: Generic extractor - last resort
+        // Try the generic extractor with cookies
         {
           ...base,
           extractorArgs: "generic",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            Referer: "https://www.pinterest.com/",
+          },
+        },
+        // Try generic without cookies
+        {
+          ...base,
+          cookies: undefined,
+          extractorArgs: "generic",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          },
+        },
+        // Try with a different user agent
+        {
+          ...base,
+          cookies: undefined,
+          extractorArgs: "generic",
+          addHeaders: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
         },
@@ -253,18 +262,21 @@ async function resolveWithStrategies(url, platform, isUsable) {
       ...strategies[i],
     };
     try {
+      console.log(`[seize] Trying strategy ${i + 1}/${strategies.length} for ${platform}...`);
       const info = await ytDlp(url, options, { timeout: 60000 });
       if (!isUsable || isUsable(info)) {
+        console.log(`[seize] Strategy ${i + 1} succeeded!`);
         return { info, strategyIndex: i };
       }
       lastErr = new Error("Strategy returned no usable media");
     } catch (err) {
       lastErr = err;
       const msg = (err.stderr || err.message || "").toLowerCase();
+      console.log(`[seize] Strategy ${i + 1} failed:`, msg.slice(0, 100));
       if (msg.includes("429") || msg.includes("rate limit")) throw err;
     }
     if (i < strategies.length - 1) {
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 500));
     }
   }
   throw lastErr || new Error("All extraction strategies failed");
@@ -369,22 +381,28 @@ function friendlyError(stderr = "") {
 
   // pinterest specific
   if (s.includes("pinterest") && (s.includes("login") || s.includes("sign in"))) {
-    return "This Pinterest pin is private or from a private board. Try a different pin.";
+    return "Pinterest is asking for login. Try a public pin or make sure your cookies are valid.";
   }
   if (s.includes("pinterest") && s.includes("not found")) {
     return "This Pinterest pin doesn't exist or has been removed.";
   }
   if (s.includes("pinterest") && s.includes("rate limit")) {
-    return "Pinterest is rate limiting. Wait a bit and try again.";
+    return "Pinterest is rate limiting. Wait a few minutes and try again.";
   }
   if (s.includes("pinterest") && s.includes("403")) {
-    return "Pinterest is blocking this request. Try a different pin or wait a moment.";
+    return "Pinterest is blocking this request. Try: 1) A different pin 2) Wait a few minutes 3) Update your Pinterest cookies";
+  }
+  if (s.includes("pinterest") && s.includes("blocked")) {
+    return "Pinterest has blocked this request. Try again in a few minutes.";
   }
   if (s.includes("pinterest") && s.includes("no video") && !s.includes("image")) {
     return "This Pinterest pin is an image, not a video. Use the image download option.";
   }
   if (s.includes("pinterest") && s.includes("unavailable")) {
     return "This Pinterest pin is unavailable or has been deleted.";
+  }
+  if (s.includes("pinterest") && s.includes("timed out")) {
+    return "Pinterest timed out. The site might be slow or your connection is unstable.";
   }
 
   // snapchat specific
@@ -471,7 +489,7 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Pinterest often puts everything in the main node
+    // Check main node for direct media
     if (node.url && node.ext) {
       const ext = node.ext.toLowerCase();
       if (["mp4", "mov", "webm", "mkv"].includes(ext)) {
@@ -492,6 +510,11 @@ function extractMediaUrls(info) {
         });
         media.hasImage = true;
       }
+    }
+
+    // Check for webpage_url which Pinterest sometimes uses
+    if (node.webpage_url && !media.thumbnail) {
+      media.thumbnail = node.webpage_url;
     }
 
     if (Array.isArray(node.formats)) {
@@ -544,7 +567,7 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Pinterest specific: formats can be an object
+    // Pinterest specific: formats as object
     if (node.formats && !Array.isArray(node.formats) && typeof node.formats === 'object') {
       const formatValues = Object.values(node.formats);
       for (const format of formatValues) {
@@ -574,7 +597,7 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Pinterest specific: check for _type "url" with direct media
+    // Pinterest specific: _type "url"
     if (node._type === "url" && node.url) {
       const url = node.url;
       if (/\.(mp4|mov|webm)(\?|$)/i.test(url)) {
@@ -590,6 +613,19 @@ function extractMediaUrls(info) {
           format: "jpg",
         });
         media.hasImage = true;
+      }
+    }
+
+    // Check for embedded video in description or other fields
+    if (node.description) {
+      const videoMatch = node.description.match(/https?:\/\/[^\s]+\.(mp4|mov|webm)[^\s]*/i);
+      if (videoMatch) {
+        media.videos.push({
+          url: videoMatch[0],
+          format: "mp4",
+          quality: "Unknown",
+        });
+        media.hasVideo = true;
       }
     }
   }
@@ -644,10 +680,17 @@ function isUsableInfo(info) {
     }
   }
 
-  // check for _type url with media extension
+  // check for _type url
   if (info._type === "url" && info.url) {
     const url = info.url.toLowerCase();
     if (/\.(mp4|mov|webm|jpg|jpeg|png|webp)(\?|$)/i.test(url)) {
+      return true;
+    }
+  }
+
+  // check for embedded video in description
+  if (info.description) {
+    if (/https?:\/\/[^\s]+\.(mp4|mov|webm)[^\s]*/i.test(info.description)) {
       return true;
     }
   }
@@ -690,9 +733,28 @@ router.post("/resolve", async (req, res) => {
     }
   }
 
+  // For Pinterest, expand pin.it shortlinks
+  let finalUrl = url;
+  if (platform === "pinterest" && url.includes("pin.it")) {
+    try {
+      console.log("[seize] Expanding pin.it shortlink...");
+      const response = await fetch(url, {
+        method: "HEAD",
+        headers: { "User-Agent": DESKTOP_UA },
+        redirect: "manual"
+      });
+      if (response.headers.get("location")) {
+        finalUrl = response.headers.get("location");
+        console.log("[seize] Expanded to:", finalUrl);
+      }
+    } catch (e) {
+      console.log("[seize] Could not expand shortlink, using original");
+    }
+  }
+
   try {
     console.log(`[seize] Resolving ${platform}...`);
-    const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
+    const { info } = await resolveWithStrategies(finalUrl, platform, isUsableInfo);
 
     const media = extractMediaUrls(info);
 
@@ -704,6 +766,10 @@ router.post("/resolve", async (req, res) => {
       if (["Untitled", "Twitter", "Twitter/X Post"].includes(title)) {
         title = "Twitter/X Post";
       }
+    }
+    if (platform === "pinterest") {
+      title = info.title || info.description || "Pinterest Pin";
+      if (title.length > 100) title = title.substring(0, 100) + "...";
     }
 
     let uploader =
@@ -776,7 +842,7 @@ router.post("/fetch", async (req, res) => {
   res.json({ jobId });
 
   try {
-    // image mode - just grab the highest res image
+    // image mode
     if (mode === "image") {
       const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
       const media = extractMediaUrls(info);

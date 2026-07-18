@@ -1,11 +1,7 @@
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
-// ===== Pending-file persistence (survives the mobile PWA reload) =====
-// android chrome loves to nuke the whole page while the native file
-// picker is open (memory reclaim thing), so when you come back the
-// File you picked is just... gone. can't be helped, file inputs never
-// survive a reload. workaround: stash the blob in indexedDB the second
-// it's picked, then check for it on load and rebuild everything.
+// android chrome kills the page when file picker opens.
+// stash the blob in indexedDB so we can rebuild it on reload.
 const IDB_NAME = "seize-pending";
 const IDB_STORE = "files";
 const QUEUE_STORE = "offline-queue";
@@ -67,14 +63,11 @@ async function clearPendingFile() {
     const tx = db.transaction(IDB_STORE, "readwrite");
     tx.objectStore(IDB_STORE).delete("convert");
   } catch {
-    /* ignore */
+    // shrug
   }
 }
 
-// ===== Offline request queue =====
-// no signal? no problem. stash the request (blob included for converts)
-// and fire it off in order once we're back online instead of just
-// letting it fail.
+// offline? stash the request. come back online? fire it off.
 async function addToOfflineQueue(item) {
   try {
     const db = await openPendingDB();
@@ -109,7 +102,7 @@ async function removeFromOfflineQueue(id) {
     const tx = db.transaction(QUEUE_STORE, "readwrite");
     tx.objectStore(QUEUE_STORE).delete(id);
   } catch {
-    /* ignore */
+    // whatever
   }
 }
 
@@ -177,7 +170,6 @@ async function processOfflineQueue() {
       await removeFromOfflineQueue(item.id);
     } catch (err) {
       console.warn("[seize] Offline queue item failed, will retry later:", err);
-      // leave it in the queue, next 'online' event will retry
       break;
     }
   }
@@ -208,6 +200,10 @@ window.addEventListener("online", () => {
 });
 window.addEventListener("offline", () => updateOfflineBanner());
 
+// ============================================================
+// SAVE TO DEVICE - actually saves to phone storage
+// ============================================================
+
 async function saveMediaToDevice(fileUrl, suggestedName) {
   let blob;
   try {
@@ -216,57 +212,190 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     blob = await res.blob();
   } catch (err) {
     console.error("[seize] Failed to fetch file for saving:", err);
-    window.location.href = fileUrl; // last-resort fallback
+    window.open(fileUrl, "_blank");
     return;
   }
 
-  const file = new File([blob], suggestedName, {
-    type: blob.type || "application/octet-stream",
-  });
+  const ext = suggestedName.split(".").pop() || "mp4";
+  const mimeTypes = {
+    mp4: "video/mp4",
+    mp3: "audio/mpeg",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
+    mov: "video/quicktime",
+    webm: "video/webm",
+    wav: "audio/wav",
+    aac: "audio/aac",
+    flac: "audio/flac",
+    ogg: "audio/ogg",
+    m4a: "audio/mp4",
+  };
+  const mimeType = mimeTypes[ext] || blob.type || "application/octet-stream";
+  const file = new File([blob], suggestedName, { type: mimeType });
 
+  // try native share first - on android this saves to downloads
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
+      console.log("[seize] File saved via native share");
       return;
     } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled — not a failure
-      console.warn(
-        "[seize] Native share failed, falling back to direct download:",
-        err,
-      );
+      if (err && err.name === "AbortError") {
+        console.log("[seize] User cancelled");
+        return;
+      }
+      console.warn("[seize] Native share failed:", err);
     }
   }
 
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = blobUrl;
-  a.download = suggestedName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  // anchor download - works on most browsers
+  try {
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = suggestedName;
+    a.target = "_blank";
+    document.body.appendChild(a);
+
+    const isIOS =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    a.click();
+    setTimeout(
+      () => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      },
+      isIOS ? 1000 : 5000,
+    );
+
+    console.log("[seize] Download triggered");
+    return;
+  } catch (err) {
+    console.warn("[seize] Anchor download failed:", err);
+  }
+
+  // file system access api - modern browsers
+  try {
+    if ("showSaveFilePicker" in window) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggestedName,
+        types: [
+          {
+            description: ext.toUpperCase() + " File",
+            accept: { [mimeType]: ["." + ext] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      console.log("[seize] File saved via File System API");
+      return;
+    }
+  } catch (err) {
+    if (err.name === "AbortError") {
+      console.log("[seize] User cancelled");
+      return;
+    }
+    console.warn("[seize] File System API failed:", err);
+  }
+
+  // last resort - open in new tab, let user save manually
+  console.warn("[seize] All strategies failed, opening in new tab");
+  if (blob.type.startsWith("image/")) {
+    const imgUrl = URL.createObjectURL(blob);
+    const win = window.open("");
+    if (win) {
+      win.document.write(
+        `<img src="${imgUrl}" style="max-width:100%;height:auto;" />`,
+      );
+      win.document.title = suggestedName;
+    } else {
+      window.open(fileUrl, "_blank");
+    }
+  } else {
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, "_blank");
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  }
 }
 
+// ============================================================
+// SAVE BUTTON
+// ============================================================
 function showSaveButton(container, fileUrl, suggestedName) {
   const existing = container.querySelector(".seize-save-btn");
   if (existing) existing.remove();
+
+  const wrapper = document.createElement("div");
+  wrapper.style.cssText = "margin-top: 16px;";
 
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn-primary full-width seize-save-btn";
   btn.textContent = "📲 Save to device";
+
+  let isDownloading = false;
+
   btn.addEventListener("click", async () => {
+    if (isDownloading) return;
+    isDownloading = true;
+
+    const originalText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = "Saving…";
-    await saveMediaToDevice(fileUrl, suggestedName);
-    btn.textContent = "✅ Done — tap to save again";
-    btn.disabled = false;
+    btn.textContent = "⏳ Saving...";
+    btn.style.opacity = "0.7";
+
+    try {
+      await saveMediaToDevice(fileUrl, suggestedName);
+      btn.textContent = "✅ Saved!";
+      btn.style.background = "#2d8f5a";
+      btn.style.borderColor = "#2d8f5a";
+
+      setTimeout(() => {
+        btn.textContent = "📲 Save again";
+        btn.style.background = "";
+        btn.style.borderColor = "";
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        isDownloading = false;
+      }, 3000);
+    } catch (err) {
+      console.error("[seize] Save failed:", err);
+      btn.textContent = "❌ Failed - tap to retry";
+      btn.style.background = "#6b1a1a";
+      btn.style.borderColor = "#6b1a1a";
+
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.background = "";
+        btn.style.borderColor = "";
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        isDownloading = false;
+      }, 3000);
+    }
   });
-  container.appendChild(btn);
+
+  wrapper.appendChild(btn);
+
+  const note = document.createElement("p");
+  note.className = "mono small";
+  note.style.cssText =
+    "color: var(--muted); margin-top: 8px; font-size: 0.7rem; text-align: center;";
+  note.textContent =
+    "💡 On mobile, your browser may ask where to save. Check your Downloads folder.";
+  wrapper.appendChild(note);
+
+  container.appendChild(wrapper);
 }
 
-// title/artist/album come back from an external recognition API — always
-// set via textContent, never innerHTML, since this is untrusted input.
+// ============================================================
+// SONG ID - tags from external API
+// ============================================================
 function showRecognizedTrack(track, container) {
   const target = container || convertProgress.parentElement;
   const existing = target.querySelector(".recognized-track");
@@ -294,7 +423,9 @@ function showRecognizedTrack(track, container) {
   target.appendChild(card);
 }
 
-// ===== History (local to this device only) =====
+// ============================================================
+// HISTORY - local only
+// ============================================================
 const HISTORY_KEY = "seize_history";
 const MAX_HISTORY_ITEMS = 50;
 
@@ -311,7 +442,7 @@ function saveHistoryList(list) {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
   } catch (err) {
-    console.warn("[seize] Could not save history (storage may be full):", err);
+    console.warn("[seize] Could not save history:", err);
   }
 }
 
@@ -433,7 +564,9 @@ document.getElementById("clear-history-btn")?.addEventListener("click", () => {
 
 renderHistory();
 
-// ===== Thumbnail Helper =====
+// ============================================================
+// THUMBNAIL HELPER
+// ============================================================
 function loadThumbnail(url, imgElement) {
   if (!url) {
     imgElement.src = "";
@@ -473,7 +606,9 @@ function loadThumbnail(url, imgElement) {
   };
 }
 
-// ===== Oscilloscope =====
+// ============================================================
+// OSCILLOSCOPE - just for vibes
+// ============================================================
 const scopeTrace = document.getElementById("scope-trace");
 const scopeFreq = document.getElementById("scope-freq");
 const scopeMode = document.getElementById("scope-mode");
@@ -520,12 +655,15 @@ function setScopeState(state) {
   }
 }
 
-// ===== Mode Switch =====
+// ============================================================
+// MODE SWITCH
+// ============================================================
 const modeButtons = document.querySelectorAll(".mode-btn");
 const panels = {
   capture: document.getElementById("panel-capture"),
   convert: document.getElementById("panel-convert"),
   history: document.getElementById("panel-history"),
+  archive: document.getElementById("panel-archive"),
 };
 
 modeButtons.forEach((btn) => {
@@ -549,7 +687,9 @@ if (savedTab && panels[savedTab]) {
   document.querySelector(`[data-mode="${savedTab}"]`)?.click();
 }
 
-// ===== Capture Panel =====
+// ============================================================
+// CAPTURE PANEL
+// ============================================================
 const urlInput = document.getElementById("url-input");
 const pasteBtn = document.getElementById("paste-btn");
 const captureForm = document.getElementById("capture-form");
@@ -826,11 +966,9 @@ function pollJob(statusUrl, fillEl, labelEl) {
   });
 }
 
-// ===== Shareable collections =====
-// A small client-side "basket" of resolved items, bundled into a public
-// gallery link on demand. Items store the original source URL (not a
-// platform CDN link) — see db.js for why that matters: CDN media URLs
-// expire, source page URLs don't.
+// ============================================================
+// COLLECTIONS - shareable galleries
+// ============================================================
 const COLLECTION_BASKET_KEY = "seize_collection_basket";
 const collectionBasketEl = document.getElementById("collection-basket");
 const collectionBasketCountEl = document.getElementById(
@@ -852,7 +990,7 @@ function saveCollectionBasket(items) {
   try {
     sessionStorage.setItem(COLLECTION_BASKET_KEY, JSON.stringify(items));
   } catch {
-    /* ignore — sessionStorage can throw in some private-browsing modes */
+    // shrug
   }
 }
 
@@ -910,10 +1048,6 @@ collectionCreateBtn?.addEventListener("click", async () => {
 
     const shareUrl = `${window.location.origin}/?c=${data.id}`;
 
-    // remember collections this device created, so "delete" is possible
-    // later without needing an account — the ownerToken is the only
-    // credential, keep it local only, never send it anywhere but the
-    // delete endpoint.
     const mine = JSON.parse(
       localStorage.getItem("seize_my_collections") || "[]",
     );
@@ -979,7 +1113,9 @@ function showShareLinkResult(shareUrl) {
 
 renderCollectionBasket();
 
-// ---- Public gallery view (?c=<id>) ----
+// ============================================================
+// PUBLIC GALLERY VIEW (?c=<id>)
+// ============================================================
 const panelCollectionView = document.getElementById("panel-collection-view");
 const collectionGrid = document.getElementById("collection-grid");
 const collectionViewName = document.getElementById("collection-view-name");
@@ -1008,7 +1144,7 @@ function renderCollectionItem(item) {
 
   const title = document.createElement("p");
   title.className = "collection-item-title";
-  title.textContent = item.title || "Untitled"; // textContent only — untrusted external data
+  title.textContent = item.title || "Untitled";
   meta.appendChild(title);
 
   const platform = document.createElement("p");
@@ -1021,8 +1157,6 @@ function renderCollectionItem(item) {
   openBtn.className = "btn-secondary";
   openBtn.textContent = "Open in seize →";
   openBtn.addEventListener("click", () => {
-    // re-resolve fresh through the normal capture flow, rather than
-    // trusting a possibly stale stored media link
     window.location.href = `/?resolve=${encodeURIComponent(item.sourceUrl)}`;
   });
   meta.appendChild(openBtn);
@@ -1067,7 +1201,6 @@ async function loadCollectionView(id) {
     return;
   }
 
-  // came from a collection item's "Open in seize" button
   const resolveUrl = params.get("resolve");
   if (resolveUrl) {
     window.addEventListener("load", () => {
@@ -1078,9 +1211,9 @@ async function loadCollectionView(id) {
   }
 })();
 
-// ===== Batch / Queue mode =====
-// paste a bunch of links at once (one per line) and they queue up +
-// download one by one instead of forcing one-at-a-time
+// ============================================================
+// BATCH QUEUE
+// ============================================================
 const LINK_TOKEN_RE = /https?:\/\/[^\s]+/g;
 const queueBlock = document.getElementById("queue-block");
 const queueList = document.getElementById("queue-list");
@@ -1150,7 +1283,7 @@ function renderQueue() {
 
 function addLinksToQueue(links) {
   links.forEach((url) => {
-    if (batchQueue.some((q) => q.url === url)) return; // no dupes
+    if (batchQueue.some((q) => q.url === url)) return;
     batchQueue.push({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       url,
@@ -1256,7 +1389,9 @@ queueStartBtn.addEventListener("click", async () => {
   );
 });
 
-// ===== Convert Panel =====
+// ============================================================
+// CONVERT PANEL
+// ============================================================
 const convertTabs = document.querySelectorAll(".convert-tab");
 const dropzone = document.getElementById("dropzone");
 const dropzoneEmpty = document.getElementById("dropzone-empty");
@@ -1264,7 +1399,9 @@ const dropzonePreview = document.getElementById("dropzone-preview");
 const dropzonePreviewIcon = document.getElementById("dropzone-preview-icon");
 const dropzonePreviewName = document.getElementById("dropzone-preview-name");
 const dropzonePreviewSize = document.getElementById("dropzone-preview-size");
-const dropzonePreviewRemove = document.getElementById("dropzone-preview-remove");
+const dropzonePreviewRemove = document.getElementById(
+  "dropzone-preview-remove",
+);
 const dropzoneLabel = document.getElementById("dropzone-label");
 const dropzoneHint = document.getElementById("dropzone-hint");
 const fileInput = document.getElementById("file-input");
@@ -1280,8 +1417,7 @@ const convertRestoreBanner = document.getElementById("convert-restore-banner");
 let convertTarget = "v2a";
 let selectedFile = null;
 
-// remembers whatever format you last converted to, defaults to it next
-// time so you're not re-picking mp3 every single run
+// remembers your last format choice so you don't have to re-pick every time
 const LAST_FORMAT_KEY = "seize_last_format";
 function lastUsedFormat(setValue, isSave) {
   if (isSave) {
@@ -1324,20 +1460,13 @@ convertTabs.forEach((tab) => {
 
 fileInput.addEventListener("click", (e) => e.stopPropagation());
 
-// dropzone is a plain <div role="button">, not a <label for="file-input">.
-// There's no native forwarding behavior to fight here — this is the ONLY
-// thing that opens the picker, so there's no risk of a double-dispatch
-// (label click -> forwarded input click -> our handler -> fileInput.click()
-// -> input click bubbles back up) which is a classic source of mobile
-// browsers opening the picker twice or getting confused about the source
-// of the "click".
+// dropzone click opens the file picker
 dropzone.addEventListener("click", function (e) {
   e.preventDefault();
   e.stopPropagation();
   fileInput.click();
 });
 
-// keyboard support since this is a div, not a real button/label
 dropzone.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
@@ -1365,9 +1494,6 @@ function applySelectedFile(file, opts = {}) {
   convertBtn.disabled = false;
   dropzone.classList.add("has-file");
 
-  // Show the real preview inside the container immediately — this is the
-  // visible proof the state actually updated, which is exactly the thing
-  // that was failing to render before a mobile reload wiped it out.
   dropzoneEmpty.classList.add("hidden");
   dropzonePreview.classList.remove("hidden");
   dropzonePreviewIcon.textContent = fileTypeIcon(file);
@@ -1375,12 +1501,6 @@ function applySelectedFile(file, opts = {}) {
   dropzonePreviewSize.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
 
   if (!opts.skipPersist) {
-    // Synchronous flag FIRST — sessionStorage writes are synchronous, so
-    // this lands even if the tab gets frozen/killed a moment later, before
-    // the async IndexedDB blob write below has a chance to finish. On
-    // reload we can tell "a file was picked but we lost the bytes" apart
-    // from "nothing was ever picked" and message the user accordingly
-    // instead of silently doing nothing.
     try {
       sessionStorage.setItem(
         "seize_pending_flag",
@@ -1392,14 +1512,13 @@ function applySelectedFile(file, opts = {}) {
         }),
       );
     } catch {
-      /* ignore, sessionStorage can throw in some private-browsing modes */
+      // shrug
     }
     savePendingFile(file, { target: convertTarget }).then(() => {
-      // blob safely in IndexedDB — the flag has done its job
       try {
         sessionStorage.removeItem("seize_pending_flag");
       } catch {
-        /* ignore */
+        // shrug
       }
     });
   }
@@ -1416,12 +1535,12 @@ function clearSelectedFile() {
   try {
     sessionStorage.removeItem("seize_pending_flag");
   } catch {
-    /* ignore */
+    // shrug
   }
 }
 
 dropzonePreviewRemove.addEventListener("click", (e) => {
-  e.stopPropagation(); // don't let this bubble to the dropzone and reopen the picker
+  e.stopPropagation();
   clearSelectedFile();
 });
 
@@ -1450,8 +1569,6 @@ function showRestoreBanner(text) {
   const pending = await loadPendingFile();
 
   if (pending && pending.blob) {
-    // Happy path: the file survived (either no reload happened, or the
-    // IndexedDB write won the race against the OS killing the tab).
     const file = new File([pending.blob], pending.name, { type: pending.type });
 
     if (pending.target && pending.target !== convertTarget) {
@@ -1466,17 +1583,11 @@ function showRestoreBanner(text) {
     try {
       sessionStorage.removeItem("seize_pending_flag");
     } catch {
-      /* ignore */
+      // shrug
     }
     return;
   }
 
-  // No file recovered. Check whether one was actually mid-pick when this
-  // page loaded — if the flag is here but no blob made it into IndexedDB,
-  // the tab was killed by the OS before the async write finished (this is
-  // the real, unavoidable-at-the-JS-level mobile memory-reclaim case).
-  // Tell the person plainly what happened instead of leaving them staring
-  // at an empty dropzone with no explanation.
   let flag = null;
   try {
     flag = JSON.parse(sessionStorage.getItem("seize_pending_flag") || "null");
@@ -1495,20 +1606,16 @@ function showRestoreBanner(text) {
     try {
       sessionStorage.removeItem("seize_pending_flag");
     } catch {
-      /* ignore */
+      // shrug
     }
   }
 })();
 
-// Best-effort early warning: if the tab is about to be frozen/hidden right
-// after a file was chosen but before the IndexedDB write resolves, at least
-// we tried to persist synchronously via sessionStorage already (see
-// applySelectedFile). There's nothing more JS can do once the OS actually
-// kills the process — this is a hard platform limitation, not a bug we can
-// "fix" away entirely, only work around.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && selectedFile) {
-    console.log("[seize] Tab hidden while a file is selected — persistence flag already written.");
+    console.log(
+      "[seize] Tab hidden while a file is selected — persistence flag already written.",
+    );
   }
 });
 
@@ -1605,7 +1712,10 @@ convertBtn.addEventListener("click", async (e) => {
         : "mp4";
     const fileUrl = `${API_BASE}/convert/download/${data.jobId}`;
 
-    if (statusData?.recognizedTrack?.title || statusData?.recognizedTrack?.artist) {
+    if (
+      statusData?.recognizedTrack?.title ||
+      statusData?.recognizedTrack?.artist
+    ) {
       showRecognizedTrack(statusData.recognizedTrack);
     }
 
@@ -1641,7 +1751,9 @@ convertBtn.addEventListener("click", async (e) => {
   }
 });
 
-// ===== Share Handler =====
+// ============================================================
+// SHARE HANDLER
+// ============================================================
 const sharedUrl = sessionStorage.getItem("seize_shared_url");
 const sharedMode = sessionStorage.getItem("seize_shared_mode");
 
@@ -1671,7 +1783,9 @@ if (sharedUrl) {
   });
 }
 
-// ===== File Share Handler =====
+// ============================================================
+// FILE SHARE HANDLER
+// ============================================================
 async function handleSharedFile(file) {
   const isVideo = file.type.startsWith("video/");
   const isAudio = file.type.startsWith("audio/");
@@ -1726,9 +1840,9 @@ window.addEventListener("load", () => {
   }
 });
 
-// ===== Clipboard auto-detect =====
-// check the clipboard when the app comes back to foreground, offer to
-// autofill if there's a link on it. saves a paste every time
+// ============================================================
+// CLIPBOARD AUTO-DETECT
+// ============================================================
 const CLIPBOARD_LINK_RE =
   /https?:\/\/[^\s]*(tiktok\.com|instagram\.com|twitter\.com|x\.com|pinterest\.com|pin\.it|snapchat\.com|facebook\.com|fb\.watch)[^\s]*/i;
 let lastClipboardSuggestion = "";
@@ -1736,11 +1850,6 @@ let lastClipboardSuggestion = "";
 async function checkClipboardForLink() {
   if (!navigator.clipboard || !navigator.clipboard.readText) return;
 
-  // Installed standalone PWAs on Android fire focus/visibilitychange
-  // events before document.hasFocus() actually flips true — readText()
-  // throws "Document is not focused" if called too early. A tab doesn't
-  // usually hit this race; a standalone window does. Retry briefly
-  // instead of giving up on the first tick.
   for (let attempt = 0; attempt < 4; attempt++) {
     if (document.hasFocus()) break;
     await new Promise((r) => setTimeout(r, 150));
@@ -1756,9 +1865,7 @@ async function checkClipboardForLink() {
     lastClipboardSuggestion = found;
     showClipboardSuggestion(found);
   } catch {
-    // Still no permission/focus after retrying — this is the case where
-    // standalone mode has no UI surface to grant clipboard access at all.
-    // The manual paste button (wired up below) is the reliable fallback.
+    // manual paste button is the fallback
   }
 }
 
@@ -1800,10 +1907,6 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", checkClipboardForLink);
 
-// Manual fallback: a real click is a genuine user gesture, so this works
-// reliably even in standalone/installed mode where the automatic
-// focus-based detection above can be permanently blocked (no address bar
-// = no surface for the browser to ever prompt for clipboard permission).
 pasteBtn?.addEventListener("click", async () => {
   if (!navigator.clipboard || !navigator.clipboard.readText) {
     showCaptureError("Clipboard access isn't supported in this browser.");
@@ -1828,10 +1931,9 @@ pasteBtn?.addEventListener("click", async () => {
   }
 });
 
-// ===== Local notifications on job completion =====
-// so you can background the app on a long convert instead of staring
-// at the progress bar. goes through the service worker so it fires
-// even if the tab got suspended
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
 let notificationPermissionAsked = false;
 
 async function ensureNotificationPermission() {
@@ -1850,7 +1952,6 @@ async function ensureNotificationPermission() {
 async function notifyJobDone(title, body) {
   const ok = await ensureNotificationPermission();
   if (!ok) return;
-  // only bug them if they've actually left the tab
   if (document.visibilityState === "visible") return;
   try {
     if (navigator.serviceWorker) {
@@ -1868,7 +1969,9 @@ async function notifyJobDone(title, body) {
   }
 }
 
-// ===== Install Button =====
+// ============================================================
+// INSTALL BUTTON
+// ============================================================
 const installBtn = document.getElementById("install-btn");
 let deferredPrompt;
 
@@ -1926,12 +2029,393 @@ if (isIOS() && !navigator.standalone) {
   installBtn.textContent = "📱 Install on iOS";
 }
 
-// ===== Service Worker =====
+// ============================================================
+// SERVICE WORKER
+// ============================================================
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+// ============================================================
+// ARCHIVE MODE
+// ============================================================
+const archiveInput = document.getElementById("archive-input");
+const archiveBtn = document.getElementById("archive-btn");
+const archiveMode = document.getElementById("archive-mode");
+const archiveLimit = document.getElementById("archive-limit");
+const archiveGrid = document.getElementById("archive-grid");
+const archiveProgress = document.getElementById("archive-progress");
+const archiveProgressFill = document.getElementById("archive-progress-fill");
+const archiveProgressLabel = document.getElementById("archive-progress-label");
+const archiveStatus = document.getElementById("archive-status");
+const archiveSelectAll = document.getElementById("archive-select-all");
+const archiveDownloadSelected = document.getElementById(
+  "archive-download-selected",
+);
+const archiveClear = document.getElementById("archive-clear");
+const archiveCount = document.getElementById("archive-count");
+
+let archiveItems = [];
+let selectedArchiveItems = new Set();
+let currentArchiveJobId = null;
+let archiveBatchId = null;
+
+document
+  .querySelector('[data-mode="archive"]')
+  ?.addEventListener("click", () => {
+    document.querySelector('[data-mode="archive"]').classList.add("active");
+    document
+      .getElementById("panel-archive")
+      .setAttribute("data-active", "true");
+  });
+
+archiveBtn?.addEventListener("click", async () => {
+  const url = archiveInput.value.trim();
+  if (!url) {
+    showArchiveError("Please enter a profile URL");
+    return;
+  }
+
+  const mode = archiveMode?.value || "all";
+  const limit = parseInt(archiveLimit?.value) || 50;
+
+  archiveBtn.disabled = true;
+  archiveBtn.textContent = "Scanning...";
+  archiveGrid.innerHTML = `<div class="archive-loading">🔍 Scanning profile...</div>`;
+  archiveProgress.classList.remove("hidden");
+  archiveProgressFill.style.width = "10%";
+  archiveProgressLabel.textContent = "Connecting...";
+  archiveStatus.classList.add("hidden");
+  document.getElementById("archive-error")?.classList.add("hidden");
+
+  try {
+    const res = await fetch(`${API_BASE}/download/profile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, mode, limit }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to scan profile");
+
+    currentArchiveJobId = data.jobId;
+    pollArchiveStatus(data.jobId);
+  } catch (err) {
+    showArchiveError(err.message);
+    archiveBtn.disabled = false;
+    archiveBtn.textContent = "🔍 Scan Profile";
+    archiveProgress.classList.add("hidden");
+    archiveGrid.innerHTML = `<div class="archive-empty">Something went wrong. Try again.</div>`;
+  }
+});
+
+function pollArchiveStatus(jobId) {
+  let attempts = 0;
+  const maxAttempts = 120;
+
+  const interval = setInterval(async () => {
+    attempts++;
+    try {
+      const res = await fetch(`${API_BASE}/download/profile/status/${jobId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      archiveProgressFill.style.width = `${data.progress || 0}%`;
+
+      if (data.progress < 100) {
+        archiveProgressLabel.textContent = `Scanning... ${data.progress || 0}%`;
+      }
+
+      if (data.status === "done") {
+        clearInterval(interval);
+        archiveItems = data.items || [];
+        renderArchiveGrid(archiveItems);
+        archiveProgress.classList.add("hidden");
+        archiveBtn.disabled = false;
+        archiveBtn.textContent = "🔍 Scan Profile";
+        archiveStatus.textContent = `📊 ${archiveItems.length} items found`;
+        archiveStatus.classList.remove("hidden");
+        updateArchiveCount();
+      } else if (data.status === "error") {
+        clearInterval(interval);
+        showArchiveError(data.error || "Scan failed");
+        archiveBtn.disabled = false;
+        archiveBtn.textContent = "🔍 Scan Profile";
+        archiveProgress.classList.add("hidden");
+        archiveGrid.innerHTML = `<div class="archive-empty">${data.error || "Failed to scan profile"}</div>`;
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        showArchiveError("Scan timed out. Try again.");
+        archiveBtn.disabled = false;
+        archiveBtn.textContent = "🔍 Scan Profile";
+        archiveProgress.classList.add("hidden");
+      }
+    } catch (err) {
+      clearInterval(interval);
+      showArchiveError(err.message);
+      archiveBtn.disabled = false;
+      archiveBtn.textContent = "🔍 Scan Profile";
+      archiveProgress.classList.add("hidden");
+    }
+  }, 1500);
+}
+
+function renderArchiveGrid(items) {
+  if (!items || items.length === 0) {
+    archiveGrid.innerHTML = `<div class="archive-empty">No items found in this profile.</div>`;
+    return;
+  }
+
+  let html = `<div class="archive-grid">`;
+  items.forEach((item, index) => {
+    const isSelected = selectedArchiveItems.has(index);
+    const thumbnail = item.thumbnail || "/icons/icon-192.png";
+    const typeIcon = item.hasVideo ? "🎬" : item.hasImage ? "🖼️" : "📄";
+    const duration = item.duration
+      ? `${Math.floor(item.duration / 60)}:${String(Math.floor(item.duration % 60)).padStart(2, "0")}`
+      : "";
+    const title = item.title || "Untitled";
+    const uploader = item.uploader || "";
+    const views = item.viewCount ? `${item.viewCount}` : "";
+
+    html += `
+      <div class="archive-item ${isSelected ? "selected" : ""}" data-index="${index}">
+        <div class="archive-item-checkbox">
+          <input type="checkbox" ${isSelected ? "checked" : ""} data-index="${index}" />
+        </div>
+        <img class="archive-item-thumb" src="${thumbnail}" alt="${title}" loading="lazy"
+             onerror="this.src='/icons/icon-192.png'" />
+        <div class="archive-item-overlay">
+          <span class="archive-item-type">${typeIcon}</span>
+          ${duration ? `<span class="archive-item-duration">${duration}</span>` : ""}
+        </div>
+        <div class="archive-item-info">
+          <p class="archive-item-title" title="${title}">${title}</p>
+          <p class="archive-item-meta">${uploader} ${views ? `· ${views} views` : ""}</p>
+        </div>
+        <div class="archive-item-status"></div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  archiveGrid.innerHTML = html;
+
+  document.querySelectorAll(".archive-item-checkbox input").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const index = parseInt(e.target.dataset.index);
+      if (e.target.checked) {
+        selectedArchiveItems.add(index);
+      } else {
+        selectedArchiveItems.delete(index);
+      }
+      updateArchiveSelectionUI();
+    });
+  });
+
+  document.querySelectorAll(".archive-item").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".archive-item-checkbox")) return;
+      const index = parseInt(el.dataset.index);
+      const cb = el.querySelector(".archive-item-checkbox input");
+      if (cb) {
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+      }
+    });
+  });
+
+  updateArchiveSelectionUI();
+}
+
+function updateArchiveSelectionUI() {
+  const count = selectedArchiveItems.size;
+  document.querySelectorAll(".archive-item").forEach((el) => {
+    const index = parseInt(el.dataset.index);
+    el.classList.toggle("selected", selectedArchiveItems.has(index));
+  });
+
+  if (archiveSelectAll) {
+    archiveSelectAll.checked =
+      selectedArchiveItems.size === archiveItems.length &&
+      archiveItems.length > 0;
+    archiveSelectAll.indeterminate =
+      selectedArchiveItems.size > 0 &&
+      selectedArchiveItems.size < archiveItems.length;
+  }
+
+  if (archiveDownloadSelected) {
+    archiveDownloadSelected.textContent = `📥 Download Selected (${count})`;
+    archiveDownloadSelected.disabled = count === 0;
+  }
+
+  updateArchiveCount();
+}
+
+function updateArchiveCount() {
+  if (archiveCount) {
+    archiveCount.textContent = `${archiveItems.length} items`;
+  }
+}
+
+archiveSelectAll?.addEventListener("change", (e) => {
+  if (e.target.checked) {
+    archiveItems.forEach((_, i) => selectedArchiveItems.add(i));
+  } else {
+    selectedArchiveItems.clear();
+  }
+  updateArchiveSelectionUI();
+  renderArchiveGrid(archiveItems);
+});
+
+archiveDownloadSelected?.addEventListener("click", async () => {
+  if (selectedArchiveItems.size === 0) return;
+
+  const items = Array.from(selectedArchiveItems).map((i) => archiveItems[i]);
+  archiveDownloadSelected.disabled = true;
+  archiveDownloadSelected.textContent = "⏳ Preparing...";
+
+  try {
+    const res = await fetch(`${API_BASE}/download/profile/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Batch download failed");
+
+    archiveBatchId = data.batchId;
+    pollBatchStatus(data.batchId);
+  } catch (err) {
+    showArchiveError(err.message);
+    archiveDownloadSelected.disabled = false;
+    archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
+  }
+});
+
+function pollBatchStatus(batchId) {
+  let attempts = 0;
+  const maxAttempts = 300;
+
+  const interval = setInterval(async () => {
+    attempts++;
+    try {
+      const res = await fetch(`${API_BASE}/download/batch/status/${batchId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      archiveProgress.classList.remove("hidden");
+      archiveProgressFill.style.width = `${data.progress || 0}%`;
+      archiveProgressLabel.textContent = `Downloading ${data.processed || 0}/${data.total || 0}...`;
+
+      if (data.items) {
+        data.items.forEach((item, i) => {
+          const el = document.querySelector(`.archive-item[data-index="${i}"]`);
+          if (el) {
+            const statusEl = el.querySelector(".archive-item-status");
+            if (statusEl) {
+              const icons = {
+                done: "✅",
+                processing: "⏳",
+                error: "❌",
+                pending: "⏸️",
+              };
+              statusEl.textContent = icons[item.status] || "⏸️";
+            }
+          }
+        });
+      }
+
+      if (data.status === "done") {
+        clearInterval(interval);
+        archiveProgress.classList.add("hidden");
+        archiveDownloadSelected.disabled = false;
+        archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
+
+        const doneItems = data.items.filter((i) => i.status === "done");
+        if (doneItems.length > 0) {
+          showBatchSuccess(doneItems);
+        }
+      } else if (data.status === "error") {
+        clearInterval(interval);
+        showArchiveError(data.error || "Batch download failed");
+        archiveDownloadSelected.disabled = false;
+        archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
+        archiveProgress.classList.add("hidden");
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        showArchiveError("Batch download timed out");
+        archiveDownloadSelected.disabled = false;
+        archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
+        archiveProgress.classList.add("hidden");
+      }
+    } catch (err) {
+      clearInterval(interval);
+      showArchiveError(err.message);
+      archiveDownloadSelected.disabled = false;
+      archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
+      archiveProgress.classList.add("hidden");
+    }
+  }, 2000);
+}
+
+function showBatchSuccess(items) {
+  const container = document.getElementById("archive-batch-success");
+  if (!container) return;
+
+  let html = `
+    <div class="batch-success">✅ ${items.length} item(s) downloaded successfully!</div>
+    <div class="batch-success-items">
+  `;
+
+  items.slice(0, 5).forEach((item) => {
+    html += `<div class="batch-success-item">📄 ${item.title || "Untitled"}</div>`;
+  });
+
+  if (items.length > 5) {
+    html += `<div class="batch-success-more">...and ${items.length - 5} more</div>`;
+  }
+
+  html += `
+    </div>
+    <button class="btn-secondary" onclick="document.getElementById('archive-batch-success').innerHTML = ''; document.getElementById('archive-batch-success').classList.add('hidden')">
+      Dismiss
+    </button>
+  `;
+
+  container.innerHTML = html;
+  container.classList.remove("hidden");
+  setTimeout(() => {
+    container.classList.add("hidden");
+    setTimeout(() => (container.innerHTML = ""), 500);
+  }, 10000);
+}
+
+function showArchiveError(msg) {
+  const errorEl = document.getElementById("archive-error");
+  if (errorEl) {
+    errorEl.textContent = msg;
+    errorEl.classList.remove("hidden");
+    setTimeout(() => errorEl.classList.add("hidden"), 8000);
+  }
+}
+
+archiveClear?.addEventListener("click", () => {
+  archiveItems = [];
+  selectedArchiveItems.clear();
+  archiveGrid.innerHTML = `<div class="archive-empty">Enter a profile URL above to get started.</div>`;
+  archiveStatus.classList.add("hidden");
+  archiveStatus.textContent = "";
+  document.getElementById("archive-batch-success")?.classList.add("hidden");
+  document.getElementById("archive-batch-success").innerHTML = "";
+  archiveInput.value = "";
+  updateArchiveCount();
+});
 
 updateOfflineBanner();
 if (navigator.onLine) processOfflineQueue();

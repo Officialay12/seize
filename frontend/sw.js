@@ -18,8 +18,6 @@ self.addEventListener("install", (event) => {
       .open(CACHE_NAME)
       .then((cache) => {
         console.log("📦 Caching shell assets");
-        // cache.addAll is all-or-nothing — one 404 kills the whole
-        // precache, so add each asset separately instead
         return Promise.all(
           SHELL_ASSETS.map((url) =>
             cache.add(url).catch((err) => {
@@ -70,15 +68,57 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
+// ============================================================
+// HANDLE DOWNLOAD MESSAGES FROM APP
+// ============================================================
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "DOWNLOAD_FILE") {
+    const { url, filename } = event.data;
+
+    event.waitUntil(
+      fetch(url)
+        .then((response) => {
+          if (!response.ok) throw new Error("Network response was not ok");
+          return response.blob();
+        })
+        .then((blob) => {
+          const cacheName = "seize-downloads";
+          return caches.open(cacheName).then((cache) => {
+            const response = new Response(blob, {
+              headers: {
+                "Content-Type": blob.type || "application/octet-stream",
+                "Content-Disposition": `attachment; filename="${filename}"`,
+              },
+            });
+            return cache.put("/download/" + filename, response);
+          });
+        })
+        .then(() => {
+          self.clients.matchAll().then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({
+                type: "DOWNLOAD_READY",
+                filename: filename,
+              });
+            });
+          });
+        })
+        .catch((err) => {
+          console.error("[sw] Download failed:", err);
+        }),
+    );
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // skip anything that's not http/https (chrome-extension:// etc)
+  // skip anything that's not http/https
   if (!url.protocol.startsWith("http")) {
     return;
   }
 
-  // domains that just cause CSP headaches, skip 'em
+  // domains that cause CSP headaches, skip 'em
   const externalDomains = [
     "chat.deepseek.com",
     "deepseek.com",
@@ -141,7 +181,6 @@ self.addEventListener("fetch", (event) => {
           cache: "default",
         })
           .then((response) => {
-            // only cache valid responses
             if (response && response.ok && response.type === "basic") {
               const clone = response.clone();
               caches.open(CACHE_NAME).then((cache) => {
@@ -162,14 +201,8 @@ self.addEventListener("fetch", (event) => {
     }
   }
 
-  // everything else: network first (so deploys show up immediately),
-  // cache as a fallback for offline use only. The old cache-first
-  // approach meant the install-time precache (index.html, app.js,
-  // style.css, manifest.json) could get stuck serving a stale version
-  // indefinitely — production runtime never re-populated the cache here
-  // (that branch below only fires for localhost), so once something was
-  // precached, only a sw.js byte-change (i.e. remembering to bump
-  // CACHE_NAME) would ever refresh it. Network-first removes that trap.
+  // everything else: network first so deploys show up immediately,
+  // cache as fallback for offline use
   event.respondWith(
     fetch(event.request)
       .then((response) => {
@@ -192,7 +225,6 @@ self.addEventListener("fetch", (event) => {
       .catch(() => {
         return caches.match(event.request).then((cached) => {
           if (cached) return cached;
-          // offline fallback
           if (url.pathname.endsWith(".html")) {
             return new Response("Page not available offline", {
               status: 503,

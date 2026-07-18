@@ -93,8 +93,6 @@ const DESKTOP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const ANDROID_UA =
   "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
-const MAC_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 function baseOptions(platform) {
   const opts = {
@@ -161,8 +159,6 @@ function getStrategies(platform) {
         },
       ];
     case "pinterest":
-      // Pinterest is a pain. We'll use the generic extractor with different headers
-      // since the native Pinterest extractor often fails
       return [
         {
           ...base,
@@ -180,7 +176,7 @@ function getStrategies(platform) {
           extractorArgs: "generic",
           cookies: undefined,
           addHeaders: {
-            "User-Agent": MAC_UA,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
           },
@@ -240,157 +236,9 @@ function getStrategies(platform) {
   }
 }
 
-// ============================================================
-// PINTEREST DIRECT EXTRACTION - bypass yt-dlp entirely
-// ============================================================
-async function extractPinterestDirect(url) {
-  console.log("[seize] Trying direct Pinterest extraction...");
-
-  const userAgents = [
-    DESKTOP_UA,
-    MAC_UA,
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  ];
-
-  for (const ua of userAgents) {
-    try {
-      console.log(`[seize] Trying UA: ${ua.slice(0, 50)}...`);
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": ua,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          "Pragma": "no-cache",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Upgrade-Insecure-Requests": "1",
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        console.log(`[seize] HTTP ${response.status} for UA`);
-        continue;
-      }
-
-      const html = await response.text();
-
-      // Look for video URLs in the page
-      // Pinterest embeds videos in JSON data or video tags
-      const videoPatterns = [
-        /"videoUrl"\s*:\s*"([^"]+)"/i,
-        /"video_url"\s*:\s*"([^"]+)"/i,
-        /<video[^>]+src="([^"]+\.mp4[^"]*)"/i,
-        /<video[^>]+src="([^"]+\.mov[^"]*)"/i,
-        /"contentUrl"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
-        /"url"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
-        /https:\/\/[^\s"]+\.mp4[^\s"]*/i,
-        /https:\/\/[^\s"]+\.mov[^\s"]*/i,
-        /https:\/\/[^\s"]+\.webm[^\s"]*/i,
-        // Pinterest's CDN patterns
-        /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.mp4[^\s"']*/i,
-        /https:\/\/video\.pinimg\.com\/[^\s"']+/i,
-        /https:\/\/[a-z0-9]+\.cdninstagram\.com\/[^\s"']+\.mp4[^\s"']*/i,
-      ];
-
-      let videoUrl = null;
-      for (const pattern of videoPatterns) {
-        const match = html.match(pattern);
-        if (match) {
-          videoUrl = match[1] || match[0];
-          // Clean up any escape characters
-          videoUrl = videoUrl.replace(/\\/g, '');
-          console.log(`[seize] Found video URL: ${videoUrl.slice(0, 100)}...`);
-          break;
-        }
-      }
-
-      // Look for image URLs
-      const imagePatterns = [
-        /"imageUrl"\s*:\s*"([^"]+)"/i,
-        /"image_url"\s*:\s*"([^"]+)"/i,
-        /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
-        /<img[^>]+src="([^"]+\.(jpg|jpeg|png|webp)[^"]*)"/i,
-        /https:\/\/[^\s"]+\.(jpg|jpeg|png|webp)[^\s"]*/i,
-        /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/i,
-      ];
-
-      let imageUrl = null;
-      for (const pattern of imagePatterns) {
-        const match = html.match(pattern);
-        if (match) {
-          imageUrl = match[1] || match[0];
-          imageUrl = imageUrl.replace(/\\/g, '');
-          console.log(`[seize] Found image URL: ${imageUrl.slice(0, 100)}...`);
-          break;
-        }
-      }
-
-      // Get title
-      let title = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
-      title = title ? title[1] : "Pinterest Pin";
-
-      // Get uploader/creator
-      let uploader = html.match(/<meta[^>]+property="og:site_name"[^>]+content="([^"]+)"/i);
-      uploader = uploader ? uploader[1] : "Pinterest";
-
-      // Determine if it's a video or image
-      const hasVideo = !!videoUrl;
-      const hasImage = !!imageUrl || (videoUrl && videoUrl.match(/\.(jpg|jpeg|png|webp)/i));
-
-      if (!hasVideo && !hasImage) {
-        console.log("[seize] No media found in direct extraction, trying yt-dlp...");
-        return null;
-      }
-
-      // Get thumbnail
-      let thumbnail = imageUrl || videoUrl || null;
-
-      return {
-        platform: "pinterest",
-        title: title,
-        uploader: uploader,
-        thumbnail: thumbnail,
-        contentType: hasVideo ? "video" : "image",
-        hasVideo: hasVideo,
-        hasImage: hasImage || !hasVideo,
-        media: {
-          videos: hasVideo ? [{ url: videoUrl, format: "mp4", quality: "HD" }] : [],
-          images: hasImage ? [{ url: imageUrl || thumbnail, format: "jpg" }] : [],
-          audio: [],
-        },
-        directExtract: true,
-      };
-
-    } catch (err) {
-      console.log(`[seize] Direct extraction attempt failed: ${err.message}`);
-      continue;
-    }
-  }
-
-  return null;
-}
-
 async function resolveWithStrategies(url, platform, isUsable) {
   const strategies = getStrategies(platform);
   let lastErr;
-
-  // For Pinterest, try direct extraction first
-  if (platform === "pinterest") {
-    const directResult = await extractPinterestDirect(url);
-    if (directResult) {
-      return { info: directResult, strategyIndex: -1, directExtract: true };
-    }
-  }
 
   for (let i = 0; i < strategies.length; i++) {
     const options = {
@@ -601,19 +449,6 @@ function extractMediaUrls(info) {
     isGif: false,
   };
 
-  // If it's a direct extraction result, use it directly
-  if (info.directExtract) {
-    return {
-      images: info.media.images || [],
-      videos: info.media.videos || [],
-      audio: info.media.audio || [],
-      thumbnail: info.thumbnail || null,
-      hasVideo: info.hasVideo || false,
-      hasImage: info.hasImage || false,
-      isGif: false,
-    };
-  }
-
   const nodes =
     Array.isArray(info.entries) && info.entries.length
       ? info.entries.filter(Boolean)
@@ -670,7 +505,7 @@ function extractMediaUrls(info) {
         });
         media.hasVideo = true;
       } else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
-        if (ext !== "gif") { // skip actual GIFs, they're videos
+        if (ext !== "gif") {
           media.images.push({
             url: node.url,
             format: ext,
@@ -847,11 +682,6 @@ function extractMediaUrls(info) {
 function isUsableInfo(info) {
   if (!info) return false;
 
-  // If it's a direct extraction result, it's usable
-  if (info.directExtract) {
-    return info.hasVideo || info.hasImage;
-  }
-
   const media = extractMediaUrls(info);
 
   if (info.formats && Array.isArray(info.formats)) {
@@ -906,7 +736,17 @@ function dedupeByHeight(videos, max = 12) {
   return out;
 }
 
-// ===== RESOLVE =====
+function sanitizeFilename(name) {
+  return String(name || "seize")
+    .replace(/[\/\\?%*:|"<>]/g, "")
+    .replace(/[\r\n]/g, "")
+    .trim()
+    .slice(0, 150) || "seize";
+}
+
+// ============================================================
+// RESOLVE ENDPOINT
+// ============================================================
 router.post("/resolve", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
@@ -928,7 +768,6 @@ router.post("/resolve", async (req, res) => {
     }
   }
 
-  // Pinterest shortlink expansion
   let finalUrl = url;
   if (platform === "pinterest" && (url.includes("pin.it") || url.includes("/pin/"))) {
     try {
@@ -947,7 +786,7 @@ router.post("/resolve", async (req, res) => {
 
   try {
     console.log(`[seize] Resolving ${platform}...`);
-    const { info, directExtract } = await resolveWithStrategies(finalUrl, platform, isUsableInfo);
+    const { info } = await resolveWithStrategies(finalUrl, platform, isUsableInfo);
 
     const media = extractMediaUrls(info);
 
@@ -981,7 +820,7 @@ router.post("/resolve", async (req, res) => {
       thumbnail = media.images[0].url;
     }
 
-    const responseData = {
+    res.json({
       platform,
       title,
       thumbnail,
@@ -1000,19 +839,7 @@ router.post("/resolve", async (req, res) => {
         : [],
       duration: info.duration || null,
       isImageOnly: contentType === "image",
-      directExtract: directExtract || false,
-    };
-
-    // Log what we found
-    console.log(`[seize] Resolved ${platform} - Video: ${media.hasVideo}, Image: ${media.hasImage}, GIF: ${media.isGif || false}`);
-    if (media.videos.length > 0) {
-      console.log(`[seize] Found ${media.videos.length} video(s), best: ${media.videos[0].quality || 'unknown'}`);
-    }
-    if (media.images.length > 0) {
-      console.log(`[seize] Found ${media.images.length} image(s)`);
-    }
-
-    res.json(responseData);
+    });
   } catch (err) {
     const stderr = err.stderr || err.message || "";
     console.error("[resolve] Failed:", stderr);
@@ -1028,7 +855,9 @@ router.post("/resolve", async (req, res) => {
   }
 });
 
-// ===== FETCH =====
+// ============================================================
+// FETCH ENDPOINT
+// ============================================================
 router.post("/fetch", async (req, res) => {
   const { url, mode = "video", quality = "best" } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
@@ -1046,7 +875,6 @@ router.post("/fetch", async (req, res) => {
   res.json({ jobId });
 
   try {
-    // image mode
     if (mode === "image") {
       const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
       const media = extractMediaUrls(info);
@@ -1074,7 +902,6 @@ router.post("/fetch", async (req, res) => {
       return;
     }
 
-    // video/audio mode
     const heightCap = /^\d+$/.test(String(quality)) ? String(quality) : null;
     const capFmt = (fmt) => {
       if (!heightCap) return fmt;
@@ -1167,14 +994,18 @@ router.post("/fetch", async (req, res) => {
   }
 });
 
-// ===== STATUS =====
+// ============================================================
+// STATUS ENDPOINT
+// ============================================================
 router.get("/status/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ error: "Job not found" });
   res.json({ status: job.status, progress: job.progress, error: job.error });
 });
 
-// ===== DOWNLOAD =====
+// ============================================================
+// FILE DOWNLOAD ENDPOINT
+// ============================================================
 router.get("/file/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job || job.status !== "done")
@@ -1184,6 +1015,273 @@ router.get("/file/:jobId", (req, res) => {
       fs.unlink(job.outputPath, () => {});
       jobs.delete(req.params.jobId);
     }
+  });
+});
+
+// ============================================================
+// CREATOR ARCHIVE MODE - Profile extraction
+// ============================================================
+router.post("/profile", async (req, res) => {
+  const { url, platform, limit = 50, mode = "all" } = req.body;
+  if (!url) return res.status(400).json({ error: "Profile URL is required" });
+
+  const detectedPlatform = platform || detectPlatform(url);
+  if (!detectedPlatform) {
+    return res.status(400).json({
+      error: "Unsupported platform. Only TikTok, Instagram, Twitter/X, and Pinterest are supported for profile extraction.",
+    });
+  }
+
+  const supportedProfiles = ["tiktok", "instagram", "twitter", "pinterest"];
+  if (!supportedProfiles.includes(detectedPlatform)) {
+    return res.status(400).json({
+      error: `${detectedPlatform} doesn't support profile extraction yet.`,
+    });
+  }
+
+  const jobId = uuid();
+  jobs.set(jobId, {
+    status: "processing",
+    progress: 0,
+    items: [],
+    total: 0,
+    processed: 0,
+    createdAt: Date.now()
+  });
+
+  (async () => {
+    try {
+      const options = {
+        dumpSingleJson: true,
+        noWarnings: true,
+        noCheckCertificates: true,
+        ffmpegLocation: ffmpegStaticPath,
+        retries: 3,
+        socketTimeout: 60,
+        extractorArgs: `${detectedPlatform}:include_ads=false`,
+        addHeaders: {
+          "User-Agent": DESKTOP_UA,
+          Accept: "application/json, text/plain, */*",
+        },
+        playlistItems: true,
+        playlistEnd: Math.min(limit, 100),
+      };
+
+      const cookies = cookiesFor(detectedPlatform);
+      if (cookies) options.cookies = cookies;
+
+      console.log(`[seize] Extracting profile from ${detectedPlatform}: ${url}`);
+      const info = await ytDlp(url, options, { timeout: 120000 });
+
+      const entries = Array.isArray(info.entries) ? info.entries : [info];
+      const items = [];
+
+      for (const entry of entries) {
+        if (!entry) continue;
+
+        const media = extractMediaUrls(entry);
+        const item = {
+          id: entry.id || entry.webpage_url || `item-${Date.now()}`,
+          title: entry.title || entry.fulltitle || "Untitled",
+          url: entry.webpage_url || entry.url || null,
+          thumbnail: media.thumbnail || entry.thumbnail || null,
+          duration: entry.duration || null,
+          hasVideo: media.hasVideo || false,
+          hasImage: media.hasImage || false,
+          contentType: media.hasVideo ? "video" : media.hasImage ? "image" : "unknown",
+          media: {
+            videos: media.videos.slice(0, 1),
+            images: media.images.slice(0, 1),
+          },
+          uploader: info.uploader || info.channel || info.author || null,
+          viewCount: entry.view_count || entry.views || null,
+          likeCount: entry.like_count || entry.likes || null,
+          commentCount: entry.comment_count || entry.comments || null,
+          timestamp: entry.timestamp || entry.upload_date || null,
+        };
+
+        if (mode === "videos" && !item.hasVideo) continue;
+        if (mode === "images" && !item.hasImage) continue;
+        if (mode === "all" || (item.hasVideo || item.hasImage)) {
+          items.push(item);
+        }
+      }
+
+      const job = jobs.get(jobId);
+      if (job) {
+        job.status = "done";
+        job.progress = 100;
+        job.items = items.slice(0, limit);
+        job.total = items.length;
+        job.processed = items.length;
+        job.finishedAt = Date.now();
+      }
+
+      console.log(`[seize] Extracted ${items.length} items from ${detectedPlatform} profile`);
+    } catch (err) {
+      console.error("[seize] Profile extraction failed:", err.message);
+      const job = jobs.get(jobId);
+      if (job) {
+        job.status = "error";
+        job.error = friendlyError(err.stderr || err.message);
+        job.finishedAt = Date.now();
+      }
+    }
+  })();
+
+  res.json({ jobId });
+});
+
+router.get("/profile/status/:jobId", (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json({
+    status: job.status,
+    progress: job.progress,
+    total: job.total,
+    processed: job.processed,
+    items: job.status === "done" ? job.items : [],
+    error: job.error,
+  });
+});
+
+router.post("/profile/batch", async (req, res) => {
+  const { items, quality = "best" } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "At least one item is required" });
+  }
+
+  const batchId = uuid();
+  const batchItems = items.map(item => ({
+    ...item,
+    status: "pending",
+    progress: 0,
+    jobId: null,
+    fileUrl: null,
+    error: null,
+  }));
+
+  jobs.set(batchId, {
+    status: "processing",
+    progress: 0,
+    items: batchItems,
+    total: batchItems.length,
+    processed: 0,
+    createdAt: Date.now(),
+  });
+
+  (async () => {
+    const job = jobs.get(batchId);
+    if (!job) return;
+
+    for (let i = 0; i < job.items.length; i++) {
+      const item = job.items[i];
+      item.status = "processing";
+
+      try {
+        const url = item.url;
+        if (!url) {
+          item.status = "error";
+          item.error = "No URL available";
+          continue;
+        }
+
+        const platform = detectPlatform(url);
+        if (!platform) {
+          item.status = "error";
+          item.error = "Unsupported platform";
+          continue;
+        }
+
+        const ext = item.hasVideo ? "mp4" : "jpg";
+        const outputPath = path.join(TMP_DIR, `${batchId}-${i}.${ext}`);
+        const itemJobId = uuid();
+
+        const options = {
+          output: outputPath,
+          format: item.hasVideo ? "bestvideo+bestaudio/best[ext=mp4]/best" : "best",
+          mergeOutputFormat: "mp4",
+          noWarnings: true,
+          noCheckCertificates: true,
+          ffmpegLocation: ffmpegStaticPath,
+          retries: 3,
+          socketTimeout: 45,
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        };
+
+        const cookies = cookiesFor(platform);
+        if (cookies) options.cookies = cookies;
+
+        await runYtDlpWithProgress(url, options, itemJobId, 120000);
+
+        let finalPath = outputPath;
+        if (!fs.existsSync(finalPath)) {
+          const dirFiles = fs.readdirSync(TMP_DIR);
+          const match = dirFiles.find((f) => f.startsWith(`${batchId}-${i}`));
+          if (match) finalPath = path.join(TMP_DIR, match);
+        }
+
+        if (fs.existsSync(finalPath)) {
+          item.status = "done";
+          item.fileUrl = `/api/download/batch/${batchId}/${i}`;
+          item.progress = 100;
+        } else {
+          throw new Error("Output file not produced");
+        }
+      } catch (err) {
+        item.status = "error";
+        item.error = friendlyError(err.stderr || err.message);
+        console.error(`[seize] Batch item ${i} failed:`, err.message);
+      }
+
+      job.processed = i + 1;
+      job.progress = Math.round(((i + 1) / job.total) * 100);
+      job.items[i] = item;
+    }
+
+    job.status = "done";
+    job.finishedAt = Date.now();
+  })();
+
+  res.json({ batchId });
+});
+
+router.get("/batch/:batchId/:index", (req, res) => {
+  const job = jobs.get(req.params.batchId);
+  if (!job) return res.status(404).json({ error: "Batch not found" });
+
+  const index = parseInt(req.params.index);
+  const item = job.items[index];
+  if (!item) return res.status(404).json({ error: "Item not found" });
+  if (item.status !== "done") {
+    return res.status(404).json({ error: "Item not ready" });
+  }
+
+  const ext = item.hasVideo ? "mp4" : "jpg";
+  const filePath = path.join(TMP_DIR, `${req.params.batchId}-${index}.${ext}`);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  const filename = `${sanitizeFilename(item.title || "seize")}.${ext}`;
+  res.download(filePath, filename, (err) => {
+    if (!err) {
+      // Cleanup will handle it
+    }
+  });
+});
+
+router.get("/batch/status/:batchId", (req, res) => {
+  const job = jobs.get(req.params.batchId);
+  if (!job) return res.status(404).json({ error: "Batch not found" });
+  res.json({
+    status: job.status,
+    progress: job.progress,
+    total: job.total,
+    processed: job.processed,
+    items: job.items,
+    error: job.error,
   });
 });
 

@@ -1,450 +1,428 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-    />
-    <title>Seize — capture any signal</title>
-    <meta
-      name="description"
-      content="Convert video to audio, audio to video, and pull media from TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook — clean, fast, no watermark."
-    />
-    <meta name="theme-color" content="#0B0D0C" />
-    <link rel="manifest" href="manifest.json" />
-    <link rel="icon" href="icons/icon-192.png" />
-    <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
-    <meta name="apple-mobile-web-app-title" content="seize" />
-    <link rel="stylesheet" href="style.css" />
-  </head>
 
-  <body>
-    <div id="offline-banner" class="offline-banner hidden mono small"></div>
-    <div class="scanline-overlay" aria-hidden="true"></div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Seize — capture any signal</title>
+  <meta name="description"
+    content="Convert video to audio, audio to video, and pull media from TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook — clean, fast, no watermark." />
+  <meta name="theme-color" content="#0B0D0C" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="seize" />
+  <link rel="stylesheet" href="style.css" />
+</head>
 
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="22" height="22">
-            <path
-              d="M4 12 L9 5 L9 10 L20 10 L15 19 L15 14 L4 14 Z"
-              fill="currentColor"
-            />
-          </svg>
-        </span>
-        <span class="brand-name">seize</span>
+<body>
+  <div id="offline-banner" class="offline-banner hidden mono small"></div>
+  <div class="scanline-overlay" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22">
+          <path d="M4 12 L9 5 L9 10 L20 10 L15 19 L15 14 L4 14 Z" fill="currentColor" />
+        </svg>
+      </span>
+      <span class="brand-name">seize</span>
+    </div>
+    <div class="topbar-status">
+      <button id="install-btn" class="btn-install mono small hidden" type="button">
+        📲 Install app
+      </button>
+      <span class="rec-dot" aria-hidden="true"></span>
+      <span class="mono small" id="engine-status">ENGINE READY</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow mono">SIGNAL CAPTURE &amp; CONVERSION</p>
+        <h1>Grab the frame.<br />Isolate the wave.</h1>
+        <p class="hero-sub">
+          seize pulls clean media straight off TikTok, Instagram,
+          Twitter/X, Pinterest, Snapchat, and Facebook no watermark
+          bake-in and flips video to audio or audio to video on the
+          spot.
+        </p>
       </div>
-      <div class="topbar-status">
-        <button
-          id="install-btn"
-          class="btn-install mono small hidden"
-          type="button"
-        >
-          📲 Install app
-        </button>
-        <span class="rec-dot" aria-hidden="true"></span>
-        <span class="mono small" id="engine-status">ENGINE READY</span>
+      <div class="scope-panel" aria-hidden="true">
+        <svg id="scope-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
+          <line x1="0" y1="80" x2="600" y2="80" class="scope-baseline" />
+          <polyline id="scope-trace" class="scope-trace" points="" />
+        </svg>
+        <div class="scope-readout mono small">
+          <span id="scope-freq">00.0 Hz</span>
+          <span id="scope-mode">STANDBY</span>
+        </div>
       </div>
-    </header>
+    </section>
 
-    <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow mono">SIGNAL CAPTURE &amp; CONVERSION</p>
-          <h1>Grab the frame.<br />Isolate the wave.</h1>
-          <p class="hero-sub">
-            seize pulls clean media straight off TikTok, Instagram,
-            Twitter/X, Pinterest, Snapchat, and Facebook no watermark
-            bake-in and flips video to audio or audio to video on the
-            spot.
-          </p>
-        </div>
-        <div class="scope-panel" aria-hidden="true">
-          <svg id="scope-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
-            <line x1="0" y1="80" x2="600" y2="80" class="scope-baseline" />
-            <polyline id="scope-trace" class="scope-trace" points="" />
-          </svg>
-          <div class="scope-readout mono small">
-            <span id="scope-freq">00.0 Hz</span>
-            <span id="scope-mode">STANDBY</span>
-          </div>
-        </div>
-      </section>
+    <nav class="mode-switch" role="tablist" aria-label="Choose a tool">
+      <button class="mode-btn active" role="tab" aria-selected="true" data-mode="capture">
+        <span class="mode-index mono">01</span> Capture
+      </button>
+      <button class="mode-btn" role="tab" aria-selected="false" data-mode="convert">
+        <span class="mode-index mono">02</span> Convert
+      </button>
+      <button class="mode-btn" role="tab" aria-selected="false" data-mode="history">
+        <span class="mode-index mono">03</span> History
+      </button>
+      <button class="mode-btn" role="tab" aria-selected="false" data-mode="archive">
+        <span class="mode-index mono">04</span> Archive
+      </button>
+    </nav>
 
-      <nav class="mode-switch" role="tablist" aria-label="Choose a tool">
-        <button
-          class="mode-btn active"
-          role="tab"
-          aria-selected="true"
-          data-mode="capture"
-        >
-          <span class="mode-index mono">01</span> Capture
-        </button>
-        <button
-          class="mode-btn"
-          role="tab"
-          aria-selected="false"
-          data-mode="convert"
-        >
-          <span class="mode-index mono">02</span> Convert
-        </button>
-        <button
-          class="mode-btn"
-          role="tab"
-          aria-selected="false"
-          data-mode="history"
-        >
-          <span class="mode-index mono">03</span> History
-        </button>
-      </nav>
+    <!-- CAPTURE PANEL -->
+    <section class="panel" id="panel-capture" data-active="true">
+      <div class="panel-head">
+        <h2>Capture a link</h2>
+        <p class="panel-sub">
+          Paste a TikTok, Instagram, Twitter/X, Pinterest, Snapchat, or
+          Facebook URL. seize resolves the original source file.
+        </p>
+      </div>
 
-      <!-- CAPTURE PANEL -->
-      <section class="panel" id="panel-capture" data-active="true">
-        <div class="panel-head">
-          <h2>Capture a link</h2>
-          <p class="panel-sub">
-            Paste a TikTok, Instagram, Twitter/X, Pinterest, Snapchat, or
-            Facebook URL. seize resolves the original source file.
-          </p>
-        </div>
-
-        <form id="capture-form" class="capture-form">
-          <div class="input-row">
-            <input
-              type="url"
-              id="url-input"
-              class="text-input"
-              placeholder="https://www.tiktok.com/@user/video/..."
-              required
-              autocomplete="off"
-            />
-            <button
-              type="button"
-              class="btn-secondary"
-              id="paste-btn"
-              title="Paste from clipboard"
-              aria-label="Paste from clipboard"
-            >
-              📋
-            </button>
-            <button
-              type="button"
-              class="btn-secondary"
-              id="queue-add-btn"
-              title="Add to batch queue instead of resolving now"
-            >
-              ➕ Queue
-            </button>
-            <button type="submit" class="btn-primary" id="resolve-btn">
-              Resolve
-            </button>
-          </div>
-          <div class="platform-chips mono small" aria-hidden="true">
-            <span class="chip" data-platform="tiktok">TikTok</span>
-            <span class="chip" data-platform="instagram">Instagram</span>
-            <span class="chip" data-platform="twitter">Twitter/X</span>
-            <span class="chip" data-platform="pinterest">Pinterest</span>
-            <span class="chip" data-platform="snapchat">Snapchat</span>
-            <span class="chip" data-platform="facebook">Facebook</span>
-          </div>
-          <p class="mono small dropzone-hint" id="batch-hint">
-            Tip: paste several links at once (one per line) to queue them all.
-          </p>
-        </form>
-
-        <div id="queue-block" class="queue-block hidden">
-          <div class="queue-toolbar">
-            <p class="mono small queue-title">
-              Queue (<span id="queue-count">0</span>)
-            </p>
-            <div class="queue-toolbar-actions">
-              <button type="button" class="btn-secondary" id="queue-start-btn">
-                ▶ Start queue
-              </button>
-              <button type="button" class="history-remove-btn" id="queue-clear-btn">
-                🗑️
-              </button>
-            </div>
-          </div>
-          <div id="queue-list" class="queue-list"></div>
-        </div>
-
-        <div id="capture-result" class="capture-result hidden">
-          <img id="result-thumb" class="result-thumb" alt="" />
-          <div class="result-meta">
-            <p class="result-title" id="result-title">—</p>
-            <p class="mono small result-sub" id="result-uploader">—</p>
-            <div class="quality-row hidden mono small" id="quality-row">
-              <label for="quality-select">QUALITY</label>
-              <select id="quality-select" class="select-input">
-                <option value="best">Best available</option>
-              </select>
-            </div>
-            <div class="result-actions" id="result-actions">
-              <button class="btn-secondary" id="fetch-video-btn">
-                🎬 Download video
-              </button>
-              <button class="btn-secondary" id="fetch-audio-btn">
-                🎵 Extract audio
-              </button>
-              <button class="btn-secondary" id="fetch-image-btn">
-                🖼️ Download image
-              </button>
-              <button class="btn-secondary" id="add-to-collection-btn">
-                ➕ Add to collection
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div id="capture-progress" class="progress-block hidden">
-          <div class="progress-bar">
-            <div class="progress-fill" id="capture-progress-fill"></div>
-          </div>
-          <p class="mono small" id="capture-progress-label">FETCHING…</p>
-        </div>
-
-        <div id="collection-basket" class="collection-basket hidden">
-          <p class="mono small collection-basket-count">
-            <span id="collection-basket-count">0</span> item(s) in your collection
-          </p>
-          <div class="collection-basket-actions">
-            <button
-              type="button"
-              class="btn-secondary"
-              id="collection-clear-btn"
-            >
-              Clear
-            </button>
-            <button
-              type="button"
-              class="btn-primary"
-              id="collection-create-btn"
-            >
-              🔗 Create shareable link
-            </button>
-          </div>
-        </div>
-
-        <p id="capture-error" class="error-text hidden"></p>
-      </section>
-
-      <!-- CONVERT PANEL -->
-      <section class="panel" id="panel-convert" data-active="false">
-        <div class="panel-head">
-          <h2>Convert a file</h2>
-          <p class="panel-sub">
-            Drop a video to pull its audio track, or drop audio to render it
-            into a shareable video.
-          </p>
-        </div>
-
-        <div class="convert-switch mono small">
-          <button class="convert-tab active" data-target="v2a">
-            Video → Audio
+      <form id="capture-form" class="capture-form">
+        <div class="input-row">
+          <input type="url" id="url-input" class="text-input" placeholder="https://www.tiktok.com/@user/video/..."
+            required autocomplete="off" />
+          <button type="button" class="btn-secondary" id="paste-btn" title="Paste from clipboard"
+            aria-label="Paste from clipboard">
+            📋
           </button>
-          <button class="convert-tab" data-target="a2v">Audio → Video</button>
+          <button type="button" class="btn-secondary" id="queue-add-btn"
+            title="Add to batch queue instead of resolving now">
+            ➕ Queue
+          </button>
+          <button type="submit" class="btn-primary" id="resolve-btn">
+            Resolve
+          </button>
         </div>
+        <div class="platform-chips mono small" aria-hidden="true">
+          <span class="chip" data-platform="tiktok">TikTok</span>
+          <span class="chip" data-platform="instagram">Instagram</span>
+          <span class="chip" data-platform="twitter">Twitter/X</span>
+          <span class="chip" data-platform="pinterest">Pinterest</span>
+          <span class="chip" data-platform="snapchat">Snapchat</span>
+          <span class="chip" data-platform="facebook">Facebook</span>
+        </div>
+        <p class="mono small dropzone-hint" id="batch-hint">
+          Tip: paste several links at once (one per line) to queue them all.
+        </p>
+      </form>
 
-        <div id="convert-form" class="convert-form">
-          <div
-            id="dropzone"
-            class="dropzone"
-            role="button"
-            tabindex="0"
-            aria-label="Choose a video or audio file to convert"
-          >
-            <div id="dropzone-empty" class="dropzone-empty">
-              <svg
-                viewBox="0 0 24 24"
-                width="28"
-                height="28"
-                class="dropzone-icon"
-              >
-                <path
-                  d="M12 3v12m0 0-4-4m4 4 4-4M4 19h16"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <span id="dropzone-label"
-                >Drop a video file, or click to browse</span
-              >
-              <span class="mono small dropzone-hint" id="dropzone-hint"
-                >MP4 · MOV · MKV · WEBM — up to 500MB</span
-              >
-            </div>
-
-            <div id="dropzone-preview" class="dropzone-preview hidden">
-              <span class="dropzone-preview-icon" id="dropzone-preview-icon" aria-hidden="true">🎬</span>
-              <div class="dropzone-preview-meta">
-                <p class="dropzone-preview-name" id="dropzone-preview-name">—</p>
-                <p class="mono small dropzone-preview-size" id="dropzone-preview-size">—</p>
-              </div>
-              <button
-                type="button"
-                class="dropzone-preview-remove"
-                id="dropzone-preview-remove"
-                aria-label="Remove selected file"
-              >
-                ✕
-              </button>
-            </div>
-
-            <input
-              type="file"
-              id="file-input"
-              hidden
-              accept="video/*,audio/*"
-              tabindex="-1"
-            />
+      <div id="queue-block" class="queue-block hidden">
+        <div class="queue-toolbar">
+          <p class="mono small queue-title">
+            Queue (<span id="queue-count">0</span>)
+          </p>
+          <div class="queue-toolbar-actions">
+            <button type="button" class="btn-secondary" id="queue-start-btn">
+              ▶ Start queue
+            </button>
+            <button type="button" class="history-remove-btn" id="queue-clear-btn">
+              🗑️
+            </button>
           </div>
+        </div>
+        <div id="queue-list" class="queue-list"></div>
+      </div>
 
-          <div class="format-row" id="format-row">
-            <label class="mono small" for="format-select">OUTPUT FORMAT</label>
-            <select id="format-select" class="select-input">
-              <option value="mp3">MP3</option>
-              <option value="wav">WAV</option>
-              <option value="aac">AAC</option>
-              <option value="flac">FLAC</option>
-              <option value="ogg">OGG</option>
+      <div id="capture-result" class="capture-result hidden">
+        <img id="result-thumb" class="result-thumb" alt="" />
+        <div class="result-meta">
+          <p class="result-title" id="result-title">—</p>
+          <p class="mono small result-sub" id="result-uploader">—</p>
+          <div class="quality-row hidden mono small" id="quality-row">
+            <label for="quality-select">QUALITY</label>
+            <select id="quality-select" class="select-input">
+              <option value="best">Best available</option>
             </select>
           </div>
-
-          <button
-            type="button"
-            class="btn-primary full-width"
-            id="convert-btn"
-            disabled
-          >
-            Convert
-          </button>
-        </div>
-
-        <p id="convert-restore-banner" class="mono small restored-banner hidden"></p>
-
-        <div id="convert-progress" class="progress-block hidden">
-          <div class="progress-bar">
-            <div class="progress-fill" id="convert-progress-fill"></div>
+          <div class="result-actions" id="result-actions">
+            <button class="btn-secondary" id="fetch-video-btn">
+              🎬 Download video
+            </button>
+            <button class="btn-secondary" id="fetch-audio-btn">
+              🎵 Extract audio
+            </button>
+            <button class="btn-secondary" id="fetch-image-btn">
+              🖼️ Download image
+            </button>
+            <button class="btn-secondary" id="add-to-collection-btn">
+              ➕ Add to collection
+            </button>
           </div>
-          <p class="mono small" id="convert-progress-label">PROCESSING…</p>
         </div>
+      </div>
 
-        <p id="convert-error" class="error-text hidden"></p>
-      </section>
+      <div id="capture-progress" class="progress-block hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="capture-progress-fill"></div>
+        </div>
+        <p class="mono small" id="capture-progress-label">FETCHING…</p>
+      </div>
 
-      <section class="disclosure">
-        <p class="mono small">
-          seize resolves publicly available links using open tooling. Respect
-          the rights holder download only what you have permission to reuse, and
-          keep personal use in mind for anything pulled from a third-party
-          platform. sikeeee do as you like guys, actually i built this out of
-          curiosity as some may know i build stuffs that make my life easier,
-          and im willing to share it with you all, you are welcome hehe.
+      <div id="collection-basket" class="collection-basket hidden">
+        <p class="mono small collection-basket-count">
+          <span id="collection-basket-count">0</span> item(s) in your collection
         </p>
-      </section>
-
-      <!-- HISTORY PANEL -->
-      <section class="panel" id="panel-history" data-active="false">
-        <div class="panel-head">
-          <h2>Past activity</h2>
-          <p class="panel-sub">
-            Links you've resolved and files you've converted, saved on this
-            device only. Tap a link entry to resolve it again.
-          </p>
-        </div>
-
-        <div class="history-toolbar">
-          <button class="btn-secondary" id="clear-history-btn">
-            🗑️ Clear history
+        <div class="collection-basket-actions">
+          <button type="button" class="btn-secondary" id="collection-clear-btn">
+            Clear
+          </button>
+          <button type="button" class="btn-primary" id="collection-create-btn">
+            🔗 Create shareable link
           </button>
         </div>
+      </div>
 
-        <div id="history-list" class="history-list"></div>
-        <p id="history-empty" class="mono small history-empty hidden">
-          Nothing here yet resolved links and conversions will show up
-          after you use them.
+      <p id="capture-error" class="error-text hidden"></p>
+    </section>
+
+    <!-- CONVERT PANEL -->
+    <section class="panel" id="panel-convert" data-active="false">
+      <div class="panel-head">
+        <h2>Convert a file</h2>
+        <p class="panel-sub">
+          Drop a video to pull its audio track, or drop audio to render it
+          into a shareable video.
         </p>
-      </section>
+      </div>
 
-      <!-- PUBLIC COLLECTION VIEW -->
-      <section class="panel" id="panel-collection-view" data-active="false">
-        <div class="panel-head">
-          <a href="/" class="collection-back-link mono small">← Back to seize</a>
-          <h2 id="collection-view-name">Shared collection</h2>
-          <p class="panel-sub" id="collection-view-meta">—</p>
+      <div class="convert-switch mono small">
+        <button class="convert-tab active" data-target="v2a">
+          Video → Audio
+        </button>
+        <button class="convert-tab" data-target="a2v">Audio → Video</button>
+      </div>
+
+      <div id="convert-form" class="convert-form">
+        <div id="dropzone" class="dropzone" role="button" tabindex="0"
+          aria-label="Choose a video or audio file to convert">
+          <div id="dropzone-empty" class="dropzone-empty">
+            <svg viewBox="0 0 24 24" width="28" height="28" class="dropzone-icon">
+              <path d="M12 3v12m0 0-4-4m4 4 4-4M4 19h16" stroke="currentColor" stroke-width="1.6" fill="none"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span id="dropzone-label">Drop a video file, or click to browse</span>
+            <span class="mono small dropzone-hint" id="dropzone-hint">MP4 · MOV · MKV · WEBM — up to 500MB</span>
+          </div>
+
+          <div id="dropzone-preview" class="dropzone-preview hidden">
+            <span class="dropzone-preview-icon" id="dropzone-preview-icon" aria-hidden="true">🎬</span>
+            <div class="dropzone-preview-meta">
+              <p class="dropzone-preview-name" id="dropzone-preview-name">—</p>
+              <p class="mono small dropzone-preview-size" id="dropzone-preview-size">—</p>
+            </div>
+            <button type="button" class="dropzone-preview-remove" id="dropzone-preview-remove"
+              aria-label="Remove selected file">
+              ✕
+            </button>
+          </div>
+
+          <input type="file" id="file-input" hidden accept="video/*,audio/*" tabindex="-1" />
         </div>
-        <div id="collection-grid" class="collection-grid"></div>
-        <p id="collection-view-error" class="error-text hidden"></p>
-      </section>
-    </main>
 
-    <footer class="footer">
-      <span class="mono small">seize · built for capture</span>
-      <span class="mono small footer-credit"
-        >built by
-        <a
-          href="https://ayocodes-portfolio.vercel.app"
-          target="_blank"
-          rel="noopener"
-          >Ayocodes</a
-        ></span
-      >
-    </footer>
+        <div class="format-row" id="format-row">
+          <label class="mono small" for="format-select">OUTPUT FORMAT</label>
+          <select id="format-select" class="select-input">
+            <option value="mp3">MP3</option>
+            <option value="wav">WAV</option>
+            <option value="aac">AAC</option>
+            <option value="flac">FLAC</option>
+            <option value="ogg">OGG</option>
+          </select>
+        </div>
 
-    <script src="app.js"></script>
+        <button type="button" class="btn-primary full-width" id="convert-btn" disabled>
+          Convert
+        </button>
+      </div>
 
-    <!-- Share handler detection -->
-    <script>
-      (function () {
-        const sharedUrl = sessionStorage.getItem("seize_shared_url");
-        const sharedMode = sessionStorage.getItem("seize_shared_mode");
+      <p id="convert-restore-banner" class="mono small restored-banner hidden"></p>
 
-        if (sharedUrl) {
-          window.addEventListener("load", () => {
-            const urlInput = document.getElementById("url-input");
-            const resolveBtn = document.getElementById("resolve-btn");
+      <div id="convert-progress" class="progress-block hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="convert-progress-fill"></div>
+        </div>
+        <p class="mono small" id="convert-progress-label">PROCESSING…</p>
+      </div>
 
-            if (urlInput) {
-              urlInput.value = sharedUrl;
-              urlInput.dispatchEvent(new Event("input"));
+      <p id="convert-error" class="error-text hidden"></p>
+    </section>
+
+    <!-- HISTORY PANEL -->
+    <section class="panel" id="panel-history" data-active="false">
+      <div class="panel-head">
+        <h2>Past activity</h2>
+        <p class="panel-sub">
+          Links you've resolved and files you've converted, saved on this
+          device only. Tap a link entry to resolve it again.
+        </p>
+      </div>
+
+      <div class="history-toolbar">
+        <button class="btn-secondary" id="clear-history-btn">
+          🗑️ Clear history
+        </button>
+      </div>
+
+      <div id="history-list" class="history-list"></div>
+      <p id="history-empty" class="mono small history-empty hidden">
+        Nothing here yet resolved links and conversions will show up
+        after you use them.
+      </p>
+    </section>
+
+    <!-- ARCHIVE PANEL -->
+    <section class="panel" id="panel-archive" data-active="false">
+      <div class="panel-head">
+        <h2>Creator Archive</h2>
+        <p class="panel-sub">
+          Enter a creator's profile URL to scan all their posts, then batch download what you want.
+          Supports TikTok, Instagram, Twitter/X, and Pinterest.
+        </p>
+      </div>
+
+      <div class="archive-controls">
+        <div class="input-row">
+          <input type="url" id="archive-input" class="text-input" placeholder="https://www.tiktok.com/@username"
+            autocomplete="off" />
+          <select id="archive-mode" class="select-input">
+            <option value="all">📱 All</option>
+            <option value="videos">🎬 Videos Only</option>
+            <option value="images">🖼️ Images Only</option>
+          </select>
+          <select id="archive-limit" class="select-input">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+          </select>
+          <button type="button" class="btn-primary" id="archive-btn">
+            🔍 Scan Profile
+          </button>
+        </div>
+      </div>
+
+      <div id="archive-progress" class="progress-block hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="archive-progress-fill"></div>
+        </div>
+        <p class="mono small" id="archive-progress-label">Scanning...</p>
+      </div>
+
+      <p id="archive-status" class="archive-status hidden"></p>
+
+      <div class="archive-toolbar">
+        <div class="archive-toolbar-left">
+          <label class="mono small">
+            <input type="checkbox" id="archive-select-all" />
+            Select All
+          </label>
+          <span class="archive-count mono small" id="archive-count">0 items</span>
+        </div>
+        <div class="archive-toolbar-right">
+          <button type="button" class="btn-secondary" id="archive-clear">
+            🗑️ Clear
+          </button>
+          <button type="button" class="btn-primary" id="archive-download-selected" disabled>
+            📥 Download Selected (0)
+          </button>
+        </div>
+      </div>
+
+      <div id="archive-grid" class="archive-grid-container">
+        <div class="archive-empty">Enter a profile URL above to get started.</div>
+      </div>
+
+      <div id="archive-batch-success" class="batch-success-container hidden"></div>
+      <p id="archive-error" class="error-text hidden"></p>
+    </section>
+
+    <!-- PUBLIC COLLECTION VIEW -->
+    <section class="panel" id="panel-collection-view" data-active="false">
+      <div class="panel-head">
+        <a href="/" class="collection-back-link mono small">← Back to seize</a>
+        <h2 id="collection-view-name">Shared collection</h2>
+        <p class="panel-sub" id="collection-view-meta">—</p>
+      </div>
+      <div id="collection-grid" class="collection-grid"></div>
+      <p id="collection-view-error" class="error-text hidden"></p>
+    </section>
+
+    <section class="disclosure">
+      <p class="mono small">
+        seize resolves publicly available links using open tooling. Respect
+        the rights holder download only what you have permission to reuse, and
+        keep personal use in mind for anything pulled from a third-party
+        platform. sikeeee do as you like guys, actually i built this out of
+        curiosity as some may know i build stuffs that make my life easier,
+        and im willing to share it with you all, you are welcome hehe.
+      </p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span class="mono small">seize · built for capture</span>
+    <span class="mono small footer-credit">built by
+      <a href="https://ayocodes-portfolio.vercel.app" target="_blank" rel="noopener">Ayocodes</a></span>
+  </footer>
+
+  <script src="app.js"></script>
+
+  <!-- Share handler detection -->
+  <script>
+    (function () {
+      const sharedUrl = sessionStorage.getItem("seize_shared_url");
+      const sharedMode = sessionStorage.getItem("seize_shared_mode");
+
+      if (sharedUrl) {
+        window.addEventListener("load", () => {
+          const urlInput = document.getElementById("url-input");
+          const resolveBtn = document.getElementById("resolve-btn");
+
+          if (urlInput) {
+            urlInput.value = sharedUrl;
+            urlInput.dispatchEvent(new Event("input"));
+          }
+
+          setTimeout(() => {
+            if (resolveBtn) {
+              resolveBtn.click();
             }
+          }, 800);
 
+          if (sharedMode === "convert-video") {
+            document.querySelector('[data-mode="convert"]')?.click();
             setTimeout(() => {
-              if (resolveBtn) {
-                resolveBtn.click();
-              }
-            }, 800);
+              document.querySelector('[data-target="v2a"]')?.click();
+            }, 300);
+          } else if (sharedMode === "convert-audio") {
+            document.querySelector('[data-mode="convert"]')?.click();
+            setTimeout(() => {
+              document.querySelector('[data-target="a2v"]')?.click();
+            }, 300);
+          } else {
+            document.querySelector('[data-mode="capture"]')?.click();
+          }
 
-            if (sharedMode === "convert-video") {
-              document.querySelector('[data-mode="convert"]')?.click();
-              setTimeout(() => {
-                document.querySelector('[data-target="v2a"]')?.click();
-              }, 300);
-            } else if (sharedMode === "convert-audio") {
-              document.querySelector('[data-mode="convert"]')?.click();
-              setTimeout(() => {
-                document.querySelector('[data-target="a2v"]')?.click();
-              }, 300);
-            } else {
-              document.querySelector('[data-mode="capture"]')?.click();
-            }
+          sessionStorage.removeItem("seize_shared_url");
+          sessionStorage.removeItem("seize_shared_title");
+          sessionStorage.removeItem("seize_shared_mode");
+        });
+      }
+    })();
+  </script>
+</body>
 
-            sessionStorage.removeItem("seize_shared_url");
-            sessionStorage.removeItem("seize_shared_title");
-            sessionStorage.removeItem("seize_shared_mode");
-          });
-        }
-      })();
-    </script>
+</html>
   </body>
 </html>

@@ -93,6 +93,8 @@ const DESKTOP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const ANDROID_UA =
   "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
+const MAC_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 function baseOptions(platform) {
   const opts = {
@@ -159,58 +161,45 @@ function getStrategies(platform) {
         },
       ];
     case "pinterest":
-      // Pinterest is aggressively blocking. Try everything.
+      // Pinterest is a pain. We'll use the generic extractor with different headers
+      // since the native Pinterest extractor often fails
       return [
-        // Try with cookies first
         {
           ...base,
-          extractorArgs: "pinterest:include_ads=false",
+          extractorArgs: "generic",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            Accept_Language: "en-US,en;q=0.9",
-            Referer: "https://www.pinterest.com/",
+            "Accept-Language": "en-US,en;q=0.9",
             "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
           },
         },
-        // Try without cookies
-        {
-          ...base,
-          cookies: undefined,
-          extractorArgs: "pinterest:include_ads=false",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            Referer: "https://www.pinterest.com/",
-          },
-        },
-        // Try the generic extractor with cookies
         {
           ...base,
           extractorArgs: "generic",
+          cookies: undefined,
           addHeaders: {
-            "User-Agent": DESKTOP_UA,
+            "User-Agent": MAC_UA,
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            Referer: "https://www.pinterest.com/",
+            "Accept-Language": "en-US,en;q=0.9",
           },
         },
-        // Try generic without cookies
         {
           ...base,
-          cookies: undefined,
           extractorArgs: "generic",
+          cookies: undefined,
           addHeaders: {
-            "User-Agent": DESKTOP_UA,
+            "User-Agent": ANDROID_UA,
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
         },
-        // Try with a different user agent
         {
           ...base,
-          cookies: undefined,
           extractorArgs: "generic",
+          cookies: undefined,
           addHeaders: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
             Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
         },
@@ -251,9 +240,157 @@ function getStrategies(platform) {
   }
 }
 
+// ============================================================
+// PINTEREST DIRECT EXTRACTION - bypass yt-dlp entirely
+// ============================================================
+async function extractPinterestDirect(url) {
+  console.log("[seize] Trying direct Pinterest extraction...");
+
+  const userAgents = [
+    DESKTOP_UA,
+    MAC_UA,
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  ];
+
+  for (const ua of userAgents) {
+    try {
+      console.log(`[seize] Trying UA: ${ua.slice(0, 50)}...`);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": ua,
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache",
+          "Pragma": "no-cache",
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Upgrade-Insecure-Requests": "1",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.log(`[seize] HTTP ${response.status} for UA`);
+        continue;
+      }
+
+      const html = await response.text();
+
+      // Look for video URLs in the page
+      // Pinterest embeds videos in JSON data or video tags
+      const videoPatterns = [
+        /"videoUrl"\s*:\s*"([^"]+)"/i,
+        /"video_url"\s*:\s*"([^"]+)"/i,
+        /<video[^>]+src="([^"]+\.mp4[^"]*)"/i,
+        /<video[^>]+src="([^"]+\.mov[^"]*)"/i,
+        /"contentUrl"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
+        /"url"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
+        /https:\/\/[^\s"]+\.mp4[^\s"]*/i,
+        /https:\/\/[^\s"]+\.mov[^\s"]*/i,
+        /https:\/\/[^\s"]+\.webm[^\s"]*/i,
+        // Pinterest's CDN patterns
+        /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.mp4[^\s"']*/i,
+        /https:\/\/video\.pinimg\.com\/[^\s"']+/i,
+        /https:\/\/[a-z0-9]+\.cdninstagram\.com\/[^\s"']+\.mp4[^\s"']*/i,
+      ];
+
+      let videoUrl = null;
+      for (const pattern of videoPatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          videoUrl = match[1] || match[0];
+          // Clean up any escape characters
+          videoUrl = videoUrl.replace(/\\/g, '');
+          console.log(`[seize] Found video URL: ${videoUrl.slice(0, 100)}...`);
+          break;
+        }
+      }
+
+      // Look for image URLs
+      const imagePatterns = [
+        /"imageUrl"\s*:\s*"([^"]+)"/i,
+        /"image_url"\s*:\s*"([^"]+)"/i,
+        /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
+        /<img[^>]+src="([^"]+\.(jpg|jpeg|png|webp)[^"]*)"/i,
+        /https:\/\/[^\s"]+\.(jpg|jpeg|png|webp)[^\s"]*/i,
+        /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/i,
+      ];
+
+      let imageUrl = null;
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          imageUrl = match[1] || match[0];
+          imageUrl = imageUrl.replace(/\\/g, '');
+          console.log(`[seize] Found image URL: ${imageUrl.slice(0, 100)}...`);
+          break;
+        }
+      }
+
+      // Get title
+      let title = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
+      title = title ? title[1] : "Pinterest Pin";
+
+      // Get uploader/creator
+      let uploader = html.match(/<meta[^>]+property="og:site_name"[^>]+content="([^"]+)"/i);
+      uploader = uploader ? uploader[1] : "Pinterest";
+
+      // Determine if it's a video or image
+      const hasVideo = !!videoUrl;
+      const hasImage = !!imageUrl || (videoUrl && videoUrl.match(/\.(jpg|jpeg|png|webp)/i));
+
+      if (!hasVideo && !hasImage) {
+        console.log("[seize] No media found in direct extraction, trying yt-dlp...");
+        return null;
+      }
+
+      // Get thumbnail
+      let thumbnail = imageUrl || videoUrl || null;
+
+      return {
+        platform: "pinterest",
+        title: title,
+        uploader: uploader,
+        thumbnail: thumbnail,
+        contentType: hasVideo ? "video" : "image",
+        hasVideo: hasVideo,
+        hasImage: hasImage || !hasVideo,
+        media: {
+          videos: hasVideo ? [{ url: videoUrl, format: "mp4", quality: "HD" }] : [],
+          images: hasImage ? [{ url: imageUrl || thumbnail, format: "jpg" }] : [],
+          audio: [],
+        },
+        directExtract: true,
+      };
+
+    } catch (err) {
+      console.log(`[seize] Direct extraction attempt failed: ${err.message}`);
+      continue;
+    }
+  }
+
+  return null;
+}
+
 async function resolveWithStrategies(url, platform, isUsable) {
   const strategies = getStrategies(platform);
   let lastErr;
+
+  // For Pinterest, try direct extraction first
+  if (platform === "pinterest") {
+    const directResult = await extractPinterestDirect(url);
+    if (directResult) {
+      return { info: directResult, strategyIndex: -1, directExtract: true };
+    }
+  }
 
   for (let i = 0; i < strategies.length; i++) {
     const options = {
@@ -379,33 +516,25 @@ function downloadFile(url, filePath, redirects = 0) {
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
-  // pinterest specific
   if (s.includes("pinterest") && (s.includes("login") || s.includes("sign in"))) {
-    return "Pinterest is asking for login. Try a public pin or make sure your cookies are valid.";
+    return "Pinterest is blocking automated access. Try again in a few minutes or use a different pin.";
   }
   if (s.includes("pinterest") && s.includes("not found")) {
     return "This Pinterest pin doesn't exist or has been removed.";
   }
-  if (s.includes("pinterest") && s.includes("rate limit")) {
-    return "Pinterest is rate limiting. Wait a few minutes and try again.";
+  if (s.includes("pinterest") && s.includes("rate limit") || s.includes("429")) {
+    return "Pinterest is rate limiting. Wait 5-10 minutes and try again.";
   }
   if (s.includes("pinterest") && s.includes("403")) {
-    return "Pinterest is blocking this request. Try: 1) A different pin 2) Wait a few minutes 3) Update your Pinterest cookies";
+    return "Pinterest blocked this request. Try: 1) Different pin 2) Wait a few minutes 3) Refresh your cookies";
   }
   if (s.includes("pinterest") && s.includes("blocked")) {
-    return "Pinterest has blocked this request. Try again in a few minutes.";
+    return "Pinterest blocked this request. Try again later or use a VPN.";
   }
-  if (s.includes("pinterest") && s.includes("no video") && !s.includes("image")) {
-    return "This Pinterest pin is an image, not a video. Use the image download option.";
-  }
-  if (s.includes("pinterest") && s.includes("unavailable")) {
-    return "This Pinterest pin is unavailable or has been deleted.";
-  }
-  if (s.includes("pinterest") && s.includes("timed out")) {
+  if (s.includes("pinterest") && s.includes("timed out") || s.includes("timeout")) {
     return "Pinterest timed out. The site might be slow or your connection is unstable.";
   }
 
-  // snapchat specific
   if (s.includes("snapchat") && s.includes("private")) {
     return "This Snapchat post is private. Only public Spotlight or Story links work.";
   }
@@ -416,7 +545,6 @@ function friendlyError(stderr = "") {
     return "This Snapchat post doesn't exist or has been removed.";
   }
 
-  // general errors
   if (
     s.includes("geo") ||
     s.includes("not available in your country") ||
@@ -470,7 +598,21 @@ function extractMediaUrls(info) {
     thumbnail: null,
     hasVideo: false,
     hasImage: false,
+    isGif: false,
   };
+
+  // If it's a direct extraction result, use it directly
+  if (info.directExtract) {
+    return {
+      images: info.media.images || [],
+      videos: info.media.videos || [],
+      audio: info.media.audio || [],
+      thumbnail: info.thumbnail || null,
+      hasVideo: info.hasVideo || false,
+      hasImage: info.hasImage || false,
+      isGif: false,
+    };
+  }
 
   const nodes =
     Array.isArray(info.entries) && info.entries.length
@@ -489,9 +631,35 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Check main node for direct media
+    const isGifFormat = (f) => {
+      if (!f) return false;
+      const note = (f.format_note || "").toLowerCase();
+      const ext = (f.ext || "").toLowerCase();
+      return note.includes("gif") ||
+             note.includes("animated") ||
+             ext === "gif" ||
+             (f.vcodec && f.vcodec !== "none" && note.includes("video") && (f.width || 0) < 400);
+    };
+
     if (node.url && node.ext) {
       const ext = node.ext.toLowerCase();
+      const note = (node.format_note || "").toLowerCase();
+      const isGif = ext === "gif" || note.includes("gif") || note.includes("animated");
+
+      if (isGif) {
+        media.videos.push({
+          url: node.url,
+          format: "mp4",
+          quality: "GIF",
+          width: node.width || null,
+          height: node.height || null,
+          isGif: true,
+        });
+        media.hasVideo = true;
+        media.isGif = true;
+        continue;
+      }
+
       if (["mp4", "mov", "webm", "mkv"].includes(ext)) {
         media.videos.push({
           url: node.url,
@@ -502,19 +670,16 @@ function extractMediaUrls(info) {
         });
         media.hasVideo = true;
       } else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
-        media.images.push({
-          url: node.url,
-          format: ext,
-          width: node.width || null,
-          height: node.height || null,
-        });
-        media.hasImage = true;
+        if (ext !== "gif") { // skip actual GIFs, they're videos
+          media.images.push({
+            url: node.url,
+            format: ext,
+            width: node.width || null,
+            height: node.height || null,
+          });
+          media.hasImage = true;
+        }
       }
-    }
-
-    // Check for webpage_url which Pinterest sometimes uses
-    if (node.webpage_url && !media.thumbnail) {
-      media.thumbnail = node.webpage_url;
     }
 
     if (Array.isArray(node.formats)) {
@@ -525,6 +690,25 @@ function extractMediaUrls(info) {
         const isVideoExt = format.ext && ["mp4", "mov", "webm", "mkv", "avi", "3gp"].includes(format.ext.toLowerCase());
         const hasVideoQuality = format.format_note && /(h264|h265|video|1080|720|480|360|240)/i.test(format.format_note);
         const isSnapchatVideo = format.format_note && /(video|story|snap|spotlight)/i.test(format.format_note);
+
+        const isTwitterGif = format.format_note &&
+          /(gif|animated|loop)/i.test(format.format_note);
+        const isGifBySize = format.width && format.width < 400 && format.format_note &&
+          /video/i.test(format.format_note);
+
+        if (isTwitterGif || isGifBySize) {
+          media.videos.push({
+            url: format.url,
+            format: format.ext || "mp4",
+            quality: "GIF",
+            width: format.width || null,
+            height: format.height || null,
+            isGif: true,
+          });
+          media.hasVideo = true;
+          media.isGif = true;
+          continue;
+        }
 
         if (isVideoFormat || (isVideoExt && (isSnapchatVideo || hasVideoQuality))) {
           media.videos.push({
@@ -555,6 +739,10 @@ function extractMediaUrls(info) {
           );
         const isPinterestImage = format.format_note && /(image|photo|pin)/i.test(format.format_note);
 
+        if (format.ext && format.ext.toLowerCase() === "gif") {
+          continue;
+        }
+
         if (isImageExt || isPinterestImage) {
           media.images.push({
             url: format.url,
@@ -567,7 +755,6 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Pinterest specific: formats as object
     if (node.formats && !Array.isArray(node.formats) && typeof node.formats === 'object') {
       const formatValues = Object.values(node.formats);
       for (const format of formatValues) {
@@ -597,7 +784,6 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Pinterest specific: _type "url"
     if (node._type === "url" && node.url) {
       const url = node.url;
       if (/\.(mp4|mov|webm)(\?|$)/i.test(url)) {
@@ -616,7 +802,6 @@ function extractMediaUrls(info) {
       }
     }
 
-    // Check for embedded video in description or other fields
     if (node.description) {
       const videoMatch = node.description.match(/https?:\/\/[^\s]+\.(mp4|mov|webm)[^\s]*/i);
       if (videoMatch) {
@@ -661,9 +846,14 @@ function extractMediaUrls(info) {
 
 function isUsableInfo(info) {
   if (!info) return false;
+
+  // If it's a direct extraction result, it's usable
+  if (info.directExtract) {
+    return info.hasVideo || info.hasImage;
+  }
+
   const media = extractMediaUrls(info);
 
-  // snapchat video detection
   if (info.formats && Array.isArray(info.formats)) {
     const hasSnapchatVideo = info.formats.some(f =>
       (f.ext && f.ext.toLowerCase() === 'mp4') ||
@@ -672,7 +862,14 @@ function isUsableInfo(info) {
     if (hasSnapchatVideo) return true;
   }
 
-  // pinterest: check for direct media URLs
+  if (info.formats && Array.isArray(info.formats)) {
+    const hasTwitterGif = info.formats.some(f =>
+      (f.format_note && /(gif|animated)/i.test(f.format_note)) ||
+      (f.ext && f.ext.toLowerCase() === 'mp4' && f.format_note && /video/i.test(f.format_note))
+    );
+    if (hasTwitterGif) return true;
+  }
+
   if (info.url && info.ext) {
     const ext = info.ext.toLowerCase();
     if (["mp4", "mov", "webm", "mkv", "jpg", "jpeg", "png", "webp"].includes(ext)) {
@@ -680,7 +877,6 @@ function isUsableInfo(info) {
     }
   }
 
-  // check for _type url
   if (info._type === "url" && info.url) {
     const url = info.url.toLowerCase();
     if (/\.(mp4|mov|webm|jpg|jpeg|png|webp)(\?|$)/i.test(url)) {
@@ -688,7 +884,6 @@ function isUsableInfo(info) {
     }
   }
 
-  // check for embedded video in description
   if (info.description) {
     if (/https?:\/\/[^\s]+\.(mp4|mov|webm)[^\s]*/i.test(info.description)) {
       return true;
@@ -733,20 +928,18 @@ router.post("/resolve", async (req, res) => {
     }
   }
 
-  // For Pinterest, expand pin.it shortlinks
+  // Pinterest shortlink expansion
   let finalUrl = url;
-  if (platform === "pinterest" && url.includes("pin.it")) {
+  if (platform === "pinterest" && (url.includes("pin.it") || url.includes("/pin/"))) {
     try {
-      console.log("[seize] Expanding pin.it shortlink...");
+      console.log("[seize] Expanding Pinterest shortlink...");
       const response = await fetch(url, {
         method: "HEAD",
         headers: { "User-Agent": DESKTOP_UA },
-        redirect: "manual"
+        redirect: "follow"
       });
-      if (response.headers.get("location")) {
-        finalUrl = response.headers.get("location");
-        console.log("[seize] Expanded to:", finalUrl);
-      }
+      finalUrl = response.url || url;
+      console.log("[seize] Expanded to:", finalUrl);
     } catch (e) {
       console.log("[seize] Could not expand shortlink, using original");
     }
@@ -754,7 +947,7 @@ router.post("/resolve", async (req, res) => {
 
   try {
     console.log(`[seize] Resolving ${platform}...`);
-    const { info } = await resolveWithStrategies(finalUrl, platform, isUsableInfo);
+    const { info, directExtract } = await resolveWithStrategies(finalUrl, platform, isUsableInfo);
 
     const media = extractMediaUrls(info);
 
@@ -768,29 +961,27 @@ router.post("/resolve", async (req, res) => {
       }
     }
     if (platform === "pinterest") {
-      title = info.title || info.description || "Pinterest Pin";
+      title = info.title || "Pinterest Pin";
       if (title.length > 100) title = title.substring(0, 100) + "...";
     }
 
-    let uploader =
-      info.uploader ||
-      info.channel ||
-      info.author ||
-      info.creator ||
-      info.owner ||
-      null;
+    let uploader = info.uploader || info.channel || info.author || info.creator || info.owner || null;
 
     let contentType = "unknown";
     if (media.hasVideo) contentType = "video";
     else if (media.hasImage) contentType = "image";
     else if (media.audio.length > 0) contentType = "audio";
 
+    if (media.isGif) {
+      contentType = "video";
+    }
+
     let thumbnail = media.thumbnail || "/icons/icon-192.png";
     if (thumbnail === "/icons/icon-192.png" && media.images.length > 0) {
       thumbnail = media.images[0].url;
     }
 
-    res.json({
+    const responseData = {
       platform,
       title,
       thumbnail,
@@ -798,6 +989,7 @@ router.post("/resolve", async (req, res) => {
       contentType,
       hasVideo: media.hasVideo,
       hasImage: media.hasImage,
+      isGif: media.isGif || false,
       media: {
         videos: dedupeByHeight(media.videos, 12),
         images: media.images.slice(0, 10),
@@ -808,7 +1000,19 @@ router.post("/resolve", async (req, res) => {
         : [],
       duration: info.duration || null,
       isImageOnly: contentType === "image",
-    });
+      directExtract: directExtract || false,
+    };
+
+    // Log what we found
+    console.log(`[seize] Resolved ${platform} - Video: ${media.hasVideo}, Image: ${media.hasImage}, GIF: ${media.isGif || false}`);
+    if (media.videos.length > 0) {
+      console.log(`[seize] Found ${media.videos.length} video(s), best: ${media.videos[0].quality || 'unknown'}`);
+    }
+    if (media.images.length > 0) {
+      console.log(`[seize] Found ${media.images.length} image(s)`);
+    }
+
+    res.json(responseData);
   } catch (err) {
     const stderr = err.stderr || err.message || "";
     console.error("[resolve] Failed:", stderr);

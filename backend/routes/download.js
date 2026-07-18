@@ -1223,7 +1223,7 @@ router.get("/file/:jobId", (req, res) => {
 });
 
 // ============================================================
-// CREATOR ARCHIVE - FAST & OPTIMIZED
+// CREATOR ARCHIVE - FIXED with correct yt-dlp syntax
 // ============================================================
 router.post("/profile", async (req, res) => {
   const { url, platform, limit = 50, mode = "all" } = req.body;
@@ -1257,247 +1257,73 @@ router.post("/profile", async (req, res) => {
   // Process in background
   (async () => {
     try {
-      console.log(
-        `[seize] Fast scanning profile from ${detectedPlatform}: ${url}`,
-      );
+      console.log(`[seize] Scanning profile from ${detectedPlatform}: ${url}`);
 
       let items = [];
       const maxItems = Math.min(limit, 100);
 
+      // Base options for all platforms
+      const baseOpts = {
+        dumpSingleJson: true,
+        noWarnings: true,
+        noCheckCertificates: true,
+        ffmpegLocation: ffmpegStaticPath,
+        retries: 3,
+        socketTimeout: 30,
+        skipDownload: true,
+      };
+
+      const cookies = cookiesFor(detectedPlatform);
+      if (cookies) baseOpts.cookies = cookies;
+
+      let info = null;
+
+      // Platform-specific extraction
       if (detectedPlatform === "tiktok") {
-        // TikTok - use flat playlist with minimal data
-        const options = {
-          dumpSingleJson: true,
-          noWarnings: true,
-          noCheckCertificates: true,
-          ffmpegLocation: ffmpegStaticPath,
-          retries: 2,
-          socketTimeout: 20,
-          playlistItems: true,
-          playlistEnd: maxItems,
+        const opts = {
+          ...baseOpts,
+          // CORRECT SYNTAX: "1:10" means items 1 through 10
+          playlistItems: `1:${maxItems}`,
           extractorArgs: "tiktok:device_id=auto",
           addHeaders: {
             "User-Agent": ANDROID_UA,
             Accept: "application/json, text/plain, */*",
             Referer: "https://www.tiktok.com/",
           },
-          // Skip downloading media - just metadata
-          skipDownload: true,
         };
-
-        const cookies = cookiesFor(detectedPlatform);
-        if (cookies) options.cookies = cookies;
-
-        const info = await ytDlp(url, options, { timeout: 30000 });
-
-        const entries = Array.isArray(info.entries) ? info.entries : [info];
-
-        for (const entry of entries) {
-          if (!entry || items.length >= maxItems) continue;
-
-          const hasVideo = !!(
-            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
-            entry.ext === "mp4" ||
-            entry.ext === "mov" ||
-            entry.ext === "webm"
-          );
-          const hasImage = !!(
-            entry.formats?.some(
-              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
-            ) ||
-            entry.ext === "jpg" ||
-            entry.ext === "jpeg" ||
-            entry.ext === "png" ||
-            entry.ext === "webp"
-          );
-
-          let thumbnail = entry.thumbnail || null;
-          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
-            const largest = [...entry.thumbnails].sort(
-              (a, b) => (b.width || 0) - (a.width || 0),
-            )[0];
-            thumbnail = largest?.url || null;
-          }
-
-          const item = {
-            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
-            title: entry.title || entry.fulltitle || "Untitled",
-            url: entry.webpage_url || entry.url || null,
-            thumbnail: thumbnail,
-            duration: entry.duration || null,
-            hasVideo: hasVideo,
-            hasImage: hasImage || (!hasVideo && !!thumbnail),
-            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
-            uploader: info.uploader || info.channel || info.author || null,
-            viewCount: entry.view_count || entry.views || null,
-            likeCount: entry.like_count || entry.likes || null,
-            timestamp: entry.timestamp || entry.upload_date || null,
-          };
-
-          if (mode === "videos" && !item.hasVideo) continue;
-          if (mode === "images" && !item.hasImage) continue;
-          if (mode === "all" || item.hasVideo || item.hasImage) {
-            items.push(item);
-          }
-        }
+        info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "instagram") {
-        // Instagram - fast playlist extraction
-        const options = {
-          dumpSingleJson: true,
-          noWarnings: true,
-          noCheckCertificates: true,
-          ffmpegLocation: ffmpegStaticPath,
-          retries: 2,
-          socketTimeout: 20,
-          playlistItems: true,
-          playlistEnd: maxItems,
+        const opts = {
+          ...baseOpts,
+          playlistItems: `1:${maxItems}`,
           extractorArgs: "instagram:include_ads=false",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
-          skipDownload: true,
         };
-
-        const cookies = cookiesFor(detectedPlatform);
-        if (cookies) options.cookies = cookies;
-
-        const info = await ytDlp(url, options, { timeout: 30000 });
-
-        const entries = Array.isArray(info.entries) ? info.entries : [info];
-
-        for (const entry of entries) {
-          if (!entry || items.length >= maxItems) continue;
-
-          const hasVideo = !!(
-            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
-            entry.ext === "mp4" ||
-            entry.ext === "mov" ||
-            entry.ext === "webm"
-          );
-          const hasImage = !!(
-            entry.formats?.some(
-              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
-            ) ||
-            entry.ext === "jpg" ||
-            entry.ext === "jpeg" ||
-            entry.ext === "png" ||
-            entry.ext === "webp"
-          );
-
-          let thumbnail = entry.thumbnail || null;
-          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
-            const largest = [...entry.thumbnails].sort(
-              (a, b) => (b.width || 0) - (a.width || 0),
-            )[0];
-            thumbnail = largest?.url || null;
-          }
-
-          const item = {
-            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
-            title: entry.title || entry.fulltitle || "Untitled",
-            url: entry.webpage_url || entry.url || null,
-            thumbnail: thumbnail,
-            duration: entry.duration || null,
-            hasVideo: hasVideo,
-            hasImage: hasImage || (!hasVideo && !!thumbnail),
-            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
-            uploader: info.uploader || info.channel || info.author || null,
-            viewCount: entry.view_count || entry.views || null,
-            likeCount: entry.like_count || entry.likes || null,
-            timestamp: entry.timestamp || entry.upload_date || null,
-          };
-
-          if (mode === "videos" && !item.hasVideo) continue;
-          if (mode === "images" && !item.hasImage) continue;
-          if (mode === "all" || item.hasVideo || item.hasImage) {
-            items.push(item);
-          }
-        }
+        info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "twitter") {
-        // Twitter/X - fast playlist extraction
-        const options = {
-          dumpSingleJson: true,
-          noWarnings: true,
-          noCheckCertificates: true,
-          ffmpegLocation: ffmpegStaticPath,
-          retries: 2,
-          socketTimeout: 20,
-          playlistItems: true,
-          playlistEnd: maxItems,
+        const opts = {
+          ...baseOpts,
+          playlistItems: `1:${maxItems}`,
           extractorArgs: "twitter:api=syndication",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept: "application/json, text/plain, */*",
           },
-          skipDownload: true,
         };
-
-        const cookies = cookiesFor(detectedPlatform);
-        if (cookies) options.cookies = cookies;
-
-        const info = await ytDlp(url, options, { timeout: 30000 });
-
-        const entries = Array.isArray(info.entries) ? info.entries : [info];
-
-        for (const entry of entries) {
-          if (!entry || items.length >= maxItems) continue;
-
-          const hasVideo = !!(
-            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
-            entry.ext === "mp4" ||
-            entry.ext === "mov" ||
-            entry.ext === "webm"
-          );
-          const hasImage = !!(
-            entry.formats?.some(
-              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
-            ) ||
-            entry.ext === "jpg" ||
-            entry.ext === "jpeg" ||
-            entry.ext === "png" ||
-            entry.ext === "webp"
-          );
-
-          let thumbnail = entry.thumbnail || null;
-          if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
-            const largest = [...entry.thumbnails].sort(
-              (a, b) => (b.width || 0) - (a.width || 0),
-            )[0];
-            thumbnail = largest?.url || null;
-          }
-
-          const item = {
-            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
-            title: entry.title || entry.fulltitle || "Untitled",
-            url: entry.webpage_url || entry.url || null,
-            thumbnail: thumbnail,
-            duration: entry.duration || null,
-            hasVideo: hasVideo,
-            hasImage: hasImage || (!hasVideo && !!thumbnail),
-            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
-            uploader: info.uploader || info.channel || info.author || null,
-            viewCount: entry.view_count || entry.views || null,
-            likeCount: entry.like_count || entry.likes || null,
-            timestamp: entry.timestamp || entry.upload_date || null,
-          };
-
-          if (mode === "videos" && !item.hasVideo) continue;
-          if (mode === "images" && !item.hasImage) continue;
-          if (mode === "all" || item.hasVideo || item.hasImage) {
-            items.push(item);
-          }
-        }
+        info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "pinterest") {
-        // Pinterest - use direct extraction or generic
-        const options = {
-          dumpSingleJson: true,
-          noWarnings: true,
-          noCheckCertificates: true,
-          ffmpegLocation: ffmpegStaticPath,
-          retries: 2,
-          socketTimeout: 20,
+        // Pinterest: use generic extractor
+        let pinterestUrl = url;
+        if (!url.includes("/feed/") && !url.includes("/pins/")) {
+          pinterestUrl = url.replace(/\/$/, "") + "/pins/";
+        }
+
+        const opts = {
+          ...baseOpts,
           extractorArgs: "generic",
           addHeaders: {
             "User-Agent": DESKTOP_UA,
@@ -1506,20 +1332,12 @@ router.post("/profile", async (req, res) => {
             "Accept-Language": "en-US,en;q=0.9",
             "Cache-Control": "no-cache",
           },
-          skipDownload: true,
         };
+        info = await ytDlp(pinterestUrl, opts, { timeout: 45000 });
+      }
 
-        const cookies = cookiesFor(detectedPlatform);
-        if (cookies) options.cookies = cookies;
-
-        // Try to get the pin feed
-        let pinterestUrl = url;
-        if (!url.includes("/feed/") && !url.includes("/pins/")) {
-          pinterestUrl = url.replace(/\/$/, "") + "/pins/";
-        }
-
-        const info = await ytDlp(pinterestUrl, options, { timeout: 30000 });
-
+      // Process results
+      if (info) {
         const entries = Array.isArray(info.entries) ? info.entries : [info];
 
         for (const entry of entries) {
@@ -1586,7 +1404,7 @@ router.post("/profile", async (req, res) => {
       }
 
       console.log(
-        `[seize] Fast scan complete: ${items.length} items from ${detectedPlatform} in ${Date.now() - job.createdAt}ms`,
+        `[seize] Scan complete: ${items.length} items from ${detectedPlatform}`,
       );
     } catch (err) {
       console.error("[seize] Profile scan failed:", err.message);

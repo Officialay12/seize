@@ -41,12 +41,8 @@ function updateYtDlpBinary() {
 setTimeout(updateYtDlpBinary, 5000);
 setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
-// ===
-// Render Secret Files (and similar mounts on other hosts) are read-only.
-// yt-dlp writes updated session data back to the cookies file after every
-// run — pointed directly at a read-only mount, that write throws an
-// unhandled OSError that crashes the whole request. Copy each configured
-// cookies file into the writable tmp dir once at boot, and use that copy.
+// cookies on render are read-only, yt-dlp tries to write back to them
+// and crashes. so we copy 'em to tmp and use that instead.
 const COOKIE_SOURCE_FILES = {
   tiktok: process.env.TIKTOK_COOKIES_FILE,
   instagram: process.env.INSTAGRAM_COOKIES_FILE,
@@ -77,11 +73,15 @@ function cookiesFor(platform) {
   return file && fs.existsSync(file) ? file : null;
 }
 
+// platforms we support. pinterest gets extra love for all those country TLDs
 const PLATFORM_PATTERNS = [
   { name: "tiktok", re: /tiktok\.com/i },
   { name: "instagram", re: /instagram\.com/i },
   { name: "twitter", re: /(twitter\.com|x\.com)/i },
-  { name: "pinterest", re: /(pinterest\.com|pin\.it)/i },
+  {
+    name: "pinterest",
+    re: /(pinterest\.com|pin\.it|pinterest\.com\.au|pinterest\.co\.uk|pinterest\.de|pinterest\.fr|pinterest\.es|pinterest\.it)/i
+  },
   { name: "snapchat", re: /snapchat\.com/i },
   { name: "facebook", re: /(facebook\.com|fb\.watch)/i },
 ];
@@ -111,6 +111,8 @@ function baseOptions(platform) {
   return opts;
 }
 
+// different platforms need different approaches. pinterest is fussy so it gets
+// extra strategies with different user agents.
 function getStrategies(platform) {
   const base = baseOptions(platform);
 
@@ -165,23 +167,45 @@ function getStrategies(platform) {
       return [
         {
           ...base,
-          addHeaders: { "User-Agent": DESKTOP_UA },
+          extractorArgs: "pinterest:include_ads=false",
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "application/json, text/plain, */*",
+            Referer: "https://www.pinterest.com/",
+          },
         },
         {
           ...base,
-          addHeaders: { "User-Agent": ANDROID_UA },
+          addHeaders: {
+            "User-Agent": ANDROID_UA,
+            Referer: "https://www.pinterest.com/",
+          },
+        },
+        {
+          ...base,
+          extractorArgs: "pinterest:include_ads=false",
+          addHeaders: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            Referer: "https://www.pinterest.com/",
+          },
         },
       ];
     case "snapchat":
-      // Only public Spotlight/Story links are reachable at all — Snapchat
-      // has no concept of a stable "post URL" for private snaps/stories,
-      // by design (that's the whole premise of the app). Nothing short of
-      // account-level access could ever resolve those, and that's out of
-      // scope here the same way it is for WhatsApp statuses.
       return [
         {
           ...base,
-          addHeaders: { "User-Agent": DESKTOP_UA },
+          addHeaders: {
+            "User-Agent": DESKTOP_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          },
+        },
+        {
+          ...base,
+          addHeaders: {
+            "User-Agent": ANDROID_UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          },
         },
       ];
     case "facebook":
@@ -222,19 +246,16 @@ async function resolveWithStrategies(url, platform, isUsable) {
     } catch (err) {
       lastErr = err;
       const msg = (err.stderr || err.message || "").toLowerCase();
-      // rate limit = give up early, switching client won't fix that
       if (msg.includes("429") || msg.includes("rate limit")) throw err;
     }
     if (i < strategies.length - 1) {
-      // tiny gap between strategies, dodges transient blocks
       await new Promise((r) => setTimeout(r, 250));
     }
   }
   throw lastErr || new Error("All extraction strategies failed");
 }
 
-// parses yt-dlp's own stdout ("[download] 42.3% of 12.34MiB") for real
-// progress instead of faking a linear bar
+// pulls real progress from yt-dlp's stdout instead of guessing
 function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -329,10 +350,34 @@ function downloadFile(url, filePath, redirects = 0) {
   });
 }
 
+// turns cryptic yt-dlp errors into something a human can actually understand.
+// pinterest and snapchat get their own messages now.
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
-  // --- most specific checks first ---
+  // pinterest being pinterest
+  if (s.includes("pinterest") && (s.includes("login") || s.includes("sign in"))) {
+    return "This Pinterest post requires authentication. The pin may be private or from a private board.";
+  }
+  if (s.includes("pinterest") && s.includes("not found")) {
+    return "This Pinterest pin doesn't exist or has been removed.";
+  }
+  if (s.includes("pinterest") && s.includes("rate limit")) {
+    return "Pinterest is rate limiting. Please wait a few moments and try again.";
+  }
+
+  // snapchat things
+  if (s.includes("snapchat") && s.includes("private")) {
+    return "This Snapchat post is private. Only public Spotlight or Story links can be accessed.";
+  }
+  if (s.includes("snapchat") && s.includes("expired")) {
+    return "This Snapchat link has expired. Snapchat stories typically expire after 24 hours.";
+  }
+  if (s.includes("snapchat") && s.includes("not found")) {
+    return "This Snapchat post doesn't exist or has been removed.";
+  }
+
+  // the usual suspects
   if (
     s.includes("geo") ||
     s.includes("not available in your country") ||
@@ -378,6 +423,8 @@ function friendlyError(stderr = "") {
   return "Couldn't resolve this link. It may have been deleted, made private, or the platform is temporarily blocking automated access.";
 }
 
+// extracts all the actual media URLs from whatever yt-dlp spat out.
+// snapchat and pinterest have weird formats so we handle those specially.
 function extractMediaUrls(info) {
   const media = {
     images: [],
@@ -388,8 +435,6 @@ function extractMediaUrls(info) {
     hasImage: false,
   };
 
-  // carousels (IG sidecar, twitter multi-photo, tiktok slideshows) come
-  // back as a playlist with `entries` — flatten those into the same buckets
   const nodes =
     Array.isArray(info.entries) && info.entries.length
       ? info.entries.filter(Boolean)
@@ -411,7 +456,13 @@ function extractMediaUrls(info) {
       for (const format of node.formats) {
         if (!format.url) continue;
 
-        if (format.vcodec && format.vcodec !== "none") {
+        // snapchat sometimes marks videos as mp4 with vcodec "none" - still a video
+        const isVideoFormat = format.vcodec && format.vcodec !== "none";
+        const isVideoExt = format.ext && ["mp4", "mov", "webm", "mkv", "avi", "3gp"].includes(format.ext.toLowerCase());
+        const hasVideoQuality = format.format_note && /(h264|h265|video|1080|720|480|360|240)/i.test(format.format_note);
+        const isSnapchatVideo = format.format_note && /(video|story|snap|spotlight)/i.test(format.format_note);
+
+        if (isVideoFormat || (isVideoExt && (isSnapchatVideo || hasVideoQuality))) {
           media.videos.push({
             url: format.url,
             format: format.ext || "mp4",
@@ -434,15 +485,17 @@ function extractMediaUrls(info) {
           });
         }
 
-        if (
-          format.ext &&
+        // pinterest puts images in weird places too
+        const isImageExt = format.ext &&
           ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "tiff"].includes(
-            format.ext,
-          )
-        ) {
+            format.ext.toLowerCase()
+          );
+        const isPinterestImage = format.format_note && /(image|photo|pin)/i.test(format.format_note);
+
+        if (isImageExt || isPinterestImage) {
           media.images.push({
             url: format.url,
-            format: format.ext,
+            format: format.ext || "jpg",
             width: format.width || null,
             height: format.height || null,
           });
@@ -451,17 +504,68 @@ function extractMediaUrls(info) {
       }
     }
 
-    // some image posts expose the image directly, not as a "format"
-    // (IG/twitter photo posts do this)
-    if (
-      node.url &&
-      (node.ext === "jpg" ||
-        node.ext === "jpeg" ||
-        node.ext === "png" ||
-        node.ext === "webp")
-    ) {
+    // pinterest sometimes puts images right on the node
+    if (node.url && (
+      node.ext === "jpg" ||
+      node.ext === "jpeg" ||
+      node.ext === "png" ||
+      node.ext === "webp"
+    )) {
       media.images.push({ url: node.url, format: node.ext });
       media.hasImage = true;
+    }
+
+    // snapchat video on the node
+    if (node.url && node.ext === "mp4" && !node.vcodec) {
+      media.videos.push({
+        url: node.url,
+        format: "mp4",
+        quality: "Unknown",
+        width: node.width || null,
+        height: node.height || null,
+      });
+      media.hasVideo = true;
+    }
+
+    // pinterest responses sometimes have formats as an object instead of array
+    if (node.formats && !Array.isArray(node.formats) && typeof node.formats === 'object') {
+      const formatValues = Object.values(node.formats);
+      for (const format of formatValues) {
+        if (format && format.url) {
+          const isVideo = format.vcodec && format.vcodec !== "none";
+          const isVideoExt = format.ext && ["mp4", "mov", "webm"].includes(format.ext.toLowerCase());
+
+          if (isVideo || isVideoExt) {
+            media.videos.push({
+              url: format.url,
+              format: format.ext || "mp4",
+              quality: format.format_note || "Unknown",
+              width: format.width || null,
+              height: format.height || null,
+            });
+            media.hasVideo = true;
+          } else if (format.ext && ["jpg", "jpeg", "png", "webp"].includes(format.ext.toLowerCase())) {
+            media.images.push({
+              url: format.url,
+              format: format.ext,
+              width: format.width || null,
+              height: format.height || null,
+            });
+            media.hasImage = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (!media.thumbnail && media.images.length > 0) {
+    media.thumbnail = media.images[0].url;
+  }
+
+  if (!media.thumbnail && media.videos.length > 0) {
+    const videoUrl = media.videos[0].url;
+    if (videoUrl) {
+      media.thumbnail = videoUrl;
     }
   }
 
@@ -483,17 +587,23 @@ function extractMediaUrls(info) {
   return media;
 }
 
+// snapchat videos don't always get detected properly, so we check for
+// mp4 extensions and video-related format notes explicitly
 function isUsableInfo(info) {
   if (!info) return false;
   const media = extractMediaUrls(info);
+
+  if (info.formats && Array.isArray(info.formats)) {
+    const hasSnapchatVideo = info.formats.some(f =>
+      (f.ext && f.ext.toLowerCase() === 'mp4') ||
+      (f.format_note && /(video|story|snap)/i.test(f.format_note))
+    );
+    if (hasSnapchatVideo) return true;
+  }
+
   return media.hasVideo || media.hasImage || media.audio.length > 0;
 }
 
-// media.videos is already sorted best->worst by extractMediaUrls. Slicing
-// by position used to just keep the top N, which — since platforms expose
-// many near-duplicate high-res formats — meant lower resolutions almost
-// never survived the cut. Dedupe by height instead so every distinct
-// quality tier gets one representative entry.
 function dedupeByHeight(videos, max = 12) {
   const seen = new Set();
   const out = [];
@@ -507,6 +617,7 @@ function dedupeByHeight(videos, max = 12) {
   return out;
 }
 
+// ===== RESOLVE =====
 router.post("/resolve", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
@@ -596,6 +707,7 @@ router.post("/resolve", async (req, res) => {
   }
 });
 
+// ===== FETCH =====
 router.post("/fetch", async (req, res) => {
   const { url, mode = "video", quality = "best" } = req.body;
   if (!url) return res.status(400).json({ error: "A URL is required" });
@@ -613,7 +725,7 @@ router.post("/fetch", async (req, res) => {
   res.json({ jobId });
 
   try {
-    // ---------- IMAGE MODE ----------
+    // image mode - just grab the highest res image
     if (mode === "image") {
       const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
       const media = extractMediaUrls(info);
@@ -641,13 +753,10 @@ router.post("/fetch", async (req, res) => {
       return;
     }
 
-    // ---------- VIDEO / AUDIO MODE ----------
-    // fallback chain of format strings, weakest last. quality tier
-    // (e.g. "720") caps height on every entry; "best" leaves it alone
+    // video/audio mode
     const heightCap = /^\d+$/.test(String(quality)) ? String(quality) : null;
     const capFmt = (fmt) => {
       if (!heightCap) return fmt;
-      // cap height per alternative, leave the "/" fallbacks alone
       return fmt
         .split("/")
         .map((part) =>
@@ -697,7 +806,6 @@ router.post("/fetch", async (req, res) => {
           if (msg.includes("429") || msg.includes("rate limit")) {
             throw err;
           }
-          // wipe partial file before the next attempt
           if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
         }
       }
@@ -738,12 +846,14 @@ router.post("/fetch", async (req, res) => {
   }
 });
 
+// ===== STATUS =====
 router.get("/status/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ error: "Job not found" });
   res.json({ status: job.status, progress: job.progress, error: job.error });
 });
 
+// ===== DOWNLOAD =====
 router.get("/file/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job || job.status !== "done")

@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <title>seize — capture any signal</title>
+    <title>Seize — capture any signal</title>
     <meta
       name="description"
       content="Convert video to audio, audio to video, and pull media from TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook — clean, fast, no watermark."
@@ -196,6 +196,9 @@
               <button class="btn-secondary" id="fetch-image-btn">
                 🖼️ Download image
               </button>
+              <button class="btn-secondary" id="add-to-collection-btn">
+                ➕ Add to collection
+              </button>
             </div>
           </div>
         </div>
@@ -205,6 +208,28 @@
             <div class="progress-fill" id="capture-progress-fill"></div>
           </div>
           <p class="mono small" id="capture-progress-label">FETCHING…</p>
+        </div>
+
+        <div id="collection-basket" class="collection-basket hidden">
+          <p class="mono small collection-basket-count">
+            <span id="collection-basket-count">0</span> item(s) in your collection
+          </p>
+          <div class="collection-basket-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              id="collection-clear-btn"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              class="btn-primary"
+              id="collection-create-btn"
+            >
+              🔗 Create shareable link
+            </button>
+          </div>
         </div>
 
         <p id="capture-error" class="error-text hidden"></p>
@@ -349,6 +374,17 @@
           Nothing here yet resolved links and conversions will show up
           after you use them.
         </p>
+      </section>
+
+      <!-- PUBLIC COLLECTION VIEW -->
+      <section class="panel" id="panel-collection-view" data-active="false">
+        <div class="panel-head">
+          <a href="/" class="collection-back-link mono small">← Back to seize</a>
+          <h2 id="collection-view-name">Shared collection</h2>
+          <p class="panel-sub" id="collection-view-meta">—</p>
+        </div>
+        <div id="collection-grid" class="collection-grid"></div>
+        <p id="collection-view-error" class="error-text hidden"></p>
       </section>
     </main>
 

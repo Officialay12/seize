@@ -568,6 +568,7 @@ const captureError = document.getElementById("capture-error");
 const chips = document.querySelectorAll(".chip");
 
 let currentUrl = "";
+let lastResolvedItem = null;
 
 function updateResultButtons(data) {
   const qualityRow = document.getElementById("quality-row");
@@ -686,6 +687,14 @@ captureForm.addEventListener("submit", async (e) => {
     updateResultButtons(data);
     captureResult.classList.remove("hidden");
     setScopeState("done");
+
+    lastResolvedItem = {
+      sourceUrl: url,
+      platform: data.platform || null,
+      title: data.title || "Untitled",
+      thumbnail: data.thumbnail || null,
+      contentType: data.contentType || null,
+    };
 
     addHistoryEntry({
       type: "resolve",
@@ -816,6 +825,258 @@ function pollJob(statusUrl, fillEl, labelEl) {
     }, 2000);
   });
 }
+
+// ===== Shareable collections =====
+// A small client-side "basket" of resolved items, bundled into a public
+// gallery link on demand. Items store the original source URL (not a
+// platform CDN link) — see db.js for why that matters: CDN media URLs
+// expire, source page URLs don't.
+const COLLECTION_BASKET_KEY = "seize_collection_basket";
+const collectionBasketEl = document.getElementById("collection-basket");
+const collectionBasketCountEl = document.getElementById(
+  "collection-basket-count",
+);
+const collectionClearBtn = document.getElementById("collection-clear-btn");
+const collectionCreateBtn = document.getElementById("collection-create-btn");
+const addToCollectionBtn = document.getElementById("add-to-collection-btn");
+
+function loadCollectionBasket() {
+  try {
+    return JSON.parse(sessionStorage.getItem(COLLECTION_BASKET_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveCollectionBasket(items) {
+  try {
+    sessionStorage.setItem(COLLECTION_BASKET_KEY, JSON.stringify(items));
+  } catch {
+    /* ignore — sessionStorage can throw in some private-browsing modes */
+  }
+}
+
+function renderCollectionBasket() {
+  const items = loadCollectionBasket();
+  collectionBasketCountEl.textContent = String(items.length);
+  collectionBasketEl.classList.toggle("hidden", items.length === 0);
+}
+
+addToCollectionBtn?.addEventListener("click", () => {
+  if (!lastResolvedItem) return;
+  const items = loadCollectionBasket();
+
+  const alreadyAdded = items.some(
+    (i) => i.sourceUrl === lastResolvedItem.sourceUrl,
+  );
+  if (alreadyAdded) {
+    addToCollectionBtn.textContent = "✅ Already added";
+    setTimeout(() => {
+      addToCollectionBtn.textContent = "➕ Add to collection";
+    }, 1500);
+    return;
+  }
+
+  items.push(lastResolvedItem);
+  saveCollectionBasket(items);
+  renderCollectionBasket();
+
+  addToCollectionBtn.textContent = "✅ Added";
+  setTimeout(() => {
+    addToCollectionBtn.textContent = "➕ Add to collection";
+  }, 1500);
+});
+
+collectionClearBtn?.addEventListener("click", () => {
+  saveCollectionBasket([]);
+  renderCollectionBasket();
+});
+
+collectionCreateBtn?.addEventListener("click", async () => {
+  const items = loadCollectionBasket();
+  if (items.length === 0) return;
+
+  collectionCreateBtn.disabled = true;
+  collectionCreateBtn.textContent = "Creating…";
+
+  try {
+    const res = await fetch(`${API_BASE}/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't create collection.");
+
+    const shareUrl = `${window.location.origin}/?c=${data.id}`;
+
+    // remember collections this device created, so "delete" is possible
+    // later without needing an account — the ownerToken is the only
+    // credential, keep it local only, never send it anywhere but the
+    // delete endpoint.
+    const mine = JSON.parse(
+      localStorage.getItem("seize_my_collections") || "[]",
+    );
+    mine.push({
+      id: data.id,
+      ownerToken: data.ownerToken,
+      createdAt: Date.now(),
+      itemCount: items.length,
+    });
+    localStorage.setItem("seize_my_collections", JSON.stringify(mine));
+
+    saveCollectionBasket([]);
+    renderCollectionBasket();
+
+    showShareLinkResult(shareUrl);
+  } catch (err) {
+    showCaptureError(err.message);
+  } finally {
+    collectionCreateBtn.disabled = false;
+    collectionCreateBtn.textContent = "🔗 Create shareable link";
+  }
+});
+
+function showShareLinkResult(shareUrl) {
+  const existing = document.querySelector(".collection-share-result");
+  if (existing) existing.remove();
+
+  const card = document.createElement("div");
+  card.className = "collection-share-result mono small";
+
+  const label = document.createElement("p");
+  label.textContent = "🎉 Your collection is ready:";
+  card.appendChild(label);
+
+  const linkRow = document.createElement("div");
+  linkRow.className = "collection-share-link-row";
+
+  const link = document.createElement("input");
+  link.type = "text";
+  link.readOnly = true;
+  link.value = shareUrl;
+  link.className = "text-input";
+  linkRow.appendChild(link);
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "btn-secondary";
+  copyBtn.textContent = "Copy";
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      copyBtn.textContent = "✅ Copied";
+      setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+    } catch {
+      link.select();
+    }
+  });
+  linkRow.appendChild(copyBtn);
+
+  card.appendChild(linkRow);
+  collectionBasketEl.insertAdjacentElement("afterend", card);
+}
+
+renderCollectionBasket();
+
+// ---- Public gallery view (?c=<id>) ----
+const panelCollectionView = document.getElementById("panel-collection-view");
+const collectionGrid = document.getElementById("collection-grid");
+const collectionViewName = document.getElementById("collection-view-name");
+const collectionViewMeta = document.getElementById("collection-view-meta");
+const collectionViewError = document.getElementById("collection-view-error");
+
+function collectionThumb(item) {
+  const img = document.createElement("img");
+  img.className = "collection-item-thumb";
+  img.alt = "";
+  img.loading = "lazy";
+  if (item.thumbnail) {
+    loadThumbnail(item.thumbnail, img);
+  }
+  return img;
+}
+
+function renderCollectionItem(item) {
+  const card = document.createElement("div");
+  card.className = "collection-item";
+
+  card.appendChild(collectionThumb(item));
+
+  const meta = document.createElement("div");
+  meta.className = "collection-item-meta";
+
+  const title = document.createElement("p");
+  title.className = "collection-item-title";
+  title.textContent = item.title || "Untitled"; // textContent only — untrusted external data
+  meta.appendChild(title);
+
+  const platform = document.createElement("p");
+  platform.className = "mono small collection-item-platform";
+  platform.textContent = item.platform || "unknown";
+  meta.appendChild(platform);
+
+  const openBtn = document.createElement("button");
+  openBtn.type = "button";
+  openBtn.className = "btn-secondary";
+  openBtn.textContent = "Open in seize →";
+  openBtn.addEventListener("click", () => {
+    // re-resolve fresh through the normal capture flow, rather than
+    // trusting a possibly stale stored media link
+    window.location.href = `/?resolve=${encodeURIComponent(item.sourceUrl)}`;
+  });
+  meta.appendChild(openBtn);
+
+  card.appendChild(meta);
+  return card;
+}
+
+async function loadCollectionView(id) {
+  document.body.classList.add("collection-view-mode");
+  document.querySelectorAll(".mode-switch, .hero").forEach((el) => {
+    el.style.display = "none";
+  });
+  document
+    .querySelectorAll(".panel")
+    .forEach((el) => el.setAttribute("data-active", "false"));
+  panelCollectionView.setAttribute("data-active", "true");
+
+  try {
+    const res = await fetch(`${API_BASE}/collections/${id}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Collection not found.");
+
+    collectionViewName.textContent = data.name || "Shared collection";
+    collectionViewMeta.textContent = `${data.items.length} item(s) · shared via seize`;
+
+    collectionGrid.innerHTML = "";
+    data.items.forEach((item) => {
+      collectionGrid.appendChild(renderCollectionItem(item));
+    });
+  } catch (err) {
+    collectionViewError.textContent = err.message;
+    collectionViewError.classList.remove("hidden");
+  }
+}
+
+(function checkForCollectionLink() {
+  const params = new URLSearchParams(window.location.search);
+  const collectionId = params.get("c");
+  if (collectionId) {
+    loadCollectionView(collectionId);
+    return;
+  }
+
+  // came from a collection item's "Open in seize" button
+  const resolveUrl = params.get("resolve");
+  if (resolveUrl) {
+    window.addEventListener("load", () => {
+      urlInput.value = resolveUrl;
+      urlInput.dispatchEvent(new Event("input"));
+      setTimeout(() => resolveBtn.click(), 300);
+    });
+  }
+})();
 
 // ===== Batch / Queue mode =====
 // paste a bunch of links at once (one per line) and they queue up +

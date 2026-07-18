@@ -1,4 +1,4 @@
-const CACHE_NAME = "seize-shell-v9";
+const CACHE_NAME = "seize-shell-v10";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -54,6 +54,9 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// ============================================================
+// NOTIFICATION CLICK
+// ============================================================
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
@@ -69,7 +72,7 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 // ============================================================
-// HANDLE DOWNLOAD MESSAGES FROM APP
+// HANDLE DOWNLOAD MESSAGES
 // ============================================================
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "DOWNLOAD_FILE") {
@@ -110,6 +113,9 @@ self.addEventListener("message", (event) => {
   }
 });
 
+// ============================================================
+// FETCH HANDLER
+// ============================================================
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
@@ -118,7 +124,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // domains that cause CSP headaches, skip 'em
+  // domains that cause issues, skip 'em
   const externalDomains = [
     "chat.deepseek.com",
     "deepseek.com",
@@ -157,13 +163,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // share handler: never cache this one
+  // share handler: always fetch fresh
   if (
     url.pathname === "/share-handler.html" ||
     url.pathname === "/share-handler" ||
     url.pathname === "/share-handler/"
   ) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return caches.match("/share-handler.html");
+      }),
+    );
     return;
   }
 
@@ -201,8 +211,7 @@ self.addEventListener("fetch", (event) => {
     }
   }
 
-  // everything else: network first so deploys show up immediately,
-  // cache as fallback for offline use
+  // everything else: network first, cache as fallback
   event.respondWith(
     fetch(event.request)
       .then((response) => {

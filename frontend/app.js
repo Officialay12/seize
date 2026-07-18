@@ -1,5 +1,8 @@
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
+// ============================================================
+// PENDING FILE PERSISTENCE
+// ============================================================
 // android chrome kills the page when file picker opens.
 // stash the blob in indexedDB so we can rebuild it on reload.
 const IDB_NAME = "seize-pending";
@@ -67,7 +70,10 @@ async function clearPendingFile() {
   }
 }
 
-// offline? stash the request. come back online? fire it off.
+// ============================================================
+// OFFLINE QUEUE
+// ============================================================
+// no signal? no problem. stash the request and fire it off later.
 async function addToOfflineQueue(item) {
   try {
     const db = await openPendingDB();
@@ -201,9 +207,111 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => updateOfflineBanner());
 
 // ============================================================
+// EXTRACT PLATFORM URL - shared helper
+// ============================================================
+function extractPlatformUrl(str) {
+  if (!str) return null;
+
+  const patterns = [
+    /https?:\/\/[^\s]*(tiktok\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(instagram\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(twitter\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(x\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(pinterest\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(pin\.it\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(snapchat\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(facebook\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(fb\.watch\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(youtube\.com\/[^\s]+)/i,
+    /https?:\/\/[^\s]*(youtu\.be\/[^\s]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = str.match(pattern);
+    if (match) {
+      const fullMatch = str.match(/https?:\/\/[^\s]+/i);
+      return fullMatch ? fullMatch[0] : match[0];
+    }
+  }
+
+  const urls = str.match(/https?:\/\/[^\s]+/gi);
+  return urls && urls.length > 0 ? urls[0] : null;
+}
+
+// ============================================================
+// SHARE HANDLER - Auto-detect on load
+// ============================================================
+(function checkForSharedUrl() {
+  const sharedUrl = sessionStorage.getItem("seize_shared_url");
+  const sharedMode = sessionStorage.getItem("seize_shared_mode");
+
+  if (sharedUrl) {
+    console.log("[seize] Found shared URL:", sharedUrl);
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => {
+        processSharedUrl(sharedUrl, sharedMode);
+      });
+    } else {
+      processSharedUrl(sharedUrl, sharedMode);
+    }
+
+    setTimeout(() => {
+      sessionStorage.removeItem("seize_shared_url");
+      sessionStorage.removeItem("seize_shared_title");
+      sessionStorage.removeItem("seize_shared_mode");
+    }, 5000);
+  }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramUrl =
+    urlParams.get("share_url") || urlParams.get("url") || urlParams.get("text");
+
+  if (paramUrl && !sharedUrl) {
+    const extracted = extractPlatformUrl(paramUrl);
+    if (extracted) {
+      console.log("[seize] Found shared URL in params:", extracted);
+      sessionStorage.setItem("seize_shared_url", extracted);
+      processSharedUrl(extracted, null);
+    }
+  }
+})();
+
+function processSharedUrl(url, mode) {
+  console.log("[seize] Processing shared URL:", url);
+
+  document.querySelector('[data-mode="capture"]')?.click();
+
+  const urlInput = document.getElementById("url-input");
+  if (urlInput) {
+    urlInput.value = url;
+    urlInput.dispatchEvent(new Event("input"));
+    urlInput.dispatchEvent(new Event("change"));
+  }
+
+  setTimeout(() => {
+    const resolveBtn = document.getElementById("resolve-btn");
+    if (resolveBtn) {
+      resolveBtn.click();
+    }
+  }, 800);
+
+  if (mode === "convert-video") {
+    document.querySelector('[data-mode="convert"]')?.click();
+    setTimeout(() => {
+      document.querySelector('[data-target="v2a"]')?.click();
+    }, 300);
+  } else if (mode === "convert-audio") {
+    document.querySelector('[data-mode="convert"]')?.click();
+    setTimeout(() => {
+      document.querySelector('[data-target="a2v"]')?.click();
+    }, 300);
+  }
+}
+
+// ============================================================
 // SAVE TO DEVICE - actually saves to phone storage
 // ============================================================
-
 async function saveMediaToDevice(fileUrl, suggestedName) {
   let blob;
   try {
@@ -236,7 +344,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
   const mimeType = mimeTypes[ext] || blob.type || "application/octet-stream";
   const file = new File([blob], suggestedName, { type: mimeType });
 
-  // try native share first - on android this saves to downloads
+  // try native share first
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
@@ -251,7 +359,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     }
   }
 
-  // anchor download - works on most browsers
+  // anchor download
   try {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -277,7 +385,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     console.warn("[seize] Anchor download failed:", err);
   }
 
-  // file system access api - modern browsers
+  // file system access api
   try {
     if ("showSaveFilePicker" in window) {
       const handle = await window.showSaveFilePicker({
@@ -303,7 +411,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     console.warn("[seize] File System API failed:", err);
   }
 
-  // last resort - open in new tab, let user save manually
+  // last resort - open in new tab
   console.warn("[seize] All strategies failed, opening in new tab");
   if (blob.type.startsWith("image/")) {
     const imgUrl = URL.createObjectURL(blob);
@@ -394,7 +502,7 @@ function showSaveButton(container, fileUrl, suggestedName) {
 }
 
 // ============================================================
-// SONG ID - tags from external API
+// SONG ID
 // ============================================================
 function showRecognizedTrack(track, container) {
   const target = container || convertProgress.parentElement;
@@ -424,7 +532,7 @@ function showRecognizedTrack(track, container) {
 }
 
 // ============================================================
-// HISTORY - local only
+// HISTORY
 // ============================================================
 const HISTORY_KEY = "seize_history";
 const MAX_HISTORY_ITEMS = 50;
@@ -967,7 +1075,7 @@ function pollJob(statusUrl, fillEl, labelEl) {
 }
 
 // ============================================================
-// COLLECTIONS - shareable galleries
+// COLLECTIONS
 // ============================================================
 const COLLECTION_BASKET_KEY = "seize_collection_basket";
 const collectionBasketEl = document.getElementById("collection-basket");
@@ -1114,7 +1222,7 @@ function showShareLinkResult(shareUrl) {
 renderCollectionBasket();
 
 // ============================================================
-// PUBLIC GALLERY VIEW (?c=<id>)
+// PUBLIC GALLERY VIEW
 // ============================================================
 const panelCollectionView = document.getElementById("panel-collection-view");
 const collectionGrid = document.getElementById("collection-grid");
@@ -1417,7 +1525,6 @@ const convertRestoreBanner = document.getElementById("convert-restore-banner");
 let convertTarget = "v2a";
 let selectedFile = null;
 
-// remembers your last format choice so you don't have to re-pick every time
 const LAST_FORMAT_KEY = "seize_last_format";
 function lastUsedFormat(setValue, isSave) {
   if (isSave) {
@@ -1460,7 +1567,6 @@ convertTabs.forEach((tab) => {
 
 fileInput.addEventListener("click", (e) => e.stopPropagation());
 
-// dropzone click opens the file picker
 dropzone.addEventListener("click", function (e) {
   e.preventDefault();
   e.stopPropagation();
@@ -1752,7 +1858,7 @@ convertBtn.addEventListener("click", async (e) => {
 });
 
 // ============================================================
-// SHARE HANDLER
+// SHARE HANDLER (legacy)
 // ============================================================
 const sharedUrl = sessionStorage.getItem("seize_shared_url");
 const sharedMode = sessionStorage.getItem("seize_shared_mode");

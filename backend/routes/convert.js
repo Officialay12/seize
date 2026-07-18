@@ -8,7 +8,9 @@ const {
   videoToAudio,
   audioToVideo,
   generatePlainCoverFallback,
+  embedAudioTags,
 } = require("../utils/ffmpeg");
+const { recognizeSong, isConfigured: songIdConfigured } = require("../utils/songid");
 const { scheduleCleanup } = require("../utils/cleanup");
 
 const router = express.Router();
@@ -126,6 +128,41 @@ function cleanupUploadedFile(req) {
   }
 }
 
+// Downloads recognized cover art to a local temp file, bounded by a
+// timeout and a sanity size cap. Any failure here just means "no cover
+// art embedded" — never a reason to fail the whole conversion.
+async function downloadCoverArt(url, destPath) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let resp;
+    try {
+      resp = await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!resp.ok) return null;
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (buffer.length > 8 * 1024 * 1024) return null; // sanity cap
+    fs.writeFileSync(destPath, buffer);
+    return destPath;
+  } catch {
+    return null;
+  }
+}
+
+// Song title/artist come back from an external API — untrusted input.
+// Strip anything unsafe for a filename or an HTTP header before ever
+// using it in Content-Disposition.
+function sanitizeFilename(name) {
+  const cleaned = String(name || "")
+    .replace(/[\/\\?%*:|"<>]/g, "")
+    .replace(/[\r\n]/g, "")
+    .trim()
+    .slice(0, 150);
+  return cleaned || "seize-audio";
+}
+
 // The old behavior always returned the same generic sentence for every
 // ffmpeg failure, which actively hid real bugs (like the cover-cache issue
 // above) from both users and whoever's debugging this later. This maps
@@ -143,11 +180,7 @@ function convertFriendlyError(err) {
     s.includes("moov atom not found")
   )
     return "This file appears to be corrupt or incomplete.";
-  if (
-    s.includes("could not find codec parameters") ||
-    s.includes("unknown codec") ||
-    s.includes("decoder not found")
-  )
+  if (s.includes("could not find codec parameters") || s.includes("unknown codec") || s.includes("decoder not found"))
     return "This file's codec isn't supported for conversion.";
   if (s.includes("no such file or directory") && s.includes("upload-"))
     return "The uploaded file couldn't be found on the server — please try uploading again.";
@@ -192,11 +225,66 @@ router.post("/video-to-audio", uploadSingle, async (req, res) => {
       if (job && job.status === "processing") job.progress = pct;
     });
 
+    let recognizedTrack = null;
+    let downloadName = `seize-audio.${format}`;
+
+    // Song ID is a bonus enhancement, scoped to mp3 only — that's the one
+    // format where embedded cover art is reliably supported everywhere.
+    // Every failure mode here (no API key configured, no match found,
+    // network hiccup, a bad cover image, a tagging error) falls straight
+    // through to the plain, already-successful converted file. This can
+    // never turn a working conversion into a failed one.
+    if (format === "mp3" && songIdConfigured()) {
+      let taggedPath = null;
+      let coverPath = null;
+      try {
+        const job = jobs.get(jobId);
+        if (job) job.progress = 99; // conversion done, just identifying now
+
+        const match = await recognizeSong(outputPath);
+        if (match && (match.title || match.artist)) {
+          if (match.coverUrl) {
+            coverPath = await downloadCoverArt(
+              match.coverUrl,
+              path.join(TMP_DIR, `${jobId}-cover.jpg`),
+            );
+          }
+          taggedPath = await embedAudioTags(outputPath, coverPath, {
+            title: match.title,
+            artist: match.artist,
+            album: match.album,
+          });
+
+          fs.unlinkSync(outputPath);
+          fs.renameSync(taggedPath, outputPath);
+          taggedPath = null; // renamed away, nothing left to clean up
+
+          recognizedTrack = {
+            title: match.title || null,
+            artist: match.artist || null,
+            album: match.album || null,
+          };
+          if (match.artist && match.title) {
+            downloadName = `${sanitizeFilename(`${match.artist} - ${match.title}`)}.mp3`;
+          }
+        }
+      } catch (tagErr) {
+        console.warn(
+          "[convert] Song ID/tagging skipped:",
+          tagErr.message || tagErr,
+        );
+      } finally {
+        if (coverPath && fs.existsSync(coverPath)) fs.unlink(coverPath, () => {});
+        if (taggedPath && fs.existsSync(taggedPath)) fs.unlink(taggedPath, () => {});
+      }
+    }
+
     jobs.set(jobId, {
       status: "done",
       progress: 100,
       outputPath,
-      downloadName: `seize-audio.${format}`,
+      downloadName,
+      recognizedTrack,
       finishedAt: Date.now(),
     });
   } catch (err) {
@@ -264,7 +352,12 @@ router.post("/audio-to-video", uploadSingle, async (req, res) => {
 router.get("/status/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ error: "Job not found" });
-  res.json({ status: job.status, progress: job.progress, error: job.error });
+  res.json({
+    status: job.status,
+    progress: job.progress,
+    error: job.error,
+    recognizedTrack: job.recognizedTrack || null,
+  });
 });
 
 router.get("/download/:jobId", (req, res) => {

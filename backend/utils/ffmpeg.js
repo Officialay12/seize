@@ -175,7 +175,7 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
   return new Promise((resolve, reject) => {
     ffmpeg()
       .input(coverImagePath)
-      .loop(true)
+      .loop()
       .input(audioPath)
       .videoCodec("libx264")
       .audioCodec("aac")
@@ -228,6 +228,48 @@ function generatePlainCoverFallback(destPath) {
   });
 }
 
+// Remuxes an MP3 with ID3v2 tags and (optionally) embedded cover art. Only
+// mp3 is supported — embedded artwork conventions differ across
+// wav/flac/aac/ogg, and getting that wrong risks corrupting the file the
+// user already successfully converted. If it's not mp3, or anything here
+// fails, the caller keeps the original untagged file — tagging is a
+// bonus, never a requirement for the download to succeed.
+function embedAudioTags(mp3Path, coverPath, tags = {}) {
+  return new Promise((resolve, reject) => {
+    const tmpOut = `${mp3Path}.tagged.mp3`;
+    const cmd = ffmpeg().input(mp3Path);
+
+    const metadataArgs = [];
+    if (tags.title) metadataArgs.push("-metadata", `title=${tags.title}`);
+    if (tags.artist) metadataArgs.push("-metadata", `artist=${tags.artist}`);
+    if (tags.album) metadataArgs.push("-metadata", `album=${tags.album}`);
+
+    if (coverPath) {
+      cmd.input(coverPath);
+      cmd.outputOptions([
+        "-map",
+        "0:a",
+        "-map",
+        "1:0",
+        "-c",
+        "copy",
+        "-id3v2_version",
+        "3",
+        "-disposition:v:0",
+        "attached_pic",
+        ...metadataArgs,
+      ]);
+    } else {
+      cmd.outputOptions(["-c", "copy", "-id3v2_version", "3", ...metadataArgs]);
+    }
+
+    cmd
+      .on("error", (err) => reject(err))
+      .on("end", () => resolve(tmpOut))
+      .save(tmpOut);
+  });
+}
+
 module.exports = ffmpeg;
 module.exports.ffmpegPath = ffmpegPath;
 module.exports.ffprobePath = ffprobePath;
@@ -236,3 +278,4 @@ module.exports.probe = probe;
 module.exports.videoToAudio = videoToAudio;
 module.exports.audioToVideo = audioToVideo;
 module.exports.generatePlainCoverFallback = generatePlainCoverFallback;
+module.exports.embedAudioTags = embedAudioTags;

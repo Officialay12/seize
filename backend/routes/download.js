@@ -51,6 +51,8 @@ const COOKIE_SOURCE_FILES = {
   tiktok: process.env.TIKTOK_COOKIES_FILE,
   instagram: process.env.INSTAGRAM_COOKIES_FILE,
   twitter: process.env.TWITTER_COOKIES_FILE,
+  facebook: process.env.FACEBOOK_COOKIES_FILE,
+  pinterest: process.env.PINTEREST_COOKIES_FILE,
 };
 
 const COOKIE_FILES = {};
@@ -61,13 +63,9 @@ for (const [platform, sourcePath] of Object.entries(COOKIE_SOURCE_FILES)) {
       const writablePath = path.join(TMP_DIR, `${platform}-cookies.txt`);
       fs.copyFileSync(sourcePath, writablePath);
       COOKIE_FILES[platform] = writablePath;
-      console.log(
-        `[seize] ${platform} cookies loaded (writable copy at ${writablePath})`,
-      );
+      console.log(`[seize] ${platform} cookies loaded (writable copy at ${writablePath})`);
     } else {
-      console.warn(
-        `[seize] ${platform} cookies env var set but file not found: ${sourcePath}`,
-      );
+      console.warn(`[seize] ${platform} cookies env var set but file not found: ${sourcePath}`);
     }
   } catch (e) {
     console.warn(`[seize] Failed to prepare ${platform} cookies:`, e.message);
@@ -83,6 +81,9 @@ const PLATFORM_PATTERNS = [
   { name: "tiktok", re: /tiktok\.com/i },
   { name: "instagram", re: /instagram\.com/i },
   { name: "twitter", re: /(twitter\.com|x\.com)/i },
+  { name: "pinterest", re: /(pinterest\.com|pin\.it)/i },
+  { name: "snapchat", re: /snapchat\.com/i },
+  { name: "facebook", re: /(facebook\.com|fb\.watch)/i },
 ];
 
 function detectPlatform(url) {
@@ -158,6 +159,43 @@ function getStrategies(platform) {
           ...base,
           extractorArgs: "twitter:api=syndication",
           addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+      ];
+    case "pinterest":
+      return [
+        {
+          ...base,
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+        {
+          ...base,
+          addHeaders: { "User-Agent": ANDROID_UA },
+        },
+      ];
+    case "snapchat":
+      // Only public Spotlight/Story links are reachable at all — Snapchat
+      // has no concept of a stable "post URL" for private snaps/stories,
+      // by design (that's the whole premise of the app). Nothing short of
+      // account-level access could ever resolve those, and that's out of
+      // scope here the same way it is for WhatsApp statuses.
+      return [
+        {
+          ...base,
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+      ];
+    case "facebook":
+      return [
+        {
+          ...base,
+          addHeaders: { "User-Agent": DESKTOP_UA },
+        },
+        {
+          ...base,
+          addHeaders: {
+            "User-Agent": ANDROID_UA,
+            Referer: "https://m.facebook.com/",
+          },
         },
       ];
     default:
@@ -476,7 +514,8 @@ router.post("/resolve", async (req, res) => {
   const platform = detectPlatform(url);
   if (!platform) {
     return res.status(400).json({
-      error: "Unsupported. Only TikTok, Instagram, and Twitter/X.",
+      error:
+        "Unsupported. Only TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook.",
     });
   }
 

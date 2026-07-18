@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seize</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <span class="popup-brand">⚡ Seize</span>
+      <span class="popup-version">v1.0</span>
+    </div>
+
+    <div class="popup-body">
+      <p class="popup-desc">Click the button below to download media from the current page.</p>
+
+      <div class="popup-actions">
+        <button id="downloadVideoBtn" class="popup-btn primary">
+          🎬 Download Video
+        </button>
+        <button id="downloadImageBtn" class="popup-btn secondary">
+          🖼️ Download Image
+        </button>
+      </div>
+
+      <div id="popupStatus" class="popup-status hidden">
+        <span id="popupStatusText">Processing...</span>
+      </div>
+
+      <div class="popup-divider"></div>
+
+      <div class="popup-links">
+        <a href="https://seize-1lxs.onrender.com" target="_blank" class="popup-link">Open Seize Web App →</a>
+        <a href="#" id="popupSettings" class="popup-link">⚙️ Settings</a>
+      </div>
+    </div>
+
+    <div class="popup-footer">
+      <span class="popup-footer-text">Built by Ayocodes</span>
+    </div>
+  </div>
+
+
+  <script src="popup.js"></script>
+</body>
+</html>

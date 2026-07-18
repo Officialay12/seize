@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "Seize - Download Media",
+  "version": "1.0.0",
+  "description": "Download videos and images from TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook with one click.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://*.tiktok.com/*",
+    "https://*.instagram.com/*",
+    "https://*.twitter.com/*",
+    "https://*.x.com/*",
+    "https://*.pinterest.com/*",
+    "https://*.pin.it/*",
+    "https://*.snapchat.com/*",
+    "https://*.facebook.com/*",
+    "https://*.fb.watch/*",
+    "https://seize-1lxs.onrender.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.tiktok.com/*",
+        "https://*.instagram.com/*",
+        "https://*.twitter.com/*",
+        "https://*.x.com/*",
+        "https://*.pinterest.com/*",
+        "https://*.pin.it/*",
+        "https://*.snapchat.com/*",
+        "https://*.facebook.com/*",
+        "https://*.fb.watch/*"
+      ],
+      "js": ["content.js"],
+      "css": ["popup.css"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "web_accessible_resources": [{
+    "resources": ["icons/*", "popup.css"],
+    "matches": ["<all_urls>"]
+  }]
+}

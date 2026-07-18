@@ -1316,15 +1316,28 @@ router.post("/profile", async (req, res) => {
         };
         info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "pinterest") {
-        // Pinterest: use generic extractor
         let pinterestUrl = url;
-        if (!url.includes("/feed/") && !url.includes("/pins/")) {
+        // Only a bare profile URL (pinterest.com/username/, nothing more)
+        // benefits from /pins/ appended, to reach the user's own pins
+        // feed. A board URL (pinterest.com/username/boardname/) already
+        // points at exactly the pins we want — appending /pins/ to THAT
+        // produces an invalid path and was silently breaking board scans.
+        const pathSegments = new URL(url).pathname.split("/").filter(Boolean);
+        const looksLikeBareProfile = pathSegments.length === 1;
+        if (
+          looksLikeBareProfile &&
+          !url.includes("/feed/") &&
+          !url.includes("/pins/")
+        ) {
           pinterestUrl = url.replace(/\/$/, "") + "/pins/";
         }
 
         const opts = {
           ...baseOpts,
-          extractorArgs: "generic",
+          // No extractorArgs here — "generic" isn't valid extractor-args
+          // syntax (yt-dlp expects "extractorName:key=value") and doesn't
+          // actually force the generic extractor. Pinterest has its own
+          // dedicated yt-dlp extractor; let it handle the URL directly.
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept:

@@ -1,0 +1,170 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 340px;
+  background: #0B0D0C;
+  color: #E8EDE9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+.popup-container {
+  padding: 16px 20px;
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #262B27;
+}
+
+.popup-brand {
+  font-size: 18px;
+  font-weight: 700;
+  color: #7FFFB0;
+  letter-spacing: -0.5px;
+}
+
+.popup-version {
+  font-size: 11px;
+  color: #565D59;
+  background: #141715;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid #262B27;
+}
+
+.popup-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.popup-desc {
+  font-size: 13px;
+  color: #8A928C;
+  line-height: 1.5;
+}
+
+.popup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.popup-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.popup-btn.primary {
+  background: #7FFFB0;
+  color: #06120A;
+}
+
+.popup-btn.primary:hover:not(:disabled) {
+  background: #9AFFC4;
+  transform: translateY(-1px);
+}
+
+.popup-btn.primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.popup-btn.secondary {
+  background: transparent;
+  color: #7FFFB0;
+  border: 1px solid #3F8F65;
+}
+
+.popup-btn.secondary:hover:not(:disabled) {
+  background: rgba(127, 255, 176, 0.08);
+  border-color: #7FFFB0;
+}
+
+.popup-btn.secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.popup-status {
+  background: #141715;
+  border: 1px solid #262B27;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #8A928C;
+  margin-top: 4px;
+}
+
+.popup-status.hidden {
+  display: none;
+}
+
+.popup-status #popupStatusText {
+  color: #E8EDE9;
+}
+
+.popup-divider {
+  border-top: 1px solid #262B27;
+  margin: 8px 0;
+}
+
+.popup-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popup-link {
+  color: #3F8F65;
+  text-decoration: none;
+  font-size: 12px;
+  transition: color 0.15s;
+}
+
+.popup-link:hover {
+  color: #7FFFB0;
+}
+
+.popup-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #262B27;
+  text-align: center;
+}
+
+.popup-footer-text {
+  font-size: 11px;
+  color: #565D59;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0B0D0C;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #262B27;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3F8F65;
+}

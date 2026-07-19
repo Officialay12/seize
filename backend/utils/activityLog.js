@@ -3,7 +3,10 @@ const { parseUserAgent } = require("./parseUserAgent");
 const { loadStore, scheduleSave, flushSave } = require("./persistence");
 
 // ============================================================
-// IN-MEMORY STORE — hydrated from disk on startup
+// IN-MEMORY STORE — now hydrated from + saved to disk (see
+// hydrateFromDisk/persistState below), so it survives restarts as long
+// as the disk sticks around. still starts empty on a genuinely fresh
+// volume though (first boot, or an ephemeral fs that got wiped)
 // ============================================================
 
 const MAX_EVENTS = 2000;
@@ -44,6 +47,11 @@ let lastAlertCheck = { errorSpike: false, memoryHigh: false };
 // ============================================================
 // RESTORE FROM DISK
 // ============================================================
+// pulls everything back from the last saved snapshot before the server
+// starts taking traffic. before this, "344 requests today" just meant
+// "since whenever the process last happened to restart" — now it
+// actually sticks around across restarts/crashes (assuming the disk
+// sticks around too, see the caveat in persistence.js)
 function hydrateFromDisk() {
   const saved = loadStore();
   if (!saved) return;
@@ -100,9 +108,9 @@ function hydrateFromDisk() {
 }
 hydrateFromDisk();
 
-// ============================================================
-// PERSISTENCE HELPERS
-// ============================================================
+// builds the thing that actually gets written to disk. capping recent
+// events separately from MAX_EVENTS (2000) so the file doesn't balloon —
+// 500 is plenty to make "recent activity" look alive after a restart
 function persistState() {
   return {
     version: 1,
@@ -127,16 +135,17 @@ function persistNow() {
   scheduleSave(persistState);
 }
 
+// forces a save right now — use before the process is about to exit on
+// purpose (shutdown, admin restart button) so we don't lose whatever
+// happened in the last few seconds to the debounce
 function flushPersistence() {
   flushSave(persistState);
 }
 
-// backup autosave — keeps the file from going stale
+// backup autosave — even if it's a slow day and nothing's triggering the
+// debounce, this keeps the file from going more than 30s stale
 setInterval(() => scheduleSave(persistState), 30000).unref();
 
-// ============================================================
-// CORE FUNCTIONS
-// ============================================================
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -155,7 +164,6 @@ function broadcast(type, payload) {
 function addSseClient(res) {
   sseClients.add(res);
 }
-
 function removeSseClient(res) {
   sseClients.delete(res);
 }
@@ -228,9 +236,6 @@ function requestLoggerMiddleware(req, res, next) {
   next();
 }
 
-// ============================================================
-// ALERTS
-// ============================================================
 function checkAlerts() {
   const recent = events.slice(0, alertConfig.errorRateWindow);
   const relevant = recent.filter(
@@ -263,9 +268,6 @@ function checkMemoryAlert(usedPct) {
   lastAlertCheck.memoryHigh = high;
 }
 
-// ============================================================
-// LOGIN HISTORY + SESSIONS
-// ============================================================
 function recordLogin({ username, ip, userAgent, success }) {
   const entry = { username, ip, userAgent, success, timestamp: Date.now() };
   loginHistory.unshift(entry);
@@ -291,7 +293,6 @@ function registerSession(jti, { sub, ip, userAgent }) {
     revoked: false,
   });
   logEvent("session:created", { sub, ip });
-  persistNow();
 }
 
 function isSessionRevoked(jti) {
@@ -304,7 +305,6 @@ function revokeSession(jti) {
   if (!s) return false;
   s.revoked = true;
   logEvent("admin:session-revoked", { jti, sub: s.sub });
-  persistNow();
   return true;
 }
 
@@ -312,9 +312,6 @@ function getSessions() {
   return [...sessions.entries()].map(([jti, s]) => ({ jti, ...s }));
 }
 
-// ============================================================
-// QUERY FUNCTIONS
-// ============================================================
 function getRecentEvents(limit = 50) {
   return events.slice(0, limit);
 }
@@ -439,47 +436,30 @@ function eventsToCsv(list) {
   return [header, ...rows].join("\n");
 }
 
-// ============================================================
-// EXPORTS
-// ============================================================
 module.exports = {
-  // Core
   logEvent,
-  recordRequest,
-  requestLoggerMiddleware,
-
-  // Queries
   getRecentEvents,
   queryEvents,
   getCounters,
-  getActiveJobCounts,
+  requestLoggerMiddleware,
   getRequestStats,
+  getActiveJobCounts,
   getPlatformBreakdown,
   getPlatformHealth,
   getHeatmap,
   getBreakdowns,
-
-  // Admin actions
   clearLogs,
   exportSnapshot,
   eventsToCsv,
-
-  // Login & Sessions
   recordLogin,
   getLoginHistory,
   registerSession,
   isSessionRevoked,
   revokeSession,
   getSessions,
-
-  // SSE
   addSseClient,
   removeSseClient,
-
-  // Alerts
   checkMemoryAlert,
   alertConfig,
-
-  // Persistence
   flushPersistence,
 };

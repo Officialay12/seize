@@ -1,8 +1,12 @@
 const geoip = require("geoip-lite");
 const { parseUserAgent } = require("./parseUserAgent");
+const { loadStore, scheduleSave, flushSave } = require("./persistence");
 
 // ============================================================
-// IN-MEMORY STORE — resets on server restart
+// IN-MEMORY STORE — now hydrated from + saved to disk (see
+// hydrateFromDisk/persistState below), so it survives restarts as long
+// as the disk sticks around. still starts empty on a genuinely fresh
+// volume though (first boot, or an ephemeral fs that got wiped)
 // ============================================================
 
 const MAX_EVENTS = 2000;
@@ -39,6 +43,108 @@ const alertConfig = {
   memoryUsedPct: 90,
 };
 let lastAlertCheck = { errorSpike: false, memoryHigh: false };
+
+// ============================================================
+// RESTORE FROM DISK
+// ============================================================
+// pulls everything back from the last saved snapshot before the server
+// starts taking traffic. before this, "344 requests today" just meant
+// "since whenever the process last happened to restart" — now it
+// actually sticks around across restarts/crashes (assuming the disk
+// sticks around too, see the caveat in persistence.js)
+function hydrateFromDisk() {
+  const saved = loadStore();
+  if (!saved) return;
+  try {
+    if (saved.counters) {
+      for (const cat of ["conversions", "captures"]) {
+        if (saved.counters[cat])
+          Object.assign(counters[cat], saved.counters[cat]);
+      }
+    }
+    if (typeof saved.requestsTotal === "number")
+      requestsTotal = saved.requestsTotal;
+    if (Array.isArray(saved.requestsByDay)) {
+      for (const [day, count] of saved.requestsByDay)
+        requestsByDay.set(day, count);
+    }
+    if (Array.isArray(saved.ipsAllTime)) {
+      for (const ip of saved.ipsAllTime) {
+        if (ipsAllTime.size < MAX_TRACKED_IPS) ipsAllTime.add(ip);
+      }
+    }
+    if (Array.isArray(saved.ipsByDay)) {
+      for (const [day, ips] of saved.ipsByDay) ipsByDay.set(day, new Set(ips));
+    }
+    if (Array.isArray(saved.heatmap) && saved.heatmap.length === 7) {
+      for (let d = 0; d < 7; d++) {
+        for (let h = 0; h < 24; h++) {
+          heatmap[d][h] = saved.heatmap[d]?.[h] || 0;
+        }
+      }
+    }
+    if (saved.deviceCounts) Object.assign(deviceCounts, saved.deviceCounts);
+    if (saved.browserCounts) Object.assign(browserCounts, saved.browserCounts);
+    if (saved.osCounts) Object.assign(osCounts, saved.osCounts);
+    if (saved.geoCounts) Object.assign(geoCounts, saved.geoCounts);
+    if (Array.isArray(saved.loginHistory)) {
+      loginHistory.push(...saved.loginHistory.slice(0, MAX_LOGIN_HISTORY));
+    }
+    if (Array.isArray(saved.sessions)) {
+      for (const [jti, s] of saved.sessions) sessions.set(jti, s);
+    }
+    if (Array.isArray(saved.recentEvents)) {
+      events.push(...saved.recentEvents.slice(0, MAX_EVENTS));
+    }
+    console.log(
+      `[activityLog] Restored analytics from disk (last saved ${saved.savedAt ? new Date(saved.savedAt).toLocaleString() : "unknown time"}).`,
+    );
+  } catch (err) {
+    console.warn(
+      "[activityLog] Failed to hydrate persisted store:",
+      err.message,
+    );
+  }
+}
+hydrateFromDisk();
+
+// builds the thing that actually gets written to disk. capping recent
+// events separately from MAX_EVENTS (2000) so the file doesn't balloon —
+// 500 is plenty to make "recent activity" look alive after a restart
+function persistState() {
+  return {
+    version: 1,
+    savedAt: Date.now(),
+    counters: getCounters(),
+    requestsTotal,
+    requestsByDay: [...requestsByDay.entries()],
+    ipsAllTime: [...ipsAllTime],
+    ipsByDay: [...ipsByDay.entries()].map(([day, set]) => [day, [...set]]),
+    heatmap,
+    deviceCounts,
+    browserCounts,
+    osCounts,
+    geoCounts,
+    loginHistory: loginHistory.slice(0, MAX_LOGIN_HISTORY),
+    sessions: [...sessions.entries()],
+    recentEvents: events.slice(0, 500),
+  };
+}
+
+function persistNow() {
+  scheduleSave(persistState);
+}
+
+// forces a save right now — use before the process is about to exit on
+// purpose (shutdown, admin restart button) so we don't lose whatever
+// happened in the last few seconds to the debounce
+function flushPersistence() {
+  flushSave(persistState);
+}
+
+// backup autosave — even if it's a slow day and nothing's triggering the
+// debounce, this keeps the file from going more than 30s stale
+setInterval(() => scheduleSave(persistState), 30000).unref();
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -77,6 +183,7 @@ function logEvent(type, detail = {}) {
 
   broadcast("event", event);
   checkAlerts();
+  persistNow();
 }
 
 function recordRequest(ip, userAgent = "") {
@@ -116,6 +223,7 @@ function recordRequest(ip, userAgent = "") {
   }
 
   broadcast("request", { total: requestsTotal, today: requestsByDay.get(day) });
+  persistNow();
 }
 
 function requestLoggerMiddleware(req, res, next) {
@@ -299,6 +407,7 @@ function getBreakdowns() {
 function clearLogs() {
   const removed = events.length;
   events.length = 0;
+  persistNow();
   return { removedEvents: removed };
 }
 
@@ -352,4 +461,5 @@ module.exports = {
   removeSseClient,
   checkMemoryAlert,
   alertConfig,
+  flushPersistence,
 };

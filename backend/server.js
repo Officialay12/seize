@@ -17,7 +17,10 @@ const adminRoutes = require("./routes/admin");
 
 // ===== Middleware =====
 const { trackUser, adminRateLimit } = require("./utils/middleware");
-const { requestLoggerMiddleware } = require("./utils/activityLog");
+const {
+  requestLoggerMiddleware,
+  flushPersistence,
+} = require("./utils/activityLog");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -188,13 +191,11 @@ app.post("/share-handler", (req, res) => {
 // ============================================================
 // STATIC FILES
 // ============================================================
-// admin.html and admin-login.html were getting the same 1-day
-// Cache-Control as every other static asset. That's fine for
-// icons/style.css, but it means a browser could silently keep serving
-// a stale admin dashboard for up to 24h after a redeploy — no error,
-// no visible sign anything's wrong, it just never fetches the new file.
-// These two pages always need Cache-Control: no-store so every load
-// is guaranteed fresh.
+// admin.html and admin-login.html were getting the same 1-day cache as
+// every other static file. fine for icons/style.css, not fine for a page
+// you're actively redeploying — browser just keeps serving the stale
+// version for 24h with zero indication anything's wrong. force these two
+// to always be fresh
 app.use(
   express.static(path.join(__dirname, "..", "frontend"), {
     maxAge: process.env.NODE_ENV === "production" ? "1d" : 0,
@@ -266,6 +267,7 @@ server.headersTimeout = 120000;
 // ============================================================
 function shutdown(signal) {
   console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+  flushPersistence();
   server.close(() => {
     console.log("✅ Server closed.");
     process.exit(0);

@@ -1,308 +1,639 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>seize — admin dashboard</title>
-  <link rel="stylesheet" href="style.css" />
-  <style>
-    body { margin: 0; padding: 24px; }
-    .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-    .admin-header h1 { color: var(--phosphor); font-size: 1.2rem; margin: 0; }
-    .admin-header .sub { color: var(--muted); font-size: 0.75rem; }
-    .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #444; margin-right: 6px; }
-    .live-dot.on { background: #7FFFB0; box-shadow: 0 0 6px #7FFFB0; }
-    #logout-btn { background: transparent; border: 1px solid var(--line); color: var(--muted); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-family: inherit; }
-    #logout-btn:hover { border-color: var(--phosphor); color: var(--phosphor); }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seize — admin dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+        }
 
-    .tabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
-    .tab-btn { background: transparent; border: none; color: var(--muted); padding: 10px 14px; cursor: pointer; font-size: 0.8rem; font-family: inherit; border-bottom: 2px solid transparent; }
-    .tab-btn.active { color: var(--phosphor); border-bottom-color: var(--phosphor); }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
+        .admin-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
 
-    .section-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 24px 0 12px; }
-    .section-label:first-of-type { margin-top: 0; }
+        .admin-header h1 {
+            color: var(--phosphor);
+            font-size: 1.2rem;
+            margin: 0;
+        }
 
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
-    .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: #10130f; }
-    .card .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
-    .card .value { font-size: 1.5rem; color: var(--phosphor); font-weight: 600; }
-    .card .subvalue { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
-    .card.status-ok .value { color: #7FFFB0; }
-    .card.status-bad .value { color: #ff8a8a; }
-    .card.pulse { animation: cardPulse 0.6s ease; }
-    @keyframes cardPulse { 0% { box-shadow: 0 0 0 0 rgba(127,255,176,0.4); } 100% { box-shadow: 0 0 0 8px rgba(127,255,176,0); } }
+        .admin-header .sub {
+            color: var(--muted);
+            font-size: 0.75rem;
+        }
 
-    .two-col { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: start; }
-    @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #444;
+            margin-right: 6px;
+        }
 
-    .panel { border: 1px solid var(--line); border-radius: 8px; background: #10130f; padding: 18px; margin-bottom: 16px; }
-    .panel h2 { font-size: 0.85rem; color: var(--muted); margin: 0 0 14px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .live-dot.on {
+            background: #7FFFB0;
+            box-shadow: 0 0 6px #7FFFB0;
+        }
 
-    .activity-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 0.78rem; }
-    .activity-row:last-child { border-bottom: none; }
-    .activity-type { color: var(--phosphor); font-family: monospace; }
-    .activity-detail { color: var(--muted); font-size: 0.7rem; }
-    .activity-time { color: var(--muted); white-space: nowrap; }
-    .activity-empty { color: var(--muted); font-size: 0.85rem; padding: 12px 0; }
+        #logout-btn {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--muted);
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-family: inherit;
+        }
 
-    .bar-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 0.8rem; }
-    .bar-name { min-width: 90px; text-transform: capitalize; color: var(--fg, #E8EDE9); }
-    .bar-track { flex: 1; height: 8px; background: #1a1d19; border-radius: 4px; overflow: hidden; }
-    .bar-fill { height: 100%; background: var(--phosphor); border-radius: 4px; }
-    .bar-count { color: var(--muted); font-size: 0.72rem; min-width: 40px; text-align: right; }
+        #logout-btn:hover {
+            border-color: var(--phosphor);
+            color: var(--phosphor);
+        }
 
-    .heatmap-grid { display: grid; grid-template-columns: 36px repeat(24, 1fr); gap: 2px; font-size: 0.6rem; }
-    .heatmap-grid .hm-label { color: var(--muted); display: flex; align-items: center; }
-    .hm-cell { aspect-ratio: 1; border-radius: 2px; background: #1a1d19; }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--line);
+        }
 
-    .actions-row { display: flex; flex-wrap: wrap; gap: 10px; }
-    .action-btn { background: transparent; border: 1px solid var(--line); color: var(--fg, #E8EDE9); padding: 9px 14px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-family: inherit; }
-    .action-btn:hover { border-color: var(--phosphor); color: var(--phosphor); }
-    .action-btn:disabled { opacity: 0.5; cursor: default; }
-    .action-btn.danger:hover { border-color: #ff8a8a; color: #ff8a8a; }
-    .action-status { font-size: 0.75rem; color: var(--muted); margin-top: 10px; min-height: 1em; }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            padding: 10px 14px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-family: inherit;
+            border-bottom: 2px solid transparent;
+        }
 
-    .filter-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-    .filter-row input, .filter-row select { background: #0B0D0C; border: 1px solid var(--line); color: var(--fg, #E8EDE9); padding: 7px 10px; border-radius: 6px; font-size: 0.78rem; font-family: inherit; }
+        .tab-btn.active {
+            color: var(--phosphor);
+            border-bottom-color: var(--phosphor);
+        }
 
-    table.data-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
-    table.data-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); text-transform: uppercase; font-size: 0.65rem; }
-    table.data-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+        .tab-panel {
+            display: none;
+        }
 
-    #toast-container { position: fixed; top: 16px; right: 16px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
-    .toast { background: #10130f; border: 1px solid var(--line); border-left: 3px solid var(--phosphor); border-radius: 6px; padding: 12px 14px; font-size: 0.78rem; max-width: 320px; animation: toastIn 0.25s ease; }
-    .toast.critical { border-left-color: #ff8a8a; }
-    @keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        .tab-panel.active {
+            display: block;
+        }
 
-    #admin-loading, #admin-error { text-align: center; color: var(--muted); padding: 60px 0; }
-    #admin-error { color: #ff8a8a; display: none; }
-    #admin-error.show { display: block; }
-    .hidden { display: none; }
-  </style>
+        .section-label {
+            font-size: 0.7rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin: 24px 0 12px;
+        }
+
+        .section-label:first-of-type {
+            margin-top: 0;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px;
+        }
+
+        .card {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 16px;
+            background: #10130f;
+        }
+
+        .card .label {
+            font-size: 0.7rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 8px;
+        }
+
+        .card .value {
+            font-size: 1.5rem;
+            color: var(--phosphor);
+            font-weight: 600;
+        }
+
+        .card .subvalue {
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+
+        .card.status-ok .value {
+            color: #7FFFB0;
+        }
+
+        .card.status-bad .value {
+            color: #ff8a8a;
+        }
+
+        .card.pulse {
+            animation: cardPulse 0.6s ease;
+        }
+
+        @keyframes cardPulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(127, 255, 176, 0.4);
+            }
+
+            100% {
+                box-shadow: 0 0 0 8px rgba(127, 255, 176, 0);
+            }
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1.3fr 1fr;
+            gap: 16px;
+            align-items: start;
+        }
+
+        @media (max-width: 760px) {
+            .two-col {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #10130f;
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+
+        .panel h2 {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin: 0 0 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .activity-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--line);
+            font-size: 0.78rem;
+        }
+
+        .activity-row:last-child {
+            border-bottom: none;
+        }
+
+        .activity-type {
+            color: var(--phosphor);
+            font-family: monospace;
+        }
+
+        .activity-detail {
+            color: var(--muted);
+            font-size: 0.7rem;
+        }
+
+        .activity-time {
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .activity-empty {
+            color: var(--muted);
+            font-size: 0.85rem;
+            padding: 12px 0;
+        }
+
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 0;
+            font-size: 0.8rem;
+        }
+
+        .bar-name {
+            min-width: 90px;
+            text-transform: capitalize;
+            color: var(--fg, #E8EDE9);
+        }
+
+        .bar-track {
+            flex: 1;
+            height: 8px;
+            background: #1a1d19;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            background: var(--phosphor);
+            border-radius: 4px;
+        }
+
+        .bar-count {
+            color: var(--muted);
+            font-size: 0.72rem;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: 36px repeat(24, 1fr);
+            gap: 2px;
+            font-size: 0.6rem;
+        }
+
+        .heatmap-grid .hm-label {
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+        }
+
+        .hm-cell {
+            aspect-ratio: 1;
+            border-radius: 2px;
+            background: #1a1d19;
+        }
+
+        .actions-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .action-btn {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--fg, #E8EDE9);
+            padding: 9px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-family: inherit;
+        }
+
+        .action-btn:hover {
+            border-color: var(--phosphor);
+            color: var(--phosphor);
+        }
+
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .action-btn.danger:hover {
+            border-color: #ff8a8a;
+            color: #ff8a8a;
+        }
+
+        .action-status {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 10px;
+            min-height: 1em;
+        }
+
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .filter-row input,
+        .filter-row select {
+            background: #0B0D0C;
+            border: 1px solid var(--line);
+            color: var(--fg, #E8EDE9);
+            padding: 7px 10px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            font-family: inherit;
+        }
+
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.76rem;
+        }
+
+        table.data-table th {
+            text-align: left;
+            color: var(--muted);
+            font-weight: 500;
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--line);
+            text-transform: uppercase;
+            font-size: 0.65rem;
+        }
+
+        table.data-table td {
+            padding: 7px 8px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        #toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            background: #10130f;
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--phosphor);
+            border-radius: 6px;
+            padding: 12px 14px;
+            font-size: 0.78rem;
+            max-width: 320px;
+            animation: toastIn 0.25s ease;
+        }
+
+        .toast.critical {
+            border-left-color: #ff8a8a;
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        #admin-loading,
+        #admin-error {
+            text-align: center;
+            color: var(--muted);
+            padding: 60px 0;
+        }
+
+        #admin-error {
+            color: #ff8a8a;
+            display: none;
+        }
+
+        #admin-error.show {
+            display: block;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
 </head>
+
 <body>
-  <div id="toast-container"></div>
-  <div id="admin-loading">Loading dashboard…</div>
-  <p id="admin-error"></p>
+    <div id="toast-container"></div>
+    <div id="admin-loading">Loading dashboard…</div>
+    <p id="admin-error"></p>
 
-  <div id="admin-content" class="hidden">
-    <div class="admin-header">
-      <div>
-        <h1><span class="live-dot" id="live-dot"></span>seize — admin dashboard</h1>
-        <p class="sub">Private. Not linked anywhere in the app UI.</p>
-      </div>
-      <button id="logout-btn">Sign out</button>
-    </div>
-
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="overview">Overview</button>
-      <button class="tab-btn" data-tab="analytics">Analytics</button>
-      <button class="tab-btn" data-tab="logs">Logs</button>
-      <button class="tab-btn" data-tab="security">Security</button>
-      <button class="tab-btn" data-tab="system">System</button>
-    </div>
-
-    <!-- OVERVIEW -->
-    <div class="tab-panel active" id="tab-overview">
-      <div class="section-label">Live stats</div>
-      <div class="cards" id="stats-cards"></div>
-
-      <div class="section-label">System health</div>
-      <div class="cards" id="health-cards"></div>
-
-      <div class="section-label">Recent activity</div>
-      <div class="panel"><div id="activity-list"></div></div>
-    </div>
-
-    <!-- ANALYTICS -->
-    <div class="tab-panel" id="tab-analytics">
-      <div class="two-col">
-        <div>
-          <div class="panel">
-            <h2>Usage heatmap (hour × day)</h2>
-            <div class="heatmap-grid" id="heatmap-grid"></div>
-          </div>
-          <div class="panel">
-            <h2>Platform breakdown</h2>
-            <div id="platform-list"></div>
-          </div>
-          <div class="panel">
-            <h2>Platform health (success rate)</h2>
-            <div id="platform-health-list"></div>
-          </div>
+    <div id="admin-content" class="hidden">
+        <div class="admin-header">
+            <div>
+                <h1><span class="live-dot" id="live-dot"></span>seize — admin dashboard</h1>
+                <p class="sub">Private. Not linked anywhere in the app UI.</p>
+            </div>
+            <button id="logout-btn">Sign out</button>
         </div>
-        <div>
-          <div class="panel">
-            <h2>Device</h2>
-            <div id="device-list"></div>
-          </div>
-          <div class="panel">
-            <h2>Browser</h2>
-            <div id="browser-list"></div>
-          </div>
-          <div class="panel">
-            <h2>Country</h2>
-            <div id="country-list"></div>
-          </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="analytics">Analytics</button>
+            <button class="tab-btn" data-tab="logs">Logs</button>
+            <button class="tab-btn" data-tab="security">Security</button>
+            <button class="tab-btn" data-tab="system">System</button>
         </div>
-      </div>
+
+        <!-- OVERVIEW -->
+        <div class="tab-panel active" id="tab-overview">
+            <div class="section-label">Live stats</div>
+            <div class="cards" id="stats-cards"></div>
+
+            <div class="section-label">System health</div>
+            <div class="cards" id="health-cards"></div>
+
+            <div class="section-label">Recent activity</div>
+            <div class="panel">
+                <div id="activity-list"></div>
+            </div>
+        </div>
+
+        <!-- ANALYTICS -->
+        <div class="tab-panel" id="tab-analytics">
+            <div class="two-col">
+                <div>
+                    <div class="panel">
+                        <h2>Usage heatmap (hour × day)</h2>
+                        <div class="heatmap-grid" id="heatmap-grid"></div>
+                    </div>
+                    <div class="panel">
+                        <h2>Platform breakdown</h2>
+                        <div id="platform-list"></div>
+                    </div>
+                    <div class="panel">
+                        <h2>Platform health (success rate)</h2>
+                        <div id="platform-health-list"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="panel">
+                        <h2>Device</h2>
+                        <div id="device-list"></div>
+                    </div>
+                    <div class="panel">
+                        <h2>Browser</h2>
+                        <div id="browser-list"></div>
+                    </div>
+                    <div class="panel">
+                        <h2>Country</h2>
+                        <div id="country-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LOGS -->
+        <div class="tab-panel" id="tab-logs">
+            <div class="panel">
+                <h2>Filter &amp; search</h2>
+                <div class="filter-row">
+                    <input type="text" id="log-search" placeholder="Search logs…" />
+                    <select id="log-type-filter">
+                        <option value="">All types</option>
+                        <option value="conversion:">Conversions</option>
+                        <option value="capture:">Captures</option>
+                        <option value="auth:">Auth</option>
+                        <option value="admin:">Admin actions</option>
+                    </select>
+                    <button class="action-btn" id="log-refresh-btn">Refresh</button>
+                    <button class="action-btn" id="log-export-json-btn">Export JSON</button>
+                    <button class="action-btn" id="log-export-csv-btn">Export CSV</button>
+                </div>
+                <div id="logs-table-wrap"></div>
+            </div>
+        </div>
+
+        <!-- SECURITY -->
+        <div class="tab-panel" id="tab-security">
+            <div class="two-col">
+                <div class="panel">
+                    <h2>Login history</h2>
+                    <div id="login-history-list"></div>
+                </div>
+                <div class="panel">
+                    <h2>Active sessions</h2>
+                    <div id="sessions-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SYSTEM -->
+        <div class="tab-panel" id="tab-system">
+            <div class="panel">
+                <h2>Admin actions</h2>
+                <div class="actions-row">
+                    <button class="action-btn" id="cleanup-temp-btn">🧹 Cleanup temp files</button>
+                    <button class="action-btn" id="update-ytdlp-btn">⬆️ Update yt-dlp</button>
+                    <button class="action-btn" id="clear-cache-btn">♻️ Bump cache version</button>
+                    <button class="action-btn" id="export-btn">⬇ Export data</button>
+                    <button class="action-btn danger" id="clear-logs-btn">🗑 Clear logs</button>
+                    <button class="action-btn danger" id="restart-btn">🔁 Restart server</button>
+                </div>
+                <p class="action-status" id="action-status"></p>
+            </div>
+        </div>
     </div>
 
-    <!-- LOGS -->
-    <div class="tab-panel" id="tab-logs">
-      <div class="panel">
-        <h2>Filter &amp; search</h2>
-        <div class="filter-row">
-          <input type="text" id="log-search" placeholder="Search logs…" />
-          <select id="log-type-filter">
-            <option value="">All types</option>
-            <option value="conversion:">Conversions</option>
-            <option value="capture:">Captures</option>
-            <option value="auth:">Auth</option>
-            <option value="admin:">Admin actions</option>
-          </select>
-          <button class="action-btn" id="log-refresh-btn">Refresh</button>
-          <button class="action-btn" id="log-export-json-btn">Export JSON</button>
-          <button class="action-btn" id="log-export-csv-btn">Export CSV</button>
-        </div>
-        <div id="logs-table-wrap"></div>
-      </div>
-    </div>
+    <script>
+        // used to be hardcoded to one render url, which is why everything
+        // besides overview kept dying — wrong server, no error, just silence.
+        // this page always gets served by the same backend that has /api, so
+        // just grab whatever origin we're actually loaded from
+        const API_BASE = window.location.origin + "/api";
+        const token = sessionStorage.getItem("seize_admin_token");
+        if (!token) {
+            window.location.href = "/admin-login.html";
+            throw new Error("Not authenticated — redirecting to login.");
+        }
 
-    <!-- SECURITY -->
-    <div class="tab-panel" id="tab-security">
-      <div class="two-col">
-        <div class="panel">
-          <h2>Login history</h2>
-          <div id="login-history-list"></div>
-        </div>
-        <div class="panel">
-          <h2>Active sessions</h2>
-          <div id="sessions-list"></div>
-        </div>
-      </div>
-    </div>
+        const loadingEl = document.getElementById("admin-loading");
+        const errorEl = document.getElementById("admin-error");
+        const contentEl = document.getElementById("admin-content");
 
-    <!-- SYSTEM -->
-    <div class="tab-panel" id="tab-system">
-      <div class="panel">
-        <h2>Admin actions</h2>
-        <div class="actions-row">
-          <button class="action-btn" id="cleanup-temp-btn">🧹 Cleanup temp files</button>
-          <button class="action-btn" id="update-ytdlp-btn">⬆️ Update yt-dlp</button>
-          <button class="action-btn" id="clear-cache-btn">♻️ Bump cache version</button>
-          <button class="action-btn" id="export-btn">⬇ Export data</button>
-          <button class="action-btn danger" id="clear-logs-btn">🗑 Clear logs</button>
-          <button class="action-btn danger" id="restart-btn">🔁 Restart server</button>
-        </div>
-        <p class="action-status" id="action-status"></p>
-      </div>
-    </div>
-  </div>
+        document.getElementById("logout-btn").addEventListener("click", () => {
+            sessionStorage.removeItem("seize_admin_token");
+            window.location.href = "/admin-login.html";
+        });
 
-  <script>
-    // Was hardcoded to a specific Render deployment URL, which silently broke
-    // every tab except Overview whenever this page was served from anywhere
-    // else (localhost, a different deploy, a custom domain) — those requests
-    // just went to the wrong server and failed with no visible error.
-    // admin.html is always served by the same backend that exposes /api
-    // (see server.js), so derive it from wherever this page actually loaded.
-    const API_BASE = window.location.origin + "/api";
-    const token = sessionStorage.getItem("seize_admin_token");
-    if (!token) {
-      window.location.href = "/admin-login.html";
-      throw new Error("Not authenticated — redirecting to login.");
-    }
+        function authedFetch(path, opts = {}) {
+            return fetch(`${API_BASE}${path}`, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) } });
+        }
 
-    const loadingEl = document.getElementById("admin-loading");
-    const errorEl = document.getElementById("admin-error");
-    const contentEl = document.getElementById("admin-content");
+        // every tab used to just fetch + render with zero error handling, so
+        // one failed request = panel blank forever, no clue why. this wraps
+        // the fetch and throws something readable instead of failing silent
+        async function authedFetchJson(path, opts = {}) {
+            let res;
+            try {
+                res = await authedFetch(path, opts);
+            } catch (err) {
+                throw new Error(`Network error reaching ${path}: ${err.message}`);
+            }
+            if (res.status === 401) {
+                sessionStorage.removeItem("seize_admin_token");
+                window.location.href = "/admin-login.html";
+                throw new Error("Session expired.");
+            }
+            let data;
+            try {
+                data = await res.json();
+            } catch {
+                throw new Error(`${path} returned a non-JSON response (${res.status}).`);
+            }
+            if (!res.ok) throw new Error(data.error || `${path} failed (${res.status}).`);
+            return data;
+        }
 
-    document.getElementById("logout-btn").addEventListener("click", () => {
-      sessionStorage.removeItem("seize_admin_token");
-      window.location.href = "/admin-login.html";
-    });
+        // shows an actual "this broke" message in the panel instead of just
+        // leaving it empty and hoping you check devtools
+        function showSectionError(containerId, err) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            console.error(`[admin] ${containerId} failed to load:`, err);
+            el.innerHTML = `<div class="activity-empty" style="color:#ff8a8a;">Couldn't load this section — ${err.message}</div>`;
+        }
 
-    function authedFetch(path, opts = {}) {
-      return fetch(`${API_BASE}${path}`, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) } });
-    }
+        function relTime(ts) {
+            const diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return `${diff}s ago`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return new Date(ts).toLocaleString();
+        }
 
-    // Every tab section used to fetch + render with no error handling at
-    // all, so a single failed request just left that panel blank forever
-    // with nothing in the UI (only the browser console) telling you why.
-    // This wraps that: does the fetch, throws a readable error on any
-    // non-2xx/network/parse failure.
-    async function authedFetchJson(path, opts = {}) {
-      let res;
-      try {
-        res = await authedFetch(path, opts);
-      } catch (err) {
-        throw new Error(`Network error reaching ${path}: ${err.message}`);
-      }
-      if (res.status === 401) {
-        sessionStorage.removeItem("seize_admin_token");
-        window.location.href = "/admin-login.html";
-        throw new Error("Session expired.");
-      }
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error(`${path} returned a non-JSON response (${res.status}).`);
-      }
-      if (!res.ok) throw new Error(data.error || `${path} failed (${res.status}).`);
-      return data;
-    }
+        // ---------- tabs ----------
+        document.querySelectorAll(".tab-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+                document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+                btn.classList.add("active");
+                document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+            });
+        });
 
-    // Renders a visible "couldn't load this" message inside a panel
-    // instead of quietly leaving it blank when a fetch throws.
-    function showSectionError(containerId, err) {
-      const el = document.getElementById(containerId);
-      if (!el) return;
-      console.error(`[admin] ${containerId} failed to load:`, err);
-      el.innerHTML = `<div class="activity-empty" style="color:#ff8a8a;">Couldn't load this section — ${err.message}</div>`;
-    }
+        // ---------- toasts ----------
+        function showToast(message, level = "info") {
+            const el = document.createElement("div");
+            el.className = `toast ${level === "critical" ? "critical" : ""}`;
+            el.textContent = message;
+            document.getElementById("toast-container").appendChild(el);
+            setTimeout(() => el.remove(), 7000);
+        }
 
-    function relTime(ts) {
-      const diff = Math.floor((Date.now() - ts) / 1000);
-      if (diff < 60) return `${diff}s ago`;
-      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-      return new Date(ts).toLocaleString();
-    }
+        function pulse(cardsContainerId) {
+            const el = document.getElementById(cardsContainerId);
+            if (!el) return;
+            el.classList.add("pulse");
+            setTimeout(() => el.classList.remove("pulse"), 600);
+        }
 
-    // ---------- tabs ----------
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-        btn.classList.add("active");
-        document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
-      });
-    });
-
-    // ---------- toasts ----------
-    function showToast(message, level = "info") {
-      const el = document.createElement("div");
-      el.className = `toast ${level === "critical" ? "critical" : ""}`;
-      el.textContent = message;
-      document.getElementById("toast-container").appendChild(el);
-      setTimeout(() => el.remove(), 7000);
-    }
-
-    function pulse(cardsContainerId) {
-      const el = document.getElementById(cardsContainerId);
-      if (!el) return;
-      el.classList.add("pulse");
-      setTimeout(() => el.classList.remove("pulse"), 600);
-    }
-
-    // ---------- overview ----------
-    function renderStatsCards(stats) {
-      const { uptime, requests, jobs } = stats;
-      document.getElementById("stats-cards").innerHTML = `
+        // ---------- overview ----------
+        function renderStatsCards(stats) {
+            const { uptime, requests, jobs } = stats;
+            document.getElementById("stats-cards").innerHTML = `
         <div class="card"><div class="label">Uptime</div><div class="value">${uptime.days}d ${uptime.hours}h ${uptime.minutes}m</div></div>
         <div class="card"><div class="label">Requests (total)</div><div class="value">${requests.total.toLocaleString()}</div><div class="subvalue">${requests.today.toLocaleString()} today</div></div>
         <div class="card"><div class="label">Unique visitors</div><div class="value">${requests.uniqueVisitorsTotal.toLocaleString()}</div><div class="subvalue">${requests.uniqueVisitorsToday.toLocaleString()} today</div></div>
@@ -310,10 +641,10 @@
         <div class="card"><div class="label">Conversions</div><div class="value">${jobs.conversions.done}</div><div class="subvalue">${jobs.conversions.started} started · ${jobs.conversions.error} failed</div></div>
         <div class="card"><div class="label">Captures</div><div class="value">${jobs.captures.done}</div><div class="subvalue">${jobs.captures.started} started · ${jobs.captures.error} failed</div></div>
       `;
-    }
+        }
 
-    function renderHealthCards(health) {
-      document.getElementById("health-cards").innerHTML = `
+        function renderHealthCards(health) {
+            document.getElementById("health-cards").innerHTML = `
         <div class="card ${health.ffmpeg.ok ? "status-ok" : "status-bad"}"><div class="label">FFmpeg</div><div class="value">${health.ffmpeg.ok ? "Ready" : "Down"}</div></div>
         <div class="card ${health.database.ok ? "status-ok" : "status-bad"}"><div class="label">Database</div><div class="value">${health.database.ok ? "OK" : "Error"}</div>${health.database.note ? `<div class="subvalue">${health.database.note}</div>` : ""}</div>
         <div class="card"><div class="label">Temp dir</div><div class="value">${health.tempDir.totalMb} MB</div><div class="subvalue">${health.tempDir.fileCount} file(s)</div></div>
@@ -321,321 +652,316 @@
         <div class="card"><div class="label">Song ID</div><div class="value">${health.songId.configured ? "On" : "Off"}</div></div>
         <div class="card"><div class="label">Load avg (1m)</div><div class="value">${health.system.loadAvg[0].toFixed(2)}</div><div class="subvalue">${health.system.cpuCount} cpu(s) · node ${health.system.nodeVersion}</div></div>
       `;
-    }
+        }
 
-    function eventDetailText(e) {
-      const d = e.detail || {};
-      const bits = [];
-      if (d.platform) bits.push(d.platform);
-      if (d.mode) bits.push(d.mode);
-      if (d.direction) bits.push(d.direction);
-      if (d.format) bits.push(`.${d.format}`);
-      if (d.error) bits.push(`err: ${String(d.error).slice(0, 60)}`);
-      return bits.join(" · ");
-    }
+        function eventDetailText(e) {
+            const d = e.detail || {};
+            const bits = [];
+            if (d.platform) bits.push(d.platform);
+            if (d.mode) bits.push(d.mode);
+            if (d.direction) bits.push(d.direction);
+            if (d.format) bits.push(`.${d.format}`);
+            if (d.error) bits.push(`err: ${String(d.error).slice(0, 60)}`);
+            return bits.join(" · ");
+        }
 
-    function renderActivity(events) {
-      const el = document.getElementById("activity-list");
-      if (!events.length) return (el.innerHTML = `<div class="activity-empty">No activity yet.</div>`);
-      el.innerHTML = events.map((e) => `
+        function renderActivity(events) {
+            const el = document.getElementById("activity-list");
+            if (!events.length) return (el.innerHTML = `<div class="activity-empty">No activity yet.</div>`);
+            el.innerHTML = events.map((e) => `
         <div class="activity-row">
           <div><div class="activity-type">${e.type}</div>${eventDetailText(e) ? `<div class="activity-detail">${eventDetailText(e)}</div>` : ""}</div>
           <span class="activity-time">${relTime(e.timestamp)}</span>
         </div>`).join("");
-    }
+        }
 
-    function renderBarList(containerId, items, keyName = "key") {
-      const el = document.getElementById(containerId);
-      if (!items.length) return (el.innerHTML = `<div class="activity-empty">No data yet.</div>`);
-      const max = items[0].count;
-      el.innerHTML = items.map((i) => `
+        function renderBarList(containerId, items, keyName = "key") {
+            const el = document.getElementById(containerId);
+            if (!items.length) return (el.innerHTML = `<div class="activity-empty">No data yet.</div>`);
+            const max = items[0].count;
+            el.innerHTML = items.map((i) => `
         <div class="bar-row">
           <span class="bar-name">${i[keyName]}</span>
           <div class="bar-track"><div class="bar-fill" style="width:${Math.max(4, (i.count / max) * 100)}%"></div></div>
           <span class="bar-count">${i.count}</span>
         </div>`).join("");
-    }
+        }
 
-    function renderHeatmap(grid) {
-      const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const flat = grid.flat();
-      const max = Math.max(1, ...flat);
-      let html = "";
-      grid.forEach((row, d) => {
-        html += `<div class="hm-label">${days[d]}</div>`;
-        row.forEach((count) => {
-          const intensity = count / max;
-          const color = count === 0 ? "#1a1d19" : `rgba(127,255,176,${0.15 + intensity * 0.85})`;
-          html += `<div class="hm-cell" title="${count} requests" style="background:${color}"></div>`;
-        });
-      });
-      document.getElementById("heatmap-grid").innerHTML = html;
-    }
+        function renderHeatmap(grid) {
+            const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+            const flat = grid.flat();
+            const max = Math.max(1, ...flat);
+            let html = "";
+            grid.forEach((row, d) => {
+                html += `<div class="hm-label">${days[d]}</div>`;
+                row.forEach((count) => {
+                    const intensity = count / max;
+                    const color = count === 0 ? "#1a1d19" : `rgba(127,255,176,${0.15 + intensity * 0.85})`;
+                    html += `<div class="hm-cell" title="${count} requests" style="background:${color}"></div>`;
+                });
+            });
+            document.getElementById("heatmap-grid").innerHTML = html;
+        }
 
-    function renderPlatformHealth(list) {
-      const el = document.getElementById("platform-health-list");
-      if (!list.length) return (el.innerHTML = `<div class="activity-empty">No data yet.</div>`);
-      el.innerHTML = list.map((p) => `
+        function renderPlatformHealth(list) {
+            const el = document.getElementById("platform-health-list");
+            if (!list.length) return (el.innerHTML = `<div class="activity-empty">No data yet.</div>`);
+            el.innerHTML = list.map((p) => `
         <div class="bar-row">
           <span class="bar-name">${p.platform}</span>
           <div class="bar-track"><div class="bar-fill" style="width:${p.successRatePct ?? 0}%; background:${(p.successRatePct ?? 0) > 70 ? "#7FFFB0" : "#ff8a8a"}"></div></div>
           <span class="bar-count">${p.successRatePct ?? "–"}%</span>
         </div>`).join("");
-    }
+        }
 
-    // ---------- logs tab ----------
-    async function loadLogs() {
-      const wrap = document.getElementById("logs-table-wrap");
-      const type = document.getElementById("log-type-filter").value;
-      const q = document.getElementById("log-search").value;
-      const params = new URLSearchParams();
-      if (type) params.set("type", type);
-      if (q) params.set("q", q);
-      params.set("limit", "150");
+        // ---------- logs tab ----------
+        async function loadLogs() {
+            const wrap = document.getElementById("logs-table-wrap");
+            const type = document.getElementById("log-type-filter").value;
+            const q = document.getElementById("log-search").value;
+            const params = new URLSearchParams();
+            if (type) params.set("type", type);
+            if (q) params.set("q", q);
+            params.set("limit", "150");
 
-      let data;
-      try {
-        data = await authedFetchJson(`/admin/logs?${params}`);
-      } catch (err) {
-        return showSectionError("logs-table-wrap", err);
-      }
-      if (!data.events.length) return (wrap.innerHTML = `<div class="activity-empty">No matching logs.</div>`);
+            let data;
+            try {
+                data = await authedFetchJson(`/admin/logs?${params}`);
+            } catch (err) {
+                return showSectionError("logs-table-wrap", err);
+            }
+            if (!data.events.length) return (wrap.innerHTML = `<div class="activity-empty">No matching logs.</div>`);
 
-      wrap.innerHTML = `
+            wrap.innerHTML = `
         <table class="data-table">
           <thead><tr><th>Time</th><th>Type</th><th>Detail</th></tr></thead>
           <tbody>
             ${data.events.map((e) => `<tr><td>${new Date(e.timestamp).toLocaleString()}</td><td>${e.type}</td><td>${JSON.stringify(e.detail)}</td></tr>`).join("")}
           </tbody>
         </table>`;
-    }
+        }
 
-    document.getElementById("log-refresh-btn").addEventListener("click", loadLogs);
-    document.getElementById("log-search").addEventListener("keydown", (e) => { if (e.key === "Enter") loadLogs(); });
-    document.getElementById("log-type-filter").addEventListener("change", loadLogs);
+        document.getElementById("log-refresh-btn").addEventListener("click", loadLogs);
+        document.getElementById("log-search").addEventListener("keydown", (e) => { if (e.key === "Enter") loadLogs(); });
+        document.getElementById("log-type-filter").addEventListener("change", loadLogs);
 
-    function downloadFromEndpoint(path, filename) {
-      authedFetch(path).then(async (res) => {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-      });
-    }
-    document.getElementById("log-export-json-btn").addEventListener("click", () => {
-      const type = document.getElementById("log-type-filter").value;
-      downloadFromEndpoint(`/admin/logs?limit=2000${type ? `&type=${type}` : ""}`, `seize-logs-${Date.now()}.json`);
-    });
-    document.getElementById("log-export-csv-btn").addEventListener("click", () => {
-      const type = document.getElementById("log-type-filter").value;
-      downloadFromEndpoint(`/admin/logs?format=csv&limit=2000${type ? `&type=${type}` : ""}`, `seize-logs-${Date.now()}.csv`);
-    });
+        function downloadFromEndpoint(path, filename) {
+            authedFetch(path).then(async (res) => {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = filename; a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+        document.getElementById("log-export-json-btn").addEventListener("click", () => {
+            const type = document.getElementById("log-type-filter").value;
+            downloadFromEndpoint(`/admin/logs?limit=2000${type ? `&type=${type}` : ""}`, `seize-logs-${Date.now()}.json`);
+        });
+        document.getElementById("log-export-csv-btn").addEventListener("click", () => {
+            const type = document.getElementById("log-type-filter").value;
+            downloadFromEndpoint(`/admin/logs?format=csv&limit=2000${type ? `&type=${type}` : ""}`, `seize-logs-${Date.now()}.csv`);
+        });
 
-    // ---------- security tab ----------
-    function renderLoginHistory(list) {
-      const el = document.getElementById("login-history-list");
-      if (!list.length) return (el.innerHTML = `<div class="activity-empty">No login attempts recorded.</div>`);
-      el.innerHTML = list.map((l) => `
+        // ---------- security tab ----------
+        function renderLoginHistory(list) {
+            const el = document.getElementById("login-history-list");
+            if (!list.length) return (el.innerHTML = `<div class="activity-empty">No login attempts recorded.</div>`);
+            el.innerHTML = list.map((l) => `
         <div class="activity-row">
           <div><div class="activity-type" style="color:${l.success ? "#7FFFB0" : "#ff8a8a"}">${l.success ? "✓ success" : "✕ failed"}</div><div class="activity-detail">${l.username || "?"} · ${l.ip}</div></div>
           <span class="activity-time">${relTime(l.timestamp)}</span>
         </div>`).join("");
-    }
+        }
 
-    function renderSessions(list) {
-      const el = document.getElementById("sessions-list");
-      if (!list.length) return (el.innerHTML = `<div class="activity-empty">No tracked sessions. (Sessions only appear here once auth.js is updated to register a jti at login — see setup notes.)</div>`);
-      el.innerHTML = list.map((s) => `
+        function renderSessions(list) {
+            const el = document.getElementById("sessions-list");
+            if (!list.length) return (el.innerHTML = `<div class="activity-empty">No tracked sessions. (Sessions only appear here once auth.js is updated to register a jti at login — see setup notes.)</div>`);
+            el.innerHTML = list.map((s) => `
         <div class="activity-row">
           <div><div class="activity-type">${s.sub}</div><div class="activity-detail">${s.ip} · ${relTime(s.issuedAt)}</div></div>
           ${s.revoked ? `<span class="activity-time">revoked</span>` : `<button class="action-btn danger" data-jti="${s.jti}" style="padding:4px 10px;font-size:0.7rem;">Revoke</button>`}
         </div>`).join("");
-      el.querySelectorAll("button[data-jti]").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          await authedFetch(`/admin/sessions/${btn.dataset.jti}/revoke`, { method: "POST" });
-          loadSecurity();
+            el.querySelectorAll("button[data-jti]").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    await authedFetch(`/admin/sessions/${btn.dataset.jti}/revoke`, { method: "POST" });
+                    loadSecurity();
+                });
+            });
+        }
+
+        async function loadSecurity() {
+            // fetching these separately so one failing doesn't take the other
+            // down with it — login history can still show up even if sessions dies
+            const results = await Promise.allSettled([
+                authedFetchJson("/admin/login-history?limit=30"),
+                authedFetchJson("/admin/sessions"),
+            ]);
+            const [historyResult, sessionsResult] = results;
+
+            if (historyResult.status === "fulfilled") {
+                renderLoginHistory(historyResult.value.history);
+            } else {
+                showSectionError("login-history-list", historyResult.reason);
+            }
+
+            if (sessionsResult.status === "fulfilled") {
+                renderSessions(sessionsResult.value.sessions);
+            } else {
+                showSectionError("sessions-list", sessionsResult.reason);
+            }
+        }
+
+        // ---------- system actions ----------
+        function setActionStatus(text) {
+            const el = document.getElementById("action-status");
+            el.textContent = text;
+            setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 7000);
+        }
+
+        function wireAction(btnId, path, { confirmMsg } = {}) {
+            document.getElementById(btnId).addEventListener("click", async (e) => {
+                if (confirmMsg && !confirm(confirmMsg)) return;
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                try {
+                    const res = await authedFetch(path, { method: "POST" });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Action failed.");
+                    setActionStatus(data.message || "Done.");
+                } catch (err) {
+                    setActionStatus("Error: " + err.message);
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
+        wireAction("cleanup-temp-btn", "/admin/actions/cleanup-temp");
+        wireAction("update-ytdlp-btn", "/admin/actions/update-ytdlp");
+        wireAction("clear-cache-btn", "/admin/actions/clear-cache");
+        wireAction("clear-logs-btn", "/admin/actions/clear-logs", { confirmMsg: "Clear the activity log? This can't be undone." });
+        wireAction("restart-btn", "/admin/actions/restart-server", { confirmMsg: "Restart the server process now? Only do this if your host auto-restarts (Render does)." });
+
+        document.getElementById("export-btn").addEventListener("click", () => downloadFromEndpoint("/admin/export", `seize-admin-export-${Date.now()}.json`));
+
+        // ---------- overview tab ----------
+        // this used to be bundled with analytics in one big Promise.all — one
+        // dead endpoint and the whole thing rejected, nothing rendered, even
+        // stuff that would've worked fine. split it up, allSettled instead,
+        // now each card just lives or dies on its own
+        async function loadOverview() {
+            const results = await Promise.allSettled([
+                authedFetchJson("/admin/stats"),
+                authedFetchJson("/admin/health"),
+                authedFetchJson("/admin/activity?limit=40"),
+            ]);
+            const [statsResult, healthResult, activityResult] = results;
+
+            if (statsResult.status === "fulfilled") renderStatsCards(statsResult.value);
+            else showSectionError("stats-cards", statsResult.reason);
+
+            if (healthResult.status === "fulfilled") renderHealthCards(healthResult.value);
+            else showSectionError("health-cards", healthResult.reason);
+
+            if (activityResult.status === "fulfilled") renderActivity(activityResult.value.events);
+            else showSectionError("activity-list", activityResult.reason);
+
+            return results.every((r) => r.status === "fulfilled");
+        }
+
+        // ---------- analytics tab ----------
+        async function loadAnalytics() {
+            const results = await Promise.allSettled([
+                authedFetchJson("/admin/platforms"),
+                authedFetchJson("/admin/platforms/health"),
+                authedFetchJson("/admin/heatmap"),
+                authedFetchJson("/admin/breakdowns"),
+            ]);
+            const [platformsResult, healthPlatResult, heatmapResult, breakdownsResult] = results;
+
+            if (platformsResult.status === "fulfilled") renderBarList("platform-list", platformsResult.value.platforms, "platform");
+            else showSectionError("platform-list", platformsResult.reason);
+
+            if (healthPlatResult.status === "fulfilled") renderPlatformHealth(healthPlatResult.value.platforms);
+            else showSectionError("platform-health-list", healthPlatResult.reason);
+
+            if (heatmapResult.status === "fulfilled") renderHeatmap(heatmapResult.value.heatmap);
+            else showSectionError("heatmap-grid", heatmapResult.reason);
+
+            if (breakdownsResult.status === "fulfilled") {
+                const b = breakdownsResult.value;
+                renderBarList("device-list", b.devices);
+                renderBarList("browser-list", b.browsers);
+                renderBarList("country-list", b.countries);
+            } else {
+                showSectionError("device-list", breakdownsResult.reason);
+                showSectionError("browser-list", breakdownsResult.reason);
+                showSectionError("country-list", breakdownsResult.reason);
+            }
+        }
+
+        // ---------- tab-aware refresh ----------
+        // refetches a tab's data as soon as you click it, so if it flopped on
+        // initial load it's not just stuck blank til the next 15s refresh
+        const tabLoaders = {
+            overview: loadOverview,
+            analytics: loadAnalytics,
+            logs: loadLogs,
+            security: loadSecurity,
+        };
+        document.querySelectorAll(".tab-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const loader = tabLoaders[btn.dataset.tab];
+                if (loader) loader();
+            });
         });
-      });
-    }
 
-    async function loadSecurity() {
-      // Fetched independently (not Promise.all on a shared array) so one
-      // endpoint failing doesn't blank out the other — login history can
-      // still show up even if, say, sessions fails, and vice versa.
-      const results = await Promise.allSettled([
-        authedFetchJson("/admin/login-history?limit=30"),
-        authedFetchJson("/admin/sessions"),
-      ]);
-      const [historyResult, sessionsResult] = results;
-
-      if (historyResult.status === "fulfilled") {
-        renderLoginHistory(historyResult.value.history);
-      } else {
-        showSectionError("login-history-list", historyResult.reason);
-      }
-
-      if (sessionsResult.status === "fulfilled") {
-        renderSessions(sessionsResult.value.sessions);
-      } else {
-        showSectionError("sessions-list", sessionsResult.reason);
-      }
-    }
-
-    // ---------- system actions ----------
-    function setActionStatus(text) {
-      const el = document.getElementById("action-status");
-      el.textContent = text;
-      setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 7000);
-    }
-
-    function wireAction(btnId, path, { confirmMsg } = {}) {
-      document.getElementById(btnId).addEventListener("click", async (e) => {
-        if (confirmMsg && !confirm(confirmMsg)) return;
-        const btn = e.currentTarget;
-        btn.disabled = true;
-        try {
-          const res = await authedFetch(path, { method: "POST" });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Action failed.");
-          setActionStatus(data.message || "Done.");
-        } catch (err) {
-          setActionStatus("Error: " + err.message);
-        } finally {
-          btn.disabled = false;
+        // ---------- initial load ----------
+        async function loadAll() {
+            try {
+                const ok = await loadOverview();
+                await loadAnalytics();
+                loadingEl.classList.add("hidden");
+                errorEl.classList.remove("show");
+                contentEl.classList.remove("hidden");
+                if (!ok) console.warn("[admin] Overview loaded with partial failures — see section errors above.");
+            } catch (err) {
+                // only ends up here if something outside the per-section try/catches
+                // blows up — everything else just shows as an inline error instead
+                loadingEl.classList.add("hidden");
+                errorEl.textContent = "Couldn't reach the admin API. " + err.message;
+                errorEl.classList.add("show");
+            }
         }
-      });
-    }
-    wireAction("cleanup-temp-btn", "/admin/actions/cleanup-temp");
-    wireAction("update-ytdlp-btn", "/admin/actions/update-ytdlp");
-    wireAction("clear-cache-btn", "/admin/actions/clear-cache");
-    wireAction("clear-logs-btn", "/admin/actions/clear-logs", { confirmMsg: "Clear the activity log? This can't be undone." });
-    wireAction("restart-btn", "/admin/actions/restart-server", { confirmMsg: "Restart the server process now? Only do this if your host auto-restarts (Render does)." });
 
-    document.getElementById("export-btn").addEventListener("click", () => downloadFromEndpoint("/admin/export", `seize-admin-export-${Date.now()}.json`));
+        loadLogs();
+        loadSecurity();
+        loadAll();
+        setInterval(() => { loadOverview(); loadAnalytics(); }, 15000); // sse handles the truly live stuff, this is just a backup resync. logs/security stay manual so they don't wipe out a search you're mid-typing
 
-    // ---------- overview tab ----------
-    // Previously this and Analytics were fetched together in one
-    // Promise.all() — if any single one of the 7 endpoints failed (a stale
-    // deploy missing a route, a transient error, etc.) the whole batch
-    // rejected and NOTHING rendered, including sections that would
-    // otherwise have succeeded. Split apart + Promise.allSettled so each
-    // card/panel lives or dies on its own request.
-    async function loadOverview() {
-      const results = await Promise.allSettled([
-        authedFetchJson("/admin/stats"),
-        authedFetchJson("/admin/health"),
-        authedFetchJson("/admin/activity?limit=40"),
-      ]);
-      const [statsResult, healthResult, activityResult] = results;
-
-      if (statsResult.status === "fulfilled") renderStatsCards(statsResult.value);
-      else showSectionError("stats-cards", statsResult.reason);
-
-      if (healthResult.status === "fulfilled") renderHealthCards(healthResult.value);
-      else showSectionError("health-cards", healthResult.reason);
-
-      if (activityResult.status === "fulfilled") renderActivity(activityResult.value.events);
-      else showSectionError("activity-list", activityResult.reason);
-
-      return results.every((r) => r.status === "fulfilled");
-    }
-
-    // ---------- analytics tab ----------
-    async function loadAnalytics() {
-      const results = await Promise.allSettled([
-        authedFetchJson("/admin/platforms"),
-        authedFetchJson("/admin/platforms/health"),
-        authedFetchJson("/admin/heatmap"),
-        authedFetchJson("/admin/breakdowns"),
-      ]);
-      const [platformsResult, healthPlatResult, heatmapResult, breakdownsResult] = results;
-
-      if (platformsResult.status === "fulfilled") renderBarList("platform-list", platformsResult.value.platforms, "platform");
-      else showSectionError("platform-list", platformsResult.reason);
-
-      if (healthPlatResult.status === "fulfilled") renderPlatformHealth(healthPlatResult.value.platforms);
-      else showSectionError("platform-health-list", healthPlatResult.reason);
-
-      if (heatmapResult.status === "fulfilled") renderHeatmap(heatmapResult.value.heatmap);
-      else showSectionError("heatmap-grid", heatmapResult.reason);
-
-      if (breakdownsResult.status === "fulfilled") {
-        const b = breakdownsResult.value;
-        renderBarList("device-list", b.devices);
-        renderBarList("browser-list", b.browsers);
-        renderBarList("country-list", b.countries);
-      } else {
-        showSectionError("device-list", breakdownsResult.reason);
-        showSectionError("browser-list", breakdownsResult.reason);
-        showSectionError("country-list", breakdownsResult.reason);
-      }
-    }
-
-    // ---------- tab-aware refresh ----------
-    // Re-fetches a tab's data the moment you switch to it, so a tab that
-    // failed on the initial page load (e.g. token wasn't ready yet, a
-    // transient network blip) doesn't just stay blank until the next
-    // 15s auto-refresh — you get a fresh attempt on every click.
-    const tabLoaders = {
-      overview: loadOverview,
-      analytics: loadAnalytics,
-      logs: loadLogs,
-      security: loadSecurity,
-    };
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const loader = tabLoaders[btn.dataset.tab];
-        if (loader) loader();
-      });
-    });
-
-    // ---------- initial load ----------
-    async function loadAll() {
-      try {
-        const ok = await loadOverview();
-        await loadAnalytics();
-        loadingEl.classList.add("hidden");
-        errorEl.classList.remove("show");
-        contentEl.classList.remove("hidden");
-        if (!ok) console.warn("[admin] Overview loaded with partial failures — see section errors above.");
-      } catch (err) {
-        // Only hit if something outside the per-section try/catches blows
-        // up (e.g. a bug in a render function itself) — everything else
-        // degrades to inline section errors instead of a full-page failure.
-        loadingEl.classList.add("hidden");
-        errorEl.textContent = "Couldn't reach the admin API. " + err.message;
-        errorEl.classList.add("show");
-      }
-    }
-
-    loadLogs();
-    loadSecurity();
-    loadAll();
-    setInterval(() => { loadOverview(); loadAnalytics(); }, 15000); // SSE covers the truly live bits; this is just a periodic resync. Logs/Security stay manual so they don't clobber an in-progress search/filter.
-
-    // ---------- SSE live feed ----------
-    function connectLive() {
-      const dot = document.getElementById("live-dot");
-      const es = new EventSource(`${API_BASE}/admin/live?token=${encodeURIComponent(token)}`);
-      // note: EventSource can't send custom headers, so /live also
-      // needs to accept ?token= as a fallback auth path — see setup note
-      es.onopen = () => dot.classList.add("on");
-      es.onerror = () => { dot.classList.remove("on"); };
-      es.onmessage = (msg) => {
-        try {
-          const { type, payload } = JSON.parse(msg.data);
-          if (type === "event") {
-            pulse("stats-cards");
-          } else if (type === "alert") {
-            showToast(payload.message, payload.level);
-          }
-        } catch {
-          // heartbeat pings and non-json frames just get ignored
+        // ---------- SSE live feed ----------
+        function connectLive() {
+            const dot = document.getElementById("live-dot");
+            const es = new EventSource(`${API_BASE}/admin/live?token=${encodeURIComponent(token)}`);
+            // EventSource can't send custom headers, so /live has to also
+            // accept ?token= as a backup way to auth
+            es.onopen = () => dot.classList.add("on");
+            es.onerror = () => { dot.classList.remove("on"); };
+            es.onmessage = (msg) => {
+                try {
+                    const { type, payload } = JSON.parse(msg.data);
+                    if (type === "event") {
+                        pulse("stats-cards");
+                    } else if (type === "alert") {
+                        showToast(payload.message, payload.level);
+                    }
+                } catch {
+                    // heartbeat pings and non-json frames just get ignored
+                }
+            };
         }
-      };
-    }
-    connectLive();
-  </script>
+        connectLive();
+    </script>
 </body>
+
 </html>

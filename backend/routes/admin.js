@@ -24,6 +24,7 @@ const {
   removeSseClient,
   checkMemoryAlert,
   logEvent,
+  flushPersistence,
 } = require("../utils/activityLog");
 const { isAvailable: ffmpegAvailable } = require("../utils/ffmpeg");
 const { isConfigured: songIdConfigured } = require("../utils/songid");
@@ -351,6 +352,7 @@ router.get("/cache-version", (req, res) => {
 
 router.post("/actions/restart-server", (req, res) => {
   logEvent("admin:restart-server", { by: req.admin?.sub });
+  flushPersistence();
   res.json({ message: "Restarting…" });
   setTimeout(() => process.exit(1), 300);
 });

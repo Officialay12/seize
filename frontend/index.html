@@ -16,16 +16,14 @@
   <meta name="apple-mobile-web-app-title" content="seize" />
   <link rel="stylesheet" href="style.css" />
 
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-0KPZ0NT206"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag() { dataLayer.push(arguments); }
-  gtag('js', new Date());
-
-  gtag('config', 'G-0KPZ0NT206');
-</script>
-
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0KPZ0NT206"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-0KPZ0NT206');
+  </script>
 </head>
 
 <body>
@@ -42,6 +40,9 @@
       <span class="brand-name">seize</span>
     </div>
     <div class="topbar-status">
+      <button id="install-extension-btn" class="btn-install mono small hidden" type="button">
+        🧩 Add to Chrome
+      </button>
       <button id="install-btn" class="btn-install mono small hidden" type="button">
         📲 Install app
       </button>

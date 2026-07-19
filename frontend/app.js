@@ -311,18 +311,7 @@ function processSharedUrl(url, mode) {
 
 // ============================================================
 // SAVE TO DEVICE
-// the goal here: whatever the user downloads should actually show
-// up in their Photos/gallery or file manager, not just vanish into
-// some sandboxed browser cache. web share api is the only real way
-// to do that from a PWA without a native wrapper, so it goes first.
-// everything after it is a fallback for browsers that don't support it.
 // ============================================================
-
-// figures out the real extension + mimetype instead of trusting
-// whatever name we were handed. the server already knows the actual
-// output format (see downloadName / content-disposition) — this just
-// makes sure the client doesn't quietly slap the wrong extension on
-// a file, which is what was breaking "save" before.
 const MIME_BY_EXT = {
   mp4: "video/mp4",
   mov: "video/quicktime",
@@ -345,10 +334,6 @@ const EXT_BY_MIME = Object.fromEntries(
   Object.entries(MIME_BY_EXT).map(([ext, mime]) => [mime, ext]),
 );
 
-// pulls filename + extension straight from the response instead of
-// guessing. content-disposition header wins if it's there (server
-// sets this via res.download), falls back to sniffing the blob's
-// mimetype, falls back to whatever name we were passed in.
 function resolveFileInfo(response, blob, fallbackName) {
   let name = fallbackName;
 
@@ -360,9 +345,6 @@ function resolveFileInfo(response, blob, fallbackName) {
 
   let ext = (name.split(".").pop() || "").toLowerCase();
 
-  // name had no real extension, or one we don't recognize — fall
-  // back to sniffing the blob's actual mimetype instead of just
-  // trusting whatever string was passed in.
   if (!MIME_BY_EXT[ext]) {
     const sniffedExt = EXT_BY_MIME[blob.type];
     if (sniffedExt) {
@@ -386,7 +368,6 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     blob = await res.blob();
   } catch (err) {
     console.error("[seize] fetch for save failed:", err);
-    // last-ditch effort, just let the browser handle it directly
     window.open(fileUrl, "_blank");
     return;
   }
@@ -394,10 +375,6 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
   const { name, mimeType } = resolveFileInfo(res, blob, suggestedName);
   const file = new File([blob], name, { type: mimeType });
 
-  // plan A: web share. this is the one that actually reaches the
-  // native "save to photos/gallery" sheet on android and ios. if
-  // canShare comes back false (older webview, weird mimetype, etc)
-  // we just fall through — no error, just try the next thing.
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
@@ -405,16 +382,12 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
       return;
     } catch (err) {
       if (err?.name === "AbortError") {
-        // they just closed the sheet, not an error
         return;
       }
       console.warn("[seize] share sheet bailed, trying next option:", err);
     }
   }
 
-  // plan B: file system access api (desktop chrome/edge mostly).
-  // lets the user actually pick where it lands instead of it
-  // disappearing into a default downloads folder.
   if ("showSaveFilePicker" in window) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -440,9 +413,6 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     }
   }
 
-  // plan C: plain anchor download. works everywhere but on mobile
-  // this usually lands in the browser's own Downloads app storage,
-  // not the actual gallery — so this is the fallback, not the plan.
   try {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -468,8 +438,6 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     console.warn("[seize] anchor download bailed:", err);
   }
 
-  // plan D: we're out of good options, just open it in a tab so
-  // the user can long-press → save themselves
   console.warn(
     "[seize] everything failed, opening in a new tab as last resort",
   );
@@ -2203,6 +2171,156 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+// ============================================================
+// EXTENSION INSTALL DETECTION
+// ============================================================
+const extensionBtn = document.getElementById("install-extension-btn");
+
+function isDesktop() {
+  const ua = navigator.userAgent;
+  const isMobile =
+    /Android|iPhone|iPad|iPod|webOS|BlackBerry|Windows Phone/i.test(ua);
+  const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  return !isMobile && !isTouch;
+}
+
+async function checkExtensionInstalled() {
+  try {
+    const marker = document.getElementById("seize-extension-marker");
+    if (marker) return true;
+    const styles = document.querySelectorAll("style");
+    for (const style of styles) {
+      if (
+        style.textContent &&
+        style.textContent.includes("seize-extension-btn")
+      ) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function getExtensionUrl() {
+  return null;
+}
+
+async function showExtensionButton() {
+  if (!isDesktop()) {
+    extensionBtn.classList.add("hidden");
+    return;
+  }
+
+  const installed = await checkExtensionInstalled();
+  if (installed) {
+    extensionBtn.classList.add("hidden");
+    return;
+  }
+
+  extensionBtn.classList.remove("hidden");
+  extensionBtn.textContent = "🧩 Add Seize to Chrome";
+}
+
+function showExtensionInstructions() {
+  document.querySelector(".extension-modal")?.remove();
+
+  const modal = document.createElement("div");
+  modal.className = "extension-modal";
+  modal.style.cssText = `
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+    animation: fadeIn 0.3s ease;
+  `;
+
+  modal.innerHTML = `
+    <div style="
+      background: #141715;
+      border: 1px solid #262B27;
+      border-radius: 8px;
+      padding: 32px;
+      max-width: 480px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+    ">
+      <h2 style="color: #7FFFB0; font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 8px;">
+        🧩 Install Seize Extension
+      </h2>
+      <p style="color: #8A928C; font-size: 0.9rem; margin: 0 0 20px; line-height: 1.6;">
+        The Seize extension adds one-click download buttons to TikTok, Instagram, Twitter/X, and Pinterest.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
+          <span style="font-size: 1.2rem; min-width: 28px;">1</span>
+          <div>
+            <strong style="color: #E8EDE9;">Download the extension files</strong>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Clone or download the <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">extension/</code> folder from the repo.</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
+          <span style="font-size: 1.2rem; min-width: 28px;">2</span>
+          <div>
+            <strong style="color: #E8EDE9;">Open Chrome Extensions</strong>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Go to <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">chrome://extensions/</code> and enable <strong style="color: #E8EDE9;">Developer Mode</strong>.</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
+          <span style="font-size: 1.2rem; min-width: 28px;">3</span>
+          <div>
+            <strong style="color: #E8EDE9;">Load the extension</strong>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Click <strong style="color: #E8EDE9;">Load unpacked</strong> and select the <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">extension/</code> folder.</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-primary" id="extension-modal-close" style="flex: 1;">Got it</button>
+        <button class="btn-secondary" id="extension-modal-open" style="flex: 1;">Open chrome://extensions</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document
+    .getElementById("extension-modal-close")
+    .addEventListener("click", () => {
+      modal.remove();
+    });
+
+  document
+    .getElementById("extension-modal-open")
+    .addEventListener("click", () => {
+      window.open("chrome://extensions/", "_blank");
+      modal.remove();
+    });
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
+extensionBtn?.addEventListener("click", showExtensionInstructions);
+
+window.addEventListener("load", () => {
+  setTimeout(showExtensionButton, 1000);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    showExtensionButton();
+  }
+});
 
 // ============================================================
 // ARCHIVE MODE

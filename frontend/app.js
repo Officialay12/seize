@@ -1,6 +1,88 @@
 const API_BASE = "https://seize-1lxs.onrender.com/api";
 
 // ============================================================
+// PRELOADER - Show logo before app loads
+// ============================================================
+(function hidePreloader() {
+  const preloader = document.getElementById("preloader");
+  if (preloader) {
+    setTimeout(() => {
+      preloader.classList.add("fade-out");
+      setTimeout(() => {
+        preloader.style.display = "none";
+      }, 600);
+    }, 1200);
+  }
+})();
+
+// ============================================================
+// PERMISSIONS - Ask on load, remember choice
+// ============================================================
+const PERMISSION_KEY = "seize_permissions_granted";
+
+async function requestAppPermissions() {
+  const alreadyGranted = localStorage.getItem(PERMISSION_KEY);
+  if (alreadyGranted === "true") return;
+  if (alreadyGranted === "false") return;
+
+  // Only show on mobile where permissions matter most
+  const isMobile =
+    /Android|iPhone|iPad|iPod|webOS|BlackBerry|Windows Phone/i.test(
+      navigator.userAgent,
+    );
+  if (!isMobile) return;
+
+  const banner = document.createElement("div");
+  banner.className = "permission-banner";
+  banner.innerHTML = `
+    <p>🔔 <strong>seize</strong> needs permission to:</p>
+    <ul>
+      <li>📥 Save media to your device storage (gallery/downloads)</li>
+      <li>🔔 Send notifications when downloads are ready</li>
+      <li>📋 Read clipboard for quick link pasting</li>
+    </ul>
+    <div class="permission-actions">
+      <button class="later-btn" id="perm-later">Later</button>
+      <button class="deny-btn" id="perm-deny">Deny</button>
+      <button class="allow-btn" id="perm-allow">Allow</button>
+    </div>
+  `;
+  document.body.appendChild(banner);
+
+  const allowBtn = document.getElementById("perm-allow");
+  const denyBtn = document.getElementById("perm-deny");
+  const laterBtn = document.getElementById("perm-later");
+
+  const handleAllow = async () => {
+    try {
+      if ("Notification" in window && Notification.permission === "default") {
+        await Notification.requestPermission();
+      }
+      localStorage.setItem(PERMISSION_KEY, "true");
+      banner.remove();
+    } catch (err) {
+      console.warn("[seize] Permission request failed:", err);
+      banner.remove();
+    }
+  };
+
+  const handleDeny = () => {
+    localStorage.setItem(PERMISSION_KEY, "false");
+    banner.remove();
+  };
+
+  const handleLater = () => {
+    banner.remove();
+    // Ask again after 5 minutes
+    setTimeout(requestAppPermissions, 300000);
+  };
+
+  allowBtn.addEventListener("click", handleAllow);
+  denyBtn.addEventListener("click", handleDeny);
+  laterBtn.addEventListener("click", handleLater);
+}
+
+// ============================================================
 // PENDING FILE PERSISTENCE
 // ============================================================
 const IDB_NAME = "seize-pending";
@@ -143,9 +225,17 @@ async function processOfflineQueue() {
           { style: {} },
           { textContent: "" },
         );
+        // Auto-save on completion
+        const fileExt =
+          item.mode === "audio" ? "mp3" : item.mode === "image" ? "jpg" : "mp4";
+        const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
+        await saveMediaToDevice(
+          fileUrl,
+          `seize-${item.mode}-${Date.now()}.${fileExt}`,
+        );
         notifyJobDone(
           "Queued job finished",
-          `${item.title || "Media"} is ready — open seize to save it.`,
+          `${item.title || "Media"} saved automatically.`,
         );
       } else if (item.kind === "convert") {
         const formData = new FormData();
@@ -165,9 +255,15 @@ async function processOfflineQueue() {
           { style: {} },
           { textContent: "" },
         );
+        const outExt = item.target === "v2a" ? item.format || "mp3" : "mp4";
+        const fileUrl = `${API_BASE}/convert/download/${data.jobId}`;
+        await saveMediaToDevice(
+          fileUrl,
+          `seize-converted-${Date.now()}.${outExt}`,
+        );
         notifyJobDone(
           "Queued conversion finished",
-          `${item.name || "Your file"} finished converting — open seize to save it.`,
+          `${item.name || "Your file"} converted and saved automatically.`,
         );
       }
       await removeFromOfflineQueue(item.id);
@@ -307,7 +403,7 @@ function processSharedUrl(url, mode) {
 }
 
 // ============================================================
-// SAVE TO DEVICE
+// SAVE TO DEVICE - AUTO SAVE WITH MULTIPLE FALLBACKS
 // ============================================================
 const MIME_BY_EXT = {
   mp4: "video/mp4",
@@ -357,6 +453,7 @@ function resolveFileInfo(response, blob, fallbackName) {
   return { name, mimeType };
 }
 
+// Main save function - auto saves to device without user interaction
 async function saveMediaToDevice(fileUrl, suggestedName) {
   let res, blob;
   try {
@@ -372,10 +469,12 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
   const { name, mimeType } = resolveFileInfo(res, blob, suggestedName);
   const file = new File([blob], name, { type: mimeType });
 
+  // Strategy 1: Web Share API - saves directly to gallery/downloads on mobile
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
       console.log("[seize] saved via share sheet");
+      showToast("✅ File saved to device!", "success");
       return;
     } catch (err) {
       if (err?.name === "AbortError") {
@@ -385,6 +484,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     }
   }
 
+  // Strategy 2: File System Access API (desktop)
   if ("showSaveFilePicker" in window) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -400,6 +500,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
       await writable.write(blob);
       await writable.close();
       console.log("[seize] saved via file system picker");
+      showToast("✅ File saved!", "success");
       return;
     } catch (err) {
       if (err?.name === "AbortError") return;
@@ -407,6 +508,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     }
   }
 
+  // Strategy 3: Download link (works on most browsers)
   try {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -427,11 +529,13 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     );
 
     console.log("[seize] triggered plain download");
+    showToast("✅ Download started!", "success");
     return;
   } catch (err) {
     console.warn("[seize] anchor download bailed:", err);
   }
 
+  // Strategy 4: Open in new tab as last resort
   console.warn("[seize] everything failed, opening in a new tab");
   if (blob.type.startsWith("image/")) {
     const imgUrl = URL.createObjectURL(blob);
@@ -452,76 +556,6 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
 }
 
 // ============================================================
-// SAVE BUTTON
-// ============================================================
-function showSaveButton(container, fileUrl, suggestedName) {
-  const existing = container.querySelector(".seize-save-btn");
-  if (existing) existing.remove();
-
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = "margin-top: 16px;";
-
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "btn-primary full-width seize-save-btn";
-  btn.textContent = "📲 Save to device";
-
-  let isDownloading = false;
-
-  btn.addEventListener("click", async () => {
-    if (isDownloading) return;
-    isDownloading = true;
-
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "⏳ Saving...";
-    btn.style.opacity = "0.7";
-
-    try {
-      await saveMediaToDevice(fileUrl, suggestedName);
-      btn.textContent = "✅ Saved!";
-      btn.style.background = "#2d8f5a";
-      btn.style.borderColor = "#2d8f5a";
-
-      setTimeout(() => {
-        btn.textContent = "📲 Save again";
-        btn.style.background = "";
-        btn.style.borderColor = "";
-        btn.disabled = false;
-        btn.style.opacity = "1";
-        isDownloading = false;
-      }, 3000);
-    } catch (err) {
-      console.error("[seize] Save failed:", err);
-      btn.textContent = "❌ Failed - tap to retry";
-      btn.style.background = "#6b1a1a";
-      btn.style.borderColor = "#6b1a1a";
-
-      setTimeout(() => {
-        btn.textContent = originalText;
-        btn.style.background = "";
-        btn.style.borderColor = "";
-        btn.disabled = false;
-        btn.style.opacity = "1";
-        isDownloading = false;
-      }, 3000);
-    }
-  });
-
-  wrapper.appendChild(btn);
-
-  const note = document.createElement("p");
-  note.className = "mono small";
-  note.style.cssText =
-    "color: var(--muted); margin-top: 8px; font-size: 0.7rem; text-align: center;";
-  note.textContent =
-    "💡 On mobile, your browser may ask where to save. Check your Downloads folder.";
-  wrapper.appendChild(note);
-
-  container.appendChild(wrapper);
-}
-
-// ============================================================
 // TOAST NOTIFICATION
 // ============================================================
 function showToast(message, level = "info") {
@@ -530,6 +564,12 @@ function showToast(message, level = "info") {
 
   const toast = document.createElement("div");
   toast.className = "custom-toast";
+  const colors = {
+    info: "#7FFFB0",
+    success: "#7FFFB0",
+    error: "#FF6B6B",
+    warning: "#FFB86B",
+  };
   toast.style.cssText = `
     position: fixed;
     bottom: 24px;
@@ -537,7 +577,7 @@ function showToast(message, level = "info") {
     z-index: 99999;
     background: #141715;
     border: 1px solid #262B27;
-    border-left: 3px solid ${level === "info" ? "#7FFFB0" : "#FFB86B"};
+    border-left: 3px solid ${colors[level] || "#7FFFB0"};
     border-radius: 8px;
     padding: 14px 20px;
     color: #E8EDE9;
@@ -1017,6 +1057,9 @@ captureForm.addEventListener("submit", async (e) => {
   }
 });
 
+// ============================================================
+// FETCH & AUTO-SAVE - No save button, saves automatically
+// ============================================================
 async function runCaptureFetch(mode) {
   clearCaptureError();
   captureProgress.classList.remove("hidden");
@@ -1071,11 +1114,9 @@ async function runCaptureFetch(mode) {
 
     const fileExt = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
-    showSaveButton(
-      captureResult.parentElement,
-      fileUrl,
-      `seize-${mode}-${Date.now()}.${fileExt}`,
-    );
+
+    // AUTO-SAVE: Save directly to device without showing a save button
+    await saveMediaToDevice(fileUrl, `seize-${mode}-${Date.now()}.${fileExt}`);
 
     addHistoryEntry({
       type: "download",
@@ -1086,7 +1127,7 @@ async function runCaptureFetch(mode) {
     });
     notifyJobDone(
       "Your file is ready",
-      `${resultTitle.textContent || "Media"} finished — tap to save it.`,
+      `${resultTitle.textContent || "Media"} saved to your device.`,
     );
   } catch (err) {
     showCaptureError(err.message);
@@ -1376,7 +1417,7 @@ async function loadCollectionView(id) {
 })();
 
 // ============================================================
-// BATCH QUEUE
+// BATCH QUEUE - Auto-save on completion
 // ============================================================
 const LINK_TOKEN_RE = /https?:\/\/[^\s]+/g;
 const queueBlock = document.getElementById("queue-block");
@@ -1514,7 +1555,14 @@ async function processQueueItem(item) {
     );
 
     item.status = "done";
+    const fileExt = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     item.fileUrl = `${API_BASE}/download/file/${fetchData.jobId}`;
+
+    // AUTO-SAVE: Save directly to device
+    await saveMediaToDevice(
+      item.fileUrl,
+      `seize-batch-${Date.now()}.${fileExt}`,
+    );
 
     addHistoryEntry({
       type: "download",
@@ -1549,12 +1597,12 @@ queueStartBtn.addEventListener("click", async () => {
   queueStartBtn.textContent = "▶ Start queue";
   notifyJobDone(
     "Batch queue finished",
-    `${batchQueue.filter((q) => q.status === "done").length} item(s) ready to save.`,
+    `${batchQueue.filter((q) => q.status === "done").length} item(s) saved to your device.`,
   );
 });
 
 // ============================================================
-// CONVERT PANEL
+// CONVERT PANEL - Auto-save on completion
 // ============================================================
 const convertTabs = document.querySelectorAll(".convert-tab");
 const dropzone = document.getElementById("dropzone");
@@ -1881,11 +1929,8 @@ convertBtn.addEventListener("click", async (e) => {
       showRecognizedTrack(statusData.recognizedTrack);
     }
 
-    showSaveButton(
-      convertProgress.parentElement,
-      fileUrl,
-      `seize-converted-${Date.now()}.${outExt}`,
-    );
+    // AUTO-SAVE: Save directly to device without showing a save button
+    await saveMediaToDevice(fileUrl, `seize-converted-${Date.now()}.${outExt}`);
 
     addHistoryEntry({
       type: "convert",
@@ -1902,7 +1947,7 @@ convertBtn.addEventListener("click", async (e) => {
     );
     notifyJobDone(
       "Your file is ready",
-      `${selectedFile?.name || "Your file"} finished converting — tap to save it.`,
+      `${selectedFile?.name || "Your file"} converted and saved to your device.`,
     );
   } catch (err) {
     showConvertError(err.message);
@@ -2201,7 +2246,7 @@ if ("serviceWorker" in navigator) {
 }
 
 // ============================================================
-// EXTENSION INSTALL DETECTION
+// EXTENSION - Desktop only, with instructions
 // ============================================================
 const extensionBtn = document.getElementById("install-extension-btn");
 const downloadExtensionBtn = document.getElementById("download-extension-btn");
@@ -2233,20 +2278,26 @@ async function checkExtensionInstalled() {
   }
 }
 
-async function showExtensionButton() {
+async function showExtensionButtons() {
+  // Only show on desktop
   if (!isDesktop()) {
     extensionBtn.classList.add("hidden");
+    downloadExtensionBtn.classList.add("hidden");
     return;
   }
 
   const installed = await checkExtensionInstalled();
   if (installed) {
     extensionBtn.classList.add("hidden");
+    downloadExtensionBtn.classList.add("hidden");
     return;
   }
 
+  // Show both buttons on desktop
   extensionBtn.classList.remove("hidden");
+  downloadExtensionBtn.classList.remove("hidden");
   extensionBtn.textContent = "🧩 Add to Chrome";
+  downloadExtensionBtn.textContent = "📦 Download Extension";
 }
 
 function showExtensionInstructions() {
@@ -2388,10 +2439,9 @@ downloadExtensionBtn?.addEventListener("click", () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-
       showToast(
         "📦 Extension downloaded! Check your Downloads folder.",
-        "info",
+        "success",
       );
     })
     .catch(() => {
@@ -2399,27 +2449,17 @@ downloadExtensionBtn?.addEventListener("click", () => {
     });
 });
 
-extensionBtn?.addEventListener("click", () => {
-  fetch("/extension.zip")
-    .then((response) => {
-      if (response.ok) {
-        downloadExtensionBtn?.click();
-      } else {
-        showExtensionInstructions();
-      }
-    })
-    .catch(() => {
-      showExtensionInstructions();
-    });
-});
+extensionBtn?.addEventListener("click", showExtensionInstructions);
 
 window.addEventListener("load", () => {
-  setTimeout(showExtensionButton, 1000);
+  setTimeout(showExtensionButtons, 1500);
+  // Request permissions after app loads
+  setTimeout(requestAppPermissions, 2000);
 });
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    showExtensionButton();
+    showExtensionButtons();
   }
 });
 
@@ -2721,6 +2761,16 @@ function pollBatchStatus(batchId) {
         archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
 
         const doneItems = data.items.filter((i) => i.status === "done");
+        // Auto-save all done items
+        for (const item of doneItems) {
+          if (item.fileUrl) {
+            const ext = item.hasVideo ? "mp4" : "jpg";
+            await saveMediaToDevice(
+              item.fileUrl,
+              `seize-archive-${Date.now()}.${ext}`,
+            );
+          }
+        }
         if (doneItems.length > 0) {
           showBatchSuccess(doneItems);
         }
@@ -2754,7 +2804,7 @@ function showBatchSuccess(items) {
   if (!container) return;
 
   let html = `
-    <div class="batch-success">✅ ${items.length} item(s) downloaded successfully!</div>
+    <div class="batch-success">✅ ${items.length} item(s) downloaded and saved!</div>
     <div class="batch-success-items">
   `;
 

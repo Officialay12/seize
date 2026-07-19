@@ -27,6 +27,16 @@
 </head>
 
 <body>
+  <!-- PRELOADER -->
+  <div id="preloader">
+    <div class="preloader-container">
+      <div class="preloader-logo">⚡</div>
+      <div class="preloader-brand">seize</div>
+      <div class="preloader-spinner"></div>
+      <p class="preloader-text">capture any signal</p>
+    </div>
+  </div>
+
   <div id="offline-banner" class="offline-banner hidden mono small"></div>
   <div class="scanline-overlay" aria-hidden="true"></div>
 
@@ -40,7 +50,7 @@
       <span class="brand-name">seize</span>
     </div>
     <div class="topbar-status">
-      <button id="download-extension-btn" class="btn-install mono small" type="button">
+      <button id="download-extension-btn" class="btn-install mono small hidden" type="button">
         📦 Download Extension
       </button>
       <button id="install-extension-btn" class="btn-install mono small hidden" type="button">
@@ -388,7 +398,11 @@
   <footer class="footer">
     <span class="mono small">seize · built for capture</span>
     <span class="mono small footer-credit">built by
-      <a href="https://ayocodes-portfolio.vercel.app" target="_blank" rel="noopener">Ayocodes</a></span>
+      <a href="https://ayocodes-portfolio.vercel.app" target="_blank" rel="noopener">Ayocodes</a>
+    </span>
+    <span class="mono small footer-credit">from the creators of
+      <a href="https://fetch-liart-gamma.vercel.app/" target="_blank" rel="noopener">fetch</a>
+    </span>
   </footer>
 
   <script src="app.js"></script>

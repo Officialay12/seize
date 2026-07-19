@@ -139,6 +139,28 @@ a {
   display: none;
 }
 
+#download-extension-btn {
+  background: transparent;
+  border: 1px solid var(--phosphor-dim);
+  color: var(--phosphor);
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+#download-extension-btn:hover {
+  background: rgba(127, 255, 176, 0.08);
+  border-color: var(--phosphor);
+}
+
+#download-extension-btn.hidden {
+  display: none;
+}
+
 #install-extension-btn {
   background: transparent;
   border: 1px solid var(--phosphor-dim);
@@ -1587,4 +1609,21 @@ main {
   border-radius: 4px;
   color: #7FFFB0;
   font-family: var(--font-mono);
+}
+
+/* ---------- Custom Toast ---------- */
+.custom-toast {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }

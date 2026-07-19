@@ -3,8 +3,6 @@ const API_BASE = "https://seize-1lxs.onrender.com/api";
 // ============================================================
 // PENDING FILE PERSISTENCE
 // ============================================================
-// android chrome kills the page when file picker opens.
-// stash the blob in indexedDB so we can rebuild it on reload.
 const IDB_NAME = "seize-pending";
 const IDB_STORE = "files";
 const QUEUE_STORE = "offline-queue";
@@ -73,7 +71,6 @@ async function clearPendingFile() {
 // ============================================================
 // OFFLINE QUEUE
 // ============================================================
-// no signal? no problem. stash the request and fire it off later.
 async function addToOfflineQueue(item) {
   try {
     const db = await openPendingDB();
@@ -207,7 +204,7 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => updateOfflineBanner());
 
 // ============================================================
-// EXTRACT PLATFORM URL - shared helper
+// EXTRACT PLATFORM URL
 // ============================================================
 function extractPlatformUrl(str) {
   if (!str) return null;
@@ -239,7 +236,7 @@ function extractPlatformUrl(str) {
 }
 
 // ============================================================
-// SHARE HANDLER - Auto-detect on load
+// SHARE HANDLER
 // ============================================================
 (function checkForSharedUrl() {
   const sharedUrl = sessionStorage.getItem("seize_shared_url");
@@ -384,7 +381,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
       if (err?.name === "AbortError") {
         return;
       }
-      console.warn("[seize] share sheet bailed, trying next option:", err);
+      console.warn("[seize] share sheet bailed:", err);
     }
   }
 
@@ -406,10 +403,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
       return;
     } catch (err) {
       if (err?.name === "AbortError") return;
-      console.warn(
-        "[seize] file system picker bailed, trying next option:",
-        err,
-      );
+      console.warn("[seize] file system picker bailed:", err);
     }
   }
 
@@ -438,9 +432,7 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     console.warn("[seize] anchor download bailed:", err);
   }
 
-  console.warn(
-    "[seize] everything failed, opening in a new tab as last resort",
-  );
+  console.warn("[seize] everything failed, opening in a new tab");
   if (blob.type.startsWith("image/")) {
     const imgUrl = URL.createObjectURL(blob);
     const win = window.open("");
@@ -527,6 +519,42 @@ function showSaveButton(container, fileUrl, suggestedName) {
   wrapper.appendChild(note);
 
   container.appendChild(wrapper);
+}
+
+// ============================================================
+// TOAST NOTIFICATION
+// ============================================================
+function showToast(message, level = "info") {
+  const existing = document.querySelector(".custom-toast");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.className = "custom-toast";
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99999;
+    background: #141715;
+    border: 1px solid #262B27;
+    border-left: 3px solid ${level === "info" ? "#7FFFB0" : "#FFB86B"};
+    border-radius: 8px;
+    padding: 14px 20px;
+    color: #E8EDE9;
+    font-size: 0.9rem;
+    max-width: 400px;
+    animation: slideUp 0.3s ease-out;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 0.3s";
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
 }
 
 // ============================================================
@@ -743,7 +771,7 @@ function loadThumbnail(url, imgElement) {
 }
 
 // ============================================================
-// OSCILLOSCOPE - just for vibes
+// OSCILLOSCOPE
 // ============================================================
 const scopeTrace = document.getElementById("scope-trace");
 const scopeFreq = document.getElementById("scope-freq");
@@ -2176,6 +2204,7 @@ if ("serviceWorker" in navigator) {
 // EXTENSION INSTALL DETECTION
 // ============================================================
 const extensionBtn = document.getElementById("install-extension-btn");
+const downloadExtensionBtn = document.getElementById("download-extension-btn");
 
 function isDesktop() {
   const ua = navigator.userAgent;
@@ -2204,10 +2233,6 @@ async function checkExtensionInstalled() {
   }
 }
 
-function getExtensionUrl() {
-  return null;
-}
-
 async function showExtensionButton() {
   if (!isDesktop()) {
     extensionBtn.classList.add("hidden");
@@ -2221,7 +2246,7 @@ async function showExtensionButton() {
   }
 
   extensionBtn.classList.remove("hidden");
-  extensionBtn.textContent = "🧩 Add Seize to Chrome";
+  extensionBtn.textContent = "🧩 Add to Chrome";
 }
 
 function showExtensionInstructions() {
@@ -2256,29 +2281,53 @@ function showExtensionInstructions() {
         🧩 Install Seize Extension
       </h2>
       <p style="color: #8A928C; font-size: 0.9rem; margin: 0 0 20px; line-height: 1.6;">
-        The Seize extension adds one-click download buttons to TikTok, Instagram, Twitter/X, and Pinterest.
+        Add one-click download buttons to TikTok, Instagram, Twitter/X, and Pinterest.
       </p>
+
+      <button id="modal-download-btn" style="
+        width: 100%;
+        padding: 12px;
+        background: #7FFFB0;
+        color: #06120A;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        margin-bottom: 20px;
+        transition: background 0.2s;
+        font-family: inherit;
+      " onmouseover="this.style.background='#9AFFC4'" onmouseout="this.style.background='#7FFFB0'">
+        📦 Download Extension ZIP
+      </button>
 
       <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
         <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
           <span style="font-size: 1.2rem; min-width: 28px;">1</span>
           <div>
-            <strong style="color: #E8EDE9;">Download the extension files</strong>
-            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Clone or download the <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">extension/</code> folder from the repo.</p>
+            <strong style="color: #E8EDE9;">Download the extension</strong>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Click the green button above to download <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">seize-extension.zip</code></p>
           </div>
         </div>
         <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
           <span style="font-size: 1.2rem; min-width: 28px;">2</span>
           <div>
-            <strong style="color: #E8EDE9;">Open Chrome Extensions</strong>
-            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Go to <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">chrome://extensions/</code> and enable <strong style="color: #E8EDE9;">Developer Mode</strong>.</p>
+            <strong style="color: #E8EDE9;">Extract the ZIP</strong>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Right-click the ZIP → <strong style="color: #E8EDE9;">Extract All</strong></p>
           </div>
         </div>
         <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
           <span style="font-size: 1.2rem; min-width: 28px;">3</span>
           <div>
+            <strong style="color: #E8EDE9;">Open Chrome Extensions</strong>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Go to <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">chrome://extensions/</code> and enable <strong style="color: #E8EDE9;">Developer Mode</strong></p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
+          <span style="font-size: 1.2rem; min-width: 28px;">4</span>
+          <div>
             <strong style="color: #E8EDE9;">Load the extension</strong>
-            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Click <strong style="color: #E8EDE9;">Load unpacked</strong> and select the <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">extension/</code> folder.</p>
+            <p style="color: #8A928C; font-size: 0.8rem; margin: 4px 0 0;">Click <strong style="color: #E8EDE9;">Load unpacked</strong> and select the extracted <code style="background: #0B0D0C; padding: 2px 6px; border-radius: 4px; color: #7FFFB0;">extension/</code> folder</p>
           </div>
         </div>
       </div>
@@ -2291,6 +2340,12 @@ function showExtensionInstructions() {
   `;
 
   document.body.appendChild(modal);
+
+  document
+    .getElementById("modal-download-btn")
+    ?.addEventListener("click", () => {
+      downloadExtensionBtn?.click();
+    });
 
   document
     .getElementById("extension-modal-close")
@@ -2310,7 +2365,53 @@ function showExtensionInstructions() {
   });
 }
 
-extensionBtn?.addEventListener("click", showExtensionInstructions);
+// ============================================================
+// DOWNLOAD EXTENSION BUTTON
+// ============================================================
+downloadExtensionBtn?.addEventListener("click", () => {
+  const zipUrl = "/extension.zip";
+
+  fetch(zipUrl)
+    .then((response) => {
+      if (!response.ok) {
+        showExtensionInstructions();
+        throw new Error("ZIP file not found");
+      }
+      return response.blob();
+    })
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "seize-extension.zip";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast(
+        "📦 Extension downloaded! Check your Downloads folder.",
+        "info",
+      );
+    })
+    .catch(() => {
+      showExtensionInstructions();
+    });
+});
+
+extensionBtn?.addEventListener("click", () => {
+  fetch("/extension.zip")
+    .then((response) => {
+      if (response.ok) {
+        downloadExtensionBtn?.click();
+      } else {
+        showExtensionInstructions();
+      }
+    })
+    .catch(() => {
+      showExtensionInstructions();
+    });
+});
 
 window.addEventListener("load", () => {
   setTimeout(showExtensionButton, 1000);

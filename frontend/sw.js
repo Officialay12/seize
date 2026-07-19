@@ -4,6 +4,7 @@ const SHELL_ASSETS = [
   "/index.html",
   "/share-handler.html",
   "/admin.html",
+  "/admin-login.html",
   "/style.css",
   "/app.js",
   "/manifest.json",
@@ -108,6 +109,29 @@ self.addEventListener("message", (event) => {
         })
         .catch((err) => {
           console.error("[sw] Download failed:", err);
+        }),
+    );
+  }
+});
+
+// ============================================================
+// CACHE VERSION CHECK (for admin cache-busting)
+// ============================================================
+let cacheVersion = null;
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "CHECK_CACHE_VERSION") {
+    event.waitUntil(
+      fetch("/api/admin/cache-version")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.version && data.version !== cacheVersion) {
+            cacheVersion = data.version;
+            self.skipWaiting();
+            self.clients.claim();
+          }
+        })
+        .catch(() => {
+          // API unreachable, just ignore
         }),
     );
   }

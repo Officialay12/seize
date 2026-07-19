@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>seize — admin</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .admin-login-card {
+            width: 100%;
+            max-width: 360px;
+            padding: 32px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #10130f;
+        }
+
+        .admin-login-card h1 {
+            font-size: 1.1rem;
+            color: var(--phosphor);
+            margin: 0 0 4px;
+            letter-spacing: 0.02em;
+        }
+
+        .admin-login-card p.sub {
+            color: var(--muted);
+            font-size: 0.8rem;
+            margin: 0 0 24px;
+        }
+
+        .admin-login-card label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin: 16px 0 6px;
+        }
+
+        .admin-login-card input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            background: #0B0D0C;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            color: var(--fg, #E8EDE9);
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+
+        .admin-login-card input:focus {
+            outline: none;
+            border-color: var(--phosphor);
+        }
+
+        .admin-login-card button {
+            width: 100%;
+            margin-top: 20px;
+            padding: 11px;
+            background: var(--phosphor);
+            color: #0B0D0C;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .admin-login-card button:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .admin-error {
+            margin-top: 14px;
+            font-size: 0.8rem;
+            color: #ff8a8a;
+            display: none;
+        }
+
+        .admin-error.show {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="admin-login-card">
+        <h1>🔐 seize admin</h1>
+        <p class="sub">Restricted. Sign in to view the dashboard.</p>
+
+        <form id="admin-login-form">
+            <label for="username">Username</label>
+            <input type="text" id="username" autocomplete="username" required />
+
+            <label for="password">Password</label>
+            <input type="password" id="password" autocomplete="current-password" required />
+
+            <button type="submit" id="login-btn">Sign in</button>
+            <p class="admin-error" id="admin-error"></p>
+        </form>
+    </div>
+
+    <script>
+        const API_BASE = "https://seize-1lxs.onrender.com/api";
+
+        const form = document.getElementById("admin-login-form");
+        const btn = document.getElementById("login-btn");
+        const errorEl = document.getElementById("admin-error");
+
+        // already got a token? skip straight to the dashboard
+        if (sessionStorage.getItem("seize_admin_token")) {
+            window.location.href = "/admin.html";
+        }
+
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            errorEl.classList.remove("show");
+            btn.disabled = true;
+            btn.textContent = "Signing in…";
+
+            try {
+                const res = await fetch(`${API_BASE}/auth/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: document.getElementById("username").value,
+                        password: document.getElementById("password").value,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Login failed.");
+
+                // sessionStorage, not localStorage — token dies with the tab,
+                // which is what you want for an admin panel on a shared device
+                sessionStorage.setItem("seize_admin_token", data.token);
+                window.location.href = "/admin.html";
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.classList.add("show");
+                btn.disabled = false;
+                btn.textContent = "Sign in";
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -21,7 +21,6 @@
             min-height: 100vh;
         }
 
-        /* ===== HEADER ===== */
         .admin-header {
             display: flex;
             align-items: center;
@@ -76,7 +75,6 @@
             color: #7FFFB0;
         }
 
-        /* ===== TABS ===== */
         .tabs {
             display: flex;
             gap: 4px;
@@ -120,14 +118,12 @@
                 opacity: 0;
                 transform: translateY(8px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
             }
         }
 
-        /* ===== CARDS ===== */
         .section-label {
             font-size: 0.7rem;
             color: #8A928C;
@@ -174,15 +170,12 @@
         .card .value.green {
             color: #7FFFB0;
         }
-
         .card .value.amber {
             color: #FFB86B;
         }
-
         .card .value.red {
             color: #FF6B6B;
         }
-
         .card .value.white {
             color: #E8EDE9;
         }
@@ -193,7 +186,6 @@
             margin-top: 4px;
         }
 
-        /* ===== PANELS ===== */
         .two-col {
             display: grid;
             grid-template-columns: 1.3fr 1fr;
@@ -223,16 +215,6 @@
             letter-spacing: 0.03em;
         }
 
-        .panel h2 .badge {
-            background: #3F8F65;
-            color: #0B0D0C;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            margin-left: 8px;
-        }
-
-        /* ===== ACTIVITY ROWS ===== */
         .activity-row {
             display: flex;
             justify-content: space-between;
@@ -268,7 +250,6 @@
             text-align: center;
         }
 
-        /* ===== BAR ROWS ===== */
         .bar-row {
             display: flex;
             align-items: center;
@@ -305,7 +286,6 @@
             text-align: right;
         }
 
-        /* ===== HEATMAP ===== */
         .heatmap-grid {
             display: grid;
             grid-template-columns: 36px repeat(24, 1fr);
@@ -327,7 +307,6 @@
             transition: background 0.3s;
         }
 
-        /* ===== FILTER ===== */
         .filter-row {
             display: flex;
             flex-wrap: wrap;
@@ -391,19 +370,6 @@
             overflow-y: auto;
         }
 
-        .logs-container::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        .logs-container::-webkit-scrollbar-track {
-            background: #1a1d19;
-        }
-
-        .logs-container::-webkit-scrollbar-thumb {
-            background: #262B27;
-            border-radius: 2px;
-        }
-
         table.data-table {
             width: 100%;
             border-collapse: collapse;
@@ -448,7 +414,6 @@
             color: #FFB86B;
         }
 
-        /* ===== TOASTS ===== */
         #toast-container {
             position: fixed;
             top: 16px;
@@ -479,14 +444,12 @@
                 opacity: 0;
                 transform: translateX(20px);
             }
-
             to {
                 opacity: 1;
                 transform: translateX(0);
             }
         }
 
-        /* ===== LOADING / ERROR ===== */
         #admin-loading,
         #admin-error {
             text-align: center;
@@ -507,52 +470,41 @@
             display: none !important;
         }
 
-        /* ===== RESPONSIVE ===== */
         @media (max-width: 600px) {
             body {
                 padding: 12px;
             }
-
             .cards {
                 grid-template-columns: repeat(2, 1fr);
             }
-
             .card .value {
                 font-size: 1.2rem;
             }
-
             .admin-header {
                 flex-direction: column;
                 align-items: stretch;
                 text-align: center;
             }
-
             .tabs {
                 justify-content: center;
             }
-
             .tab-btn {
                 padding: 8px 10px;
                 font-size: 0.7rem;
             }
-
             .filter-row {
                 flex-direction: column;
             }
-
             .filter-row input,
             .filter-row select {
                 width: 100%;
             }
-
             .two-col {
                 grid-template-columns: 1fr;
             }
-
             .heatmap-grid {
                 font-size: 0.5rem;
             }
-
             .bar-name {
                 min-width: 60px;
                 font-size: 0.7rem;
@@ -563,16 +515,13 @@
             width: 4px;
             height: 4px;
         }
-
         ::-webkit-scrollbar-track {
             background: #0B0D0C;
         }
-
         ::-webkit-scrollbar-thumb {
             background: #262B27;
             border-radius: 2px;
         }
-
         ::-webkit-scrollbar-thumb:hover {
             background: #3F8F65;
         }
@@ -582,13 +531,11 @@
 <body>
 
     <div id="toast-container"></div>
-
     <div id="admin-loading">Loading dashboard…</div>
     <p id="admin-error"></p>
 
     <div id="admin-content" class="hidden">
 
-        <!-- HEADER -->
         <div class="admin-header">
             <div>
                 <h1><span class="live-dot" id="live-dot"></span>seize — admin dashboard</h1>
@@ -597,7 +544,6 @@
             <button id="logout-btn">Sign out</button>
         </div>
 
-        <!-- TABS -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="overview">Overview</button>
             <button class="tab-btn" data-tab="analytics">Analytics</button>
@@ -610,10 +556,8 @@
         <div class="tab-panel active" id="tab-overview">
             <div class="section-label">Live stats</div>
             <div class="cards" id="stats-cards"></div>
-
             <div class="section-label">System health</div>
             <div class="cards" id="health-cards"></div>
-
             <div class="section-label">Recent activity</div>
             <div class="panel">
                 <div id="activity-list"></div>
@@ -787,7 +731,7 @@
         });
 
         // ============================================================
-        // TABS
+        // TABS — Click to switch, but data is already loaded
         // ============================================================
         document.querySelectorAll(".tab-btn").forEach((btn) => {
             btn.addEventListener("click", () => {
@@ -795,13 +739,6 @@
                 document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
                 btn.classList.add("active");
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
-
-                // Load data when tab is clicked
-                const tab = btn.dataset.tab;
-                if (tab === "overview") loadOverview();
-                if (tab === "analytics") loadAnalytics();
-                if (tab === "logs") loadLogs();
-                if (tab === "security") loadSecurity();
             });
         });
 
@@ -811,68 +748,23 @@
         function renderStatsCards(stats) {
             const { uptime, requests, jobs } = stats;
             document.getElementById("stats-cards").innerHTML = `
-                <div class="card">
-                    <div class="label">Uptime</div>
-                    <div class="value green">${uptime.days}d ${uptime.hours}h ${uptime.minutes}m</div>
-                </div>
-                <div class="card">
-                    <div class="label">Requests (total)</div>
-                    <div class="value white">${requests.total.toLocaleString()}</div>
-                    <div class="subvalue">${requests.today.toLocaleString()} today</div>
-                </div>
-                <div class="card">
-                    <div class="label">Unique visitors</div>
-                    <div class="value amber">${requests.uniqueVisitorsTotal.toLocaleString()}</div>
-                    <div class="subvalue">${requests.uniqueVisitorsToday.toLocaleString()} today</div>
-                </div>
-                <div class="card">
-                    <div class="label">Active jobs</div>
-                    <div class="value ${jobs.activeTotal > 0 ? 'amber' : 'white'}">${jobs.activeTotal}</div>
-                    <div class="subvalue">${jobs.active.conversions} converting · ${jobs.active.captures} capturing</div>
-                </div>
-                <div class="card">
-                    <div class="label">Conversions</div>
-                    <div class="value green">${jobs.conversions.done}</div>
-                    <div class="subvalue">${jobs.conversions.started} started · ${jobs.conversions.error} failed</div>
-                </div>
-                <div class="card">
-                    <div class="label">Captures</div>
-                    <div class="value green">${jobs.captures.done}</div>
-                    <div class="subvalue">${jobs.captures.started} started · ${jobs.captures.error} failed</div>
-                </div>
+                <div class="card"><div class="label">Uptime</div><div class="value green">${uptime.days}d ${uptime.hours}h ${uptime.minutes}m</div></div>
+                <div class="card"><div class="label">Requests (total)</div><div class="value white">${requests.total.toLocaleString()}</div><div class="subvalue">${requests.today.toLocaleString()} today</div></div>
+                <div class="card"><div class="label">Unique visitors</div><div class="value amber">${requests.uniqueVisitorsTotal.toLocaleString()}</div><div class="subvalue">${requests.uniqueVisitorsToday.toLocaleString()} today</div></div>
+                <div class="card"><div class="label">Active jobs</div><div class="value ${jobs.activeTotal > 0 ? 'amber' : 'white'}">${jobs.activeTotal}</div><div class="subvalue">${jobs.active.conversions} converting · ${jobs.active.captures} capturing</div></div>
+                <div class="card"><div class="label">Conversions</div><div class="value green">${jobs.conversions.done}</div><div class="subvalue">${jobs.conversions.started} started · ${jobs.conversions.error} failed</div></div>
+                <div class="card"><div class="label">Captures</div><div class="value green">${jobs.captures.done}</div><div class="subvalue">${jobs.captures.started} started · ${jobs.captures.error} failed</div></div>
             `;
         }
 
         function renderHealthCards(health) {
             document.getElementById("health-cards").innerHTML = `
-                <div class="card ${health.ffmpeg.ok ? "status-ok" : "status-bad"}">
-                    <div class="label">FFmpeg</div>
-                    <div class="value">${health.ffmpeg.ok ? "✅ Ready" : "❌ Down"}</div>
-                </div>
-                <div class="card ${health.database.ok ? "status-ok" : "status-bad"}">
-                    <div class="label">Database</div>
-                    <div class="value">${health.database.ok ? "✅ OK" : "❌ Error"}</div>
-                    ${health.database.note ? `<div class="subvalue">${health.database.note}</div>` : ""}
-                </div>
-                <div class="card">
-                    <div class="label">Temp dir</div>
-                    <div class="value white">${health.tempDir.totalMb} MB</div>
-                    <div class="subvalue">${health.tempDir.fileCount} file(s)</div>
-                </div>
-                <div class="card">
-                    <div class="label">Memory</div>
-                    <div class="value ${health.memory.usedPct > 80 ? 'red' : health.memory.usedPct > 60 ? 'amber' : 'green'}">${health.memory.usedPct}%</div>
-                    <div class="subvalue">${health.memory.freeMb}MB free / ${health.memory.totalMb}MB</div>
-                </div>
-                <div class="card">
-                    <div class="label">Song ID</div>
-                    <div class="value ${health.songId.configured ? 'green' : 'white'}">${health.songId.configured ? "🎵 On" : "Off"}</div>
-                </div>
-                <div class="card">
-                    <div class="label">Load avg (1m)</div>
-                    <div class="value white">${health.system.loadAvg[0].toFixed(2)}</div>
-                    <div class="subvalue">${health.system.cpuCount} cpu(s) · node ${health.system.nodeVersion}</div>
-                </div>
+                <div class="card ${health.ffmpeg.ok ? "status-ok" : "status-bad"}"><div class="label">FFmpeg</div><div class="value">${health.ffmpeg.ok ? "✅ Ready" : "❌ Down"}</div></div>
+                <div class="card ${health.database.ok ? "status-ok" : "status-bad"}"><div class="label">Database</div><div class="value">${health.database.ok ? "✅ OK" : "❌ Error"}</div>${health.database.note ? `<div class="subvalue">${health.database.note}</div>` : ""}</div>
+                <div class="card"><div class="label">Temp dir</div><div class="value white">${health.tempDir.totalMb} MB</div><div class="subvalue">${health.tempDir.fileCount} file(s)</div></div>
+                <div class="card"><div class="label">Memory</div><div class="value ${health.memory.usedPct > 80 ? 'red' : health.memory.usedPct > 60 ? 'amber' : 'green'}">${health.memory.usedPct}%</div><div class="subvalue">${health.memory.freeMb}MB free / ${health.memory.totalMb}MB</div></div>
+                <div class="card"><div class="label">Song ID</div><div class="value ${health.songId.configured ? 'green' : 'white'}">${health.songId.configured ? "🎵 On" : "Off"}</div></div>
+                <div class="card"><div class="label">Load avg (1m)</div><div class="value white">${health.system.loadAvg[0].toFixed(2)}</div><div class="subvalue">${health.system.cpuCount} cpu(s) · node ${health.system.nodeVersion}</div></div>
             `;
         }
 
@@ -971,7 +863,6 @@
 
         async function loadAnalytics() {
             try {
-                // Load each endpoint separately so one failure doesn't break everything
                 const platformsData = await authedFetchJson("/admin/platforms").catch(() => ({ platforms: [] }));
                 const healthData = await authedFetchJson("/admin/platforms/health").catch(() => ({ platforms: [] }));
                 const heatmapData = await authedFetchJson("/admin/heatmap").catch(() => ({ heatmap: [] }));
@@ -980,14 +871,11 @@
                 renderBarList("platform-list", platformsData.platforms, "platform");
                 renderPlatformHealth(healthData.platforms);
                 renderHeatmap(heatmapData.heatmap);
-
                 if (breakdownsData.devices) renderBarList("device-list", breakdownsData.devices);
                 if (breakdownsData.browsers) renderBarList("browser-list", breakdownsData.browsers);
                 if (breakdownsData.countries) renderBarList("country-list", breakdownsData.countries);
-
             } catch (err) {
                 console.error("Analytics load error:", err);
-                // Don't show error everywhere, just log it
             }
         }
 
@@ -1011,15 +899,7 @@
                 }
                 wrap.innerHTML = `
                     <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Type</th>
-                                <th>Platform</th>
-                                <th>Status</th>
-                                <th>Detail</th>
-                            </tr>
-                        </thead>
+                        <thead><tr><th>Time</th><th>Type</th><th>Platform</th><th>Status</th><th>Detail</th></tr></thead>
                         <tbody>
                             ${data.events.map((e) => `
                                 <tr>
@@ -1098,9 +978,9 @@
                         <div class="activity-detail">${s.ip} · ${relTime(s.issuedAt)}</div>
                     </div>
                     ${s.revoked ?
-                    `<span class="activity-time" style="color:#FF6B6B;">revoked</span>` :
-                    `<button class="action-btn danger" data-jti="${s.jti}" style="padding:4px 10px;font-size:0.7rem;">Revoke</button>`
-                }
+                        `<span class="activity-time" style="color:#FF6B6B;">revoked</span>` :
+                        `<button class="action-btn danger" data-jti="${s.jti}" style="padding:4px 10px;font-size:0.7rem;">Revoke</button>`
+                    }
                 </div>
             `).join("");
 
@@ -1179,7 +1059,6 @@
                 try {
                     const { type, payload } = JSON.parse(msg.data);
                     if (type === "event") {
-                        // Refresh overview when new events come in
                         loadOverview();
                     } else if (type === "alert") {
                         showToast(payload.message, payload.level === "critical" ? "critical" : "info");
@@ -1191,33 +1070,35 @@
         }
 
         // ============================================================
-        // INIT
+        // INIT — LOAD ALL TABS ON PAGE LOAD
         // ============================================================
         async function init() {
             try {
-                await loadOverview();
-                await loadAnalytics();
-                await loadLogs();
-                await loadSecurity();
+                // Load ALL tabs in parallel
+                await Promise.all([
+                    loadOverview(),
+                    loadAnalytics(),
+                    loadLogs(),
+                    loadSecurity()
+                ]);
 
                 loadingEl.classList.add("hidden");
                 contentEl.classList.remove("hidden");
+
+                console.log("✅ All tabs loaded successfully");
             } catch (err) {
                 loadingEl.classList.add("hidden");
                 errorEl.textContent = "Couldn't reach the admin API. " + err.message;
                 errorEl.classList.add("show");
+                console.error("Init error:", err);
             }
 
             // Auto-refresh every 15 seconds
             setInterval(() => {
-                const activeTab = document.querySelector(".tab-btn.active");
-                if (activeTab) {
-                    const tab = activeTab.dataset.tab;
-                    if (tab === "overview") loadOverview();
-                    if (tab === "analytics") loadAnalytics();
-                    if (tab === "logs") loadLogs();
-                    if (tab === "security") loadSecurity();
-                }
+                loadOverview();
+                loadAnalytics();
+                loadLogs();
+                loadSecurity();
             }, 15000);
 
             connectLive();

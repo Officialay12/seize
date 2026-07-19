@@ -188,10 +188,30 @@ app.post("/share-handler", (req, res) => {
 // ============================================================
 // STATIC FILES
 // ============================================================
+// admin.html and admin-login.html were getting the same 1-day
+// Cache-Control as every other static asset. That's fine for
+// icons/style.css, but it means a browser could silently keep serving
+// a stale admin dashboard for up to 24h after a redeploy — no error,
+// no visible sign anything's wrong, it just never fetches the new file.
+// These two pages always need Cache-Control: no-store so every load
+// is guaranteed fresh.
 app.use(
   express.static(path.join(__dirname, "..", "frontend"), {
     maxAge: process.env.NODE_ENV === "production" ? "1d" : 0,
     etag: true,
+    setHeaders: (res, filePath) => {
+      if (
+        filePath.endsWith("admin.html") ||
+        filePath.endsWith("admin-login.html")
+      ) {
+        res.setHeader(
+          "Cache-Control",
+          "no-store, no-cache, must-revalidate, proxy-revalidate",
+        );
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    },
   }),
 );
 

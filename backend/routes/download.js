@@ -1261,6 +1261,17 @@ router.post("/profile", async (req, res) => {
 
   // Process in background
   (async () => {
+    // the actual scan is one blocking yt-dlp call with no built-in
+    // progress events, so the bar used to sit at 0% then jump straight
+    // to 100%. this just ticks it up smoothly while we wait — capped
+    // well under 100 so it never lies about being done early.
+    const progressTicker = setInterval(() => {
+      const job = jobs.get(jobId);
+      if (job && job.status === "processing" && job.progress < 85) {
+        job.progress += 5;
+      }
+    }, 1000);
+
     try {
       console.log(`[seize] Scanning profile from ${detectedPlatform}: ${url}`);
 
@@ -1268,8 +1279,19 @@ router.post("/profile", async (req, res) => {
       const maxItems = Math.min(limit, 100);
 
       // Base options for all platforms
+      // extractFlat is the actual fix here: dumpSingleJson + a full
+      // (non-flat) extraction means yt-dlp does a SECOND full fetch per
+      // single video to resolve real media URLs and formats — for a
+      // profile with 50-100 posts that's 50-100 sequential fetches
+      // inside one 45s timeout, which is exactly why this kept
+      // timing out / coming back empty. flat extraction reads only the
+      // listing response (ids, titles, thumbnails, duration when the
+      // platform's own API already includes it) — one request, seconds
+      // instead of minutes. we don't need per-item format URLs at scan
+      // time anyway, only once someone actually picks items to download.
       const baseOpts = {
         dumpSingleJson: true,
+        extractFlat: true,
         noWarnings: true,
         noCheckCertificates: true,
         ffmpegLocation: ffmpegStaticPath,
@@ -1296,7 +1318,7 @@ router.post("/profile", async (req, res) => {
             Referer: "https://www.tiktok.com/",
           },
         };
-        info = await ytDlp(url, opts, { timeout: 45000 });
+        info = await ytDlp(url, opts, { timeout: 60000 });
       } else if (detectedPlatform === "instagram") {
         const opts = {
           ...baseOpts,
@@ -1308,7 +1330,7 @@ router.post("/profile", async (req, res) => {
               "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
         };
-        info = await ytDlp(url, opts, { timeout: 45000 });
+        info = await ytDlp(url, opts, { timeout: 60000 });
       } else if (detectedPlatform === "twitter") {
         const opts = {
           ...baseOpts,
@@ -1319,7 +1341,7 @@ router.post("/profile", async (req, res) => {
             Accept: "application/json, text/plain, */*",
           },
         };
-        info = await ytDlp(url, opts, { timeout: 45000 });
+        info = await ytDlp(url, opts, { timeout: 60000 });
       } else if (detectedPlatform === "pinterest") {
         let pinterestUrl = url;
         // Only a bare profile URL (pinterest.com/username/, nothing more)
@@ -1351,7 +1373,7 @@ router.post("/profile", async (req, res) => {
             "Cache-Control": "no-cache",
           },
         };
-        info = await ytDlp(pinterestUrl, opts, { timeout: 45000 });
+        info = await ytDlp(pinterestUrl, opts, { timeout: 60000 });
       }
 
       // Process results
@@ -1361,21 +1383,36 @@ router.post("/profile", async (req, res) => {
         for (const entry of entries) {
           if (!entry || items.length >= maxItems) continue;
 
+          // flat entries don't carry a formats array (that's the whole
+          // point — no per-item format resolution at scan time), so the
+          // old "entry.formats?.some(...)" check always came back false
+          // now. duration is still cheap and reliably present when the
+          // platform's own listing API includes it (tiktok/instagram/
+          // twitter mostly do for video posts), so it's the signal to use
+          // instead. platform default fills the gap when duration is
+          // missing outright.
+          const durationKnown =
+            typeof entry.duration === "number" && entry.duration > 0;
+          const explicitVideoExt = ["mp4", "mov", "webm", "m4v"].includes(
+            entry.ext,
+          );
+          const explicitImageExt = ["jpg", "jpeg", "png", "webp"].includes(
+            entry.ext,
+          );
+
+          // tiktok and twitter timelines are overwhelmingly video — safe
+          // to default to video there when nothing else says otherwise.
+          // instagram/pinterest are genuinely mixed feeds, so lean on
+          // duration instead of guessing.
+          const platformDefaultsVideo =
+            detectedPlatform === "tiktok" || detectedPlatform === "twitter";
+
           const hasVideo = !!(
-            entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
-            entry.ext === "mp4" ||
-            entry.ext === "mov" ||
-            entry.ext === "webm"
+            explicitVideoExt ||
+            durationKnown ||
+            (platformDefaultsVideo && !explicitImageExt)
           );
-          const hasImage = !!(
-            entry.formats?.some(
-              (f) => f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
-            ) ||
-            entry.ext === "jpg" ||
-            entry.ext === "jpeg" ||
-            entry.ext === "png" ||
-            entry.ext === "webp"
-          );
+          const hasImage = !hasVideo;
 
           let thumbnail = entry.thumbnail || null;
           if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
@@ -1386,31 +1423,35 @@ router.post("/profile", async (req, res) => {
           }
 
           const item = {
-            id: entry.id || entry.webpage_url || `item-${Date.now()}`,
+            id:
+              entry.id ||
+              entry.webpage_url ||
+              entry.url ||
+              `item-${Date.now()}-${items.length}`,
             title: entry.title || entry.fulltitle || "Untitled",
             url: entry.webpage_url || entry.url || null,
             thumbnail: thumbnail,
             duration: entry.duration || null,
             hasVideo: hasVideo,
-            hasImage: hasImage || (!hasVideo && !!thumbnail),
-            contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
+            hasImage: hasImage,
+            contentType: hasVideo ? "video" : "image",
             uploader: info.uploader || info.channel || info.author || null,
             viewCount: entry.view_count || entry.views || null,
             likeCount: entry.like_count || entry.likes || null,
             timestamp: entry.timestamp || entry.upload_date || null,
           };
 
+          if (!item.url) continue; // nothing to download later, skip it
           if (mode === "videos" && !item.hasVideo) continue;
           if (mode === "images" && !item.hasImage) continue;
-          if (mode === "all" || item.hasVideo || item.hasImage) {
-            items.push(item);
-          }
+          items.push(item);
         }
       }
 
       // Limit items
       items = items.slice(0, limit);
 
+      clearInterval(progressTicker);
       const job = jobs.get(jobId);
       if (job) {
         job.status = "done";
@@ -1425,6 +1466,7 @@ router.post("/profile", async (req, res) => {
         `[seize] Scan complete: ${items.length} items from ${detectedPlatform}`,
       );
     } catch (err) {
+      clearInterval(progressTicker);
       console.error("[seize] Profile scan failed:", err.message);
       console.error("[seize] Error details:", err.stderr || err);
 

@@ -25,20 +25,21 @@ async function requestAppPermissions() {
   if (alreadyGranted === "true") return;
   if (alreadyGranted === "false") return;
 
-  // Only show on mobile where permissions matter most
+  // used to only show on mobile — now shows everywhere, since real push
+  // notifications (not just the in-app "job done" kind) work on desktop
+  // browsers too and this is the one place we ask for that permission
   const isMobile =
     /Android|iPhone|iPad|iPod|webOS|BlackBerry|Windows Phone/i.test(
       navigator.userAgent,
     );
-  if (!isMobile) return;
 
   const banner = document.createElement("div");
   banner.className = "permission-banner";
   banner.innerHTML = `
     <p>🔔 <strong>seize</strong> needs permission to:</p>
     <ul>
-      <li>📥 Save media to your device storage (gallery/downloads)</li>
-      <li>🔔 Send notifications when downloads are ready</li>
+      ${isMobile ? "<li>📥 Save media to your device storage (gallery/downloads)</li>" : ""}
+      <li>🔔 Send notifications when downloads are ready — and the occasional reminder to come back</li>
       <li>📋 Read clipboard for quick link pasting</li>
     </ul>
     <div class="permission-actions">
@@ -56,7 +57,10 @@ async function requestAppPermissions() {
   const handleAllow = async () => {
     try {
       if ("Notification" in window && Notification.permission === "default") {
-        await Notification.requestPermission();
+        const result = await Notification.requestPermission();
+        if (result === "granted") subscribeToPush();
+      } else if (Notification.permission === "granted") {
+        subscribeToPush();
       }
       localStorage.setItem(PERMISSION_KEY, "true");
       banner.remove();
@@ -468,9 +472,18 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
 
   const { name, mimeType } = resolveFileInfo(res, blob, suggestedName);
   const file = new File([blob], name, { type: mimeType });
+  const isMobileUA = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  // Strategy 1: Web Share API - saves directly to gallery/downloads on mobile
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+  // Strategy 1 (mobile only): Web Share — the system share sheet with
+  // "Save to Photos/Files" is the closest thing to a straight-to-gallery
+  // save on a phone. Skipped on desktop entirely, since navigator.share
+  // exists on some desktop browsers too and would pop a share sheet
+  // nobody asked for there.
+  if (
+    isMobileUA &&
+    navigator.canShare &&
+    navigator.canShare({ files: [file] })
+  ) {
     try {
       await navigator.share({ files: [file] });
       console.log("[seize] saved via share sheet");
@@ -484,31 +497,12 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     }
   }
 
-  // Strategy 2: File System Access API (desktop)
-  if ("showSaveFilePicker" in window) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: name,
-        types: [
-          {
-            description: mimeType.split("/")[0] + " file",
-            accept: { [mimeType]: ["." + name.split(".").pop()] },
-          },
-        ],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      console.log("[seize] saved via file system picker");
-      showToast("✅ File saved!", "success");
-      return;
-    } catch (err) {
-      if (err?.name === "AbortError") return;
-      console.warn("[seize] file system picker bailed:", err);
-    }
-  }
-
-  // Strategy 3: Download link (works on most browsers)
+  // Strategy 2: plain blob download. This used to be strategy 3, behind
+  // the File System Access "Save As" picker — but that picker is a manual
+  // "choose a folder" dialog by definition, which isn't automatic no
+  // matter how you slice it. This one is: the browser writes straight to
+  // the default Downloads folder (or straight into Downloads on Android
+  // Chrome) with zero prompt, zero dialog.
   try {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1458,17 +1452,10 @@ function renderQueue() {
     row.appendChild(urlSpan);
     row.appendChild(status);
 
-    if (item.status === "done" && item.fileUrl) {
-      const saveBtn = document.createElement("button");
-      saveBtn.type = "button";
-      saveBtn.className = "queue-item-remove";
-      saveBtn.title = "Save to device";
-      saveBtn.textContent = "📲";
-      saveBtn.addEventListener("click", () =>
-        saveMediaToDevice(item.fileUrl, `seize-batch-${Date.now()}.mp4`),
-      );
-      row.appendChild(saveBtn);
-    }
+    // no manual "save" button here on purpose — processQueueItem() below
+    // already calls saveMediaToDevice() the instant an item finishes, so
+    // by the time a row shows "done" it's already saved. a leftover
+    // button here would just make it look like an extra step was needed.
 
     if (item.status !== "processing") {
       const removeBtn = document.createElement("button");
@@ -2174,6 +2161,71 @@ async function notifyJobDone(title, body) {
   } catch (err) {
     console.warn("[seize] Notification failed:", err);
   }
+}
+
+// ============================================================
+// REAL PUSH NOTIFICATIONS — the kind that show up even when seize
+// isn't open, e.g. "it's been a while, download your media with seize"
+// ============================================================
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+async function subscribeToPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (Notification.permission !== "granted") return;
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+
+    if (!sub) {
+      const keyRes = await fetch(`${API_BASE}/push/public-key`);
+      const { publicKey } = await keyRes.json();
+      if (!publicKey) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+    }
+
+    await fetch(`${API_BASE}/push/subscribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscription: sub }),
+    });
+    localStorage.setItem("seize_push_endpoint", sub.endpoint);
+  } catch (err) {
+    console.warn("[seize] push subscribe failed:", err);
+  }
+}
+
+// bumps "last seen" on the backend so the reminder sweep doesn't nag
+// someone who was literally just here
+async function pingPushSubscription() {
+  const endpoint = localStorage.getItem("seize_push_endpoint");
+  if (!endpoint) return;
+  try {
+    await fetch(`${API_BASE}/push/ping`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint }),
+    });
+  } catch {
+    // fine, next open will try again
+  }
+}
+
+// returning user who already granted permission earlier — resubscribe
+// quietly (getSubscription() reuses the existing one if it's still
+// valid) and check in, no banner needed
+if ("Notification" in window && Notification.permission === "granted") {
+  window.addEventListener("load", () => {
+    subscribeToPush().then(pingPushSubscription);
+  });
 }
 
 // ============================================================

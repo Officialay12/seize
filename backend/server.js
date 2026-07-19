@@ -14,6 +14,7 @@ const downloadRoutes = require("./routes/download");
 const authRoutes = require("./routes/auth");
 const collectionsRoutes = require("./routes/collections");
 const adminRoutes = require("./routes/admin");
+const pushRoutes = require("./routes/push");
 
 // ===== Middleware =====
 const { trackUser, adminRateLimit } = require("./utils/middleware");
@@ -21,6 +22,7 @@ const {
   requestLoggerMiddleware,
   flushPersistence,
 } = require("./utils/activityLog");
+const { startScheduler: startPushScheduler } = require("./utils/push");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -172,6 +174,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/convert", trackUser, adminRateLimit(200), convertRoutes);
 app.use("/api/download", trackUser, adminRateLimit(200), downloadRoutes);
 app.use("/api/collections", trackUser, collectionsRoutes);
+app.use("/api/push", trackUser, pushRoutes);
 
 // ============================================================
 // SHARE HANDLER
@@ -261,6 +264,10 @@ const server = app.listen(PORT, () => {
 server.timeout = 120000;
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 120000;
+
+// kicks off the "come back and use seize" sweep — reads real subscriber
+// activity, no-ops if nobody's subscribed yet
+startPushScheduler();
 
 // ============================================================
 // GRACEFUL SHUTDOWN

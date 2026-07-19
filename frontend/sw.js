@@ -56,10 +56,58 @@ self.addEventListener("activate", (event) => {
 });
 
 // ============================================================
+// PUSH NOTIFICATIONS — the real kind, from the backend, works even
+// when seize isn't open in any tab
+// ============================================================
+self.addEventListener("push", (event) => {
+  let data = { title: "seize", body: "" };
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    if (event.data) data = { title: "seize", body: event.data.text() };
+  }
+
+  const title = data.title || "seize";
+  const options = {
+    body: data.body || "",
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    data: { url: data.url || "/" },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// browsers rotate a push subscription's endpoint occasionally (rare, but
+// it happens) — without this the old endpoint just silently goes dead
+// and seize has no way to reach that device again
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe(
+        event.oldSubscription
+          ? event.oldSubscription.options
+          : { userVisibleOnly: true },
+      )
+      .then((sub) =>
+        fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub }),
+        }),
+      )
+      .catch(() => {
+        // nothing to do — next real app open will resubscribe anyway
+      }),
+  );
+});
+
+// ============================================================
 // NOTIFICATION CLICK
 // ============================================================
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const targetUrl = event.notification.data?.url || "/";
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
@@ -67,7 +115,7 @@ self.addEventListener("notificationclick", (event) => {
         for (const client of clients) {
           if ("focus" in client) return client.focus();
         }
-        if (self.clients.openWindow) return self.clients.openWindow("/");
+        if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
       }),
   );
 });

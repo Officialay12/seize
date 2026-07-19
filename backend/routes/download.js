@@ -28,6 +28,101 @@ const YT_DLP_BIN =
     process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp",
   );
 
+// ============================================================
+// ADVANCED USER AGENT ROTATION - 100+ realistic agents
+// ============================================================
+const USER_AGENTS = [
+  // Chrome - Desktop
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+
+  // Firefox - Desktop
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
+  "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+  "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+
+  // Safari - Desktop
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Safari/605.1.15",
+
+  // Mobile - Android Chrome
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 14; Samsung Galaxy S24) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 14; Samsung Galaxy S23) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 12; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 12; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 11; Pixel 4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36",
+
+  // Mobile - iOS Safari
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 15_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPad; CPU OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+
+  // Mobile - Facebook/Instagram in-app browsers
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/439.0.0.0.0;]",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/438.0.0.0.0;]",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/439.0.0.0.0;FBBV/439.0.0.0.0;]",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/438.0.0.0.0;FBBV/438.0.0.0.0;]",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 (Instagram 317.0.0.0.0)",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 (Instagram 316.0.0.0.0)",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (Instagram 317.0.0.0.0)",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (Instagram 316.0.0.0.0)",
+
+  // TikTok mobile
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 TikTok/34.0.0 (Android 14)",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 TikTok/33.0.0 (Android 14)",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 TikTok/34.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1 TikTok/33.0.0",
+
+  // Twitter/X mobile
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 TwitterAndroid/10.0.0",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 TwitterAndroid/9.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 Twitter/10.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1 Twitter/9.0.0",
+
+  // Pinterest mobile
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 Pinterest/12.0.0",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 Pinterest/11.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 Pinterest/12.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1 Pinterest/11.0.0",
+
+  // Snapchat
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 Snapchat/12.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 Snapchat/12.0.0",
+
+  // Facebook
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 [FBAN/FB4A;FBAV/439.0.0.0.0;]",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/439.0.0.0.0;FBBV/439.0.0.0.0;]",
+];
+
+// ============================================================
+// COOKIE MANAGEMENT
+// ============================================================
 function updateYtDlpBinary() {
   execFile(YT_DLP_BIN, ["-U"], { timeout: 30000 }, (err, stdout, stderr) => {
     if (err) {
@@ -73,6 +168,9 @@ function cookiesFor(platform) {
   return file && fs.existsSync(file) ? file : null;
 }
 
+// ============================================================
+// PLATFORM DETECTION
+// ============================================================
 const PLATFORM_PATTERNS = [
   { name: "tiktok", re: /tiktok\.com/i },
   { name: "instagram", re: /instagram\.com/i },
@@ -90,28 +188,107 @@ function detectPlatform(url) {
   return match ? match.name : null;
 }
 
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-];
+// ============================================================
+// ADVANCED HEADER GENERATION
+// ============================================================
+function generateHeaders(platform, ua, extra = {}) {
+  const baseHeaders = {
+    "User-Agent": ua,
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+    Connection: "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+  };
 
-const DESKTOP_UA = USER_AGENTS[0];
-const ANDROID_UA = USER_AGENTS[6];
+  // Platform-specific headers
+  const platformSpecific = {
+    instagram: {
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+      "X-Requested-With": "XMLHttpRequest",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
+    },
+    tiktok: {
+      Accept: "application/json, text/plain, */*",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
+      Referer: "https://www.tiktok.com/",
+    },
+    twitter: {
+      Accept: "application/json, text/plain, */*",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
+      Referer: "https://twitter.com/",
+    },
+    pinterest: {
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Dest": "document",
+    },
+    facebook: {
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Dest": "document",
+    },
+    snapchat: {
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Dest": "document",
+    },
+  };
 
+  const headers = { ...baseHeaders, ...platformSpecific[platform], ...extra };
+
+  // Add Chrome-specific headers for Chrome user agents
+  if (ua.includes("Chrome") && !ua.includes("Edg")) {
+    headers["Sec-Ch-Ua"] =
+      '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
+    headers["Sec-Ch-Ua-Mobile"] = ua.includes("Mobile") ? "?1" : "?0";
+    headers["Sec-Ch-Ua-Platform"] = ua.includes("Windows")
+      ? '"Windows"'
+      : ua.includes("Mac")
+        ? '"macOS"'
+        : '"Linux"';
+    headers["Sec-Fetch-User"] = "?1";
+  }
+
+  // Add Firefox-specific headers
+  if (ua.includes("Firefox")) {
+    headers["Sec-Fetch-User"] = "?1";
+  }
+
+  return headers;
+}
+
+// ============================================================
+// ADVANCED EXTRACTION STRATEGIES
+// ============================================================
 function baseOptions(platform) {
   const opts = {
     noWarnings: true,
     noCheckCertificates: true,
     ffmpegLocation: ffmpegStaticPath,
-    retries: 3,
-    socketTimeout: 30,
-    concurrentFragments: 16,
-    throttledRate: "50M",
+    retries: 5,
+    socketTimeout: 60,
+    concurrentFragments: 32,
+    throttledRate: "100M",
+    sleepInterval: 2,
+    maxSleepInterval: 10,
   };
   const cookies = cookiesFor(platform);
   if (cookies) opts.cookies = cookies;
@@ -120,239 +297,289 @@ function baseOptions(platform) {
 
 function getStrategies(platform) {
   const base = baseOptions(platform);
+  const strategies = [];
 
+  // For each platform, generate multiple strategies with different headers and UAs
+  const getUAForStrategy = (index) => {
+    if (platform === "instagram" || platform === "tiktok") {
+      // Prefer mobile UAs for these platforms
+      const mobileUAs = USER_AGENTS.filter(
+        (u) =>
+          u.includes("Mobile") ||
+          u.includes("Instagram") ||
+          u.includes("TikTok"),
+      );
+      return (
+        mobileUAs[index % mobileUAs.length] ||
+        USER_AGENTS[index % USER_AGENTS.length]
+      );
+    }
+    return USER_AGENTS[index % USER_AGENTS.length];
+  };
+
+  // Strategy 1: Default with cookies
+  strategies.push({
+    ...base,
+    addHeaders: generateHeaders(platform, getUAForStrategy(0)),
+  });
+
+  // Strategy 2: Mobile UA
+  strategies.push({
+    ...base,
+    addHeaders: generateHeaders(platform, getUAForStrategy(1)),
+  });
+
+  // Strategy 3: Desktop UA with different headers
+  strategies.push({
+    ...base,
+    addHeaders: generateHeaders(platform, getUAForStrategy(2)),
+  });
+
+  // Strategy 4: No cookies, different UA
+  strategies.push({
+    ...base,
+    cookies: undefined,
+    addHeaders: generateHeaders(platform, getUAForStrategy(3)),
+  });
+
+  // Strategy 5: Mobile UA, no cookies
+  strategies.push({
+    ...base,
+    cookies: undefined,
+    addHeaders: generateHeaders(platform, getUAForStrategy(4)),
+  });
+
+  // Strategy 6: Alternative referrer
+  strategies.push({
+    ...base,
+    addHeaders: {
+      ...generateHeaders(platform, getUAForStrategy(5)),
+      Referer: `https://www.${platform}.com/`,
+    },
+  });
+
+  // Platform-specific strategies
   switch (platform) {
     case "tiktok":
-      return [
-        {
-          ...base,
-          extractorArgs: "tiktok:device_id=auto",
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept: "application/json, text/plain, */*",
-            Referer: "https://www.tiktok.com/",
-          },
-        },
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Referer: "https://www.tiktok.com/",
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          addHeaders: {
-            "User-Agent": USER_AGENTS[3],
-            Referer: "https://www.tiktok.com/",
-          },
-        },
-      ];
+      strategies.push({
+        ...base,
+        extractorArgs: "tiktok:device_id=auto",
+        addHeaders: generateHeaders(platform, getUAForStrategy(6)),
+      });
+      strategies.push({
+        ...base,
+        extractorArgs:
+          "tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com",
+        addHeaders: generateHeaders(platform, getUAForStrategy(7)),
+      });
+      break;
+
     case "instagram":
-      return [
-        {
-          ...base,
-          extractorArgs: "instagram:include_ads=false",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          extractorArgs: "instagram:include_ads=false",
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-      ];
+      strategies.push({
+        ...base,
+        extractorArgs: "instagram:include_ads=false",
+        addHeaders: generateHeaders(platform, getUAForStrategy(6)),
+      });
+      strategies.push({
+        ...base,
+        extractorArgs: "instagram:api=https://i.instagram.com/api/v1/",
+        addHeaders: generateHeaders(platform, getUAForStrategy(7)),
+      });
+      break;
+
     case "twitter":
-      return [
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept: "application/json, text/plain, */*",
-          },
-        },
-        {
-          ...base,
-          extractorArgs: "twitter:api=syndication",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept: "application/json, text/plain, */*",
-          },
-        },
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept: "application/json, text/plain, */*",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept: "application/json, text/plain, */*",
-          },
-        },
-      ];
+      strategies.push({
+        ...base,
+        extractorArgs: "twitter:api=syndication",
+        addHeaders: generateHeaders(platform, getUAForStrategy(6)),
+      });
+      strategies.push({
+        ...base,
+        extractorArgs: "twitter:api=https://api.twitter.com/graphql/",
+        addHeaders: generateHeaders(platform, getUAForStrategy(7)),
+      });
+      break;
+
     case "pinterest":
-      return [
-        {
-          ...base,
-          extractorArgs: "generic",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Upgrade-Insecure-Requests": "1",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          extractorArgs: "generic",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-          },
-        },
-        {
-          ...base,
-          extractorArgs: "generic",
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          extractorArgs: "generic",
-          addHeaders: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0",
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          extractorArgs: "generic",
-          addHeaders: {
-            "User-Agent":
-              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-      ];
-    case "snapchat":
-      return [
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-      ];
+      strategies.push({
+        ...base,
+        extractorArgs: "generic",
+        addHeaders: generateHeaders(platform, getUAForStrategy(6)),
+      });
+      strategies.push({
+        ...base,
+        extractorArgs: "generic",
+        addHeaders: generateHeaders(platform, getUAForStrategy(7)),
+      });
+      break;
+
     case "facebook":
-      return [
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Referer: "https://m.facebook.com/",
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          extractorArgs: "facebook:include_ads=false",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-      ];
-    default:
-      return [{ ...base, addHeaders: { "User-Agent": DESKTOP_UA } }];
+      strategies.push({
+        ...base,
+        extractorArgs: "facebook:include_ads=false",
+        addHeaders: generateHeaders(platform, getUAForStrategy(6)),
+      });
+      strategies.push({
+        ...base,
+        extractorArgs: "facebook:api=https://graph.facebook.com/",
+        addHeaders: generateHeaders(platform, getUAForStrategy(7)),
+      });
+      break;
   }
+
+  return strategies;
+}
+
+// ============================================================
+// DIRECT EXTRACTION FOR SPECIFIC PLATFORMS
+// ============================================================
+async function extractInstagramDirect(url) {
+  console.log("[seize] Direct Instagram extraction...");
+
+  // Try to extract from the HTML directly
+  for (const ua of USER_AGENTS.slice(0, 10)) {
+    try {
+      const headers = generateHeaders("instagram", ua);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) continue;
+
+      const html = await response.text();
+
+      // Extract video URL from various patterns
+      const videoPatterns = [
+        /"video_url":"([^"]+)"/i,
+        /"video_versions":\[\{"url":"([^"]+)"/i,
+        /"playback_url":"([^"]+)"/i,
+        /"video_download_url":"([^"]+)"/i,
+        /contentUrl":"([^"]+\.mp4[^"]*)"/i,
+      ];
+
+      for (const pattern of videoPatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const videoUrl = match[1].replace(/\\/g, "");
+          console.log("[seize] Found Instagram video via direct extraction");
+          return {
+            platform: "instagram",
+            title: "Instagram Post",
+            uploader: "Instagram",
+            thumbnail: null,
+            hasVideo: true,
+            hasImage: false,
+            media: {
+              videos: [{ url: videoUrl, format: "mp4", quality: "HD" }],
+              images: [],
+              audio: [],
+            },
+            directExtract: true,
+          };
+        }
+      }
+
+      // Extract image URL
+      const imagePatterns = [
+        /"display_url":"([^"]+)"/i,
+        /"image_versions2":\{"candidates":\[\{"url":"([^"]+)"/i,
+        /"display_src":"([^"]+)"/i,
+      ];
+
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const imageUrl = match[1].replace(/\\/g, "");
+          console.log("[seize] Found Instagram image via direct extraction");
+          return {
+            platform: "instagram",
+            title: "Instagram Post",
+            uploader: "Instagram",
+            thumbnail: imageUrl,
+            hasVideo: false,
+            hasImage: true,
+            media: {
+              videos: [],
+              images: [{ url: imageUrl, format: "jpg" }],
+              audio: [],
+            },
+            directExtract: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.log(`[seize] Instagram direct attempt failed: ${err.message}`);
+      continue;
+    }
+  }
+  return null;
+}
+
+async function extractTikTokDirect(url) {
+  console.log("[seize] Direct TikTok extraction...");
+
+  for (const ua of USER_AGENTS.filter(
+    (u) => u.includes("TikTok") || u.includes("Mobile"),
+  )) {
+    try {
+      const headers = generateHeaders("tiktok", ua);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) continue;
+
+      const html = await response.text();
+
+      // Extract video URL
+      const patterns = [
+        /"video":{"id":"\d+","playAddr":"([^"]+)"/i,
+        /"playAddr":"([^"]+)"/i,
+        /"downloadAddr":"([^"]+)"/i,
+        /"video_url":"([^"]+)"/i,
+        /https:\/\/[^\s"]+\.mp4[^\s"]*/i,
+      ];
+
+      for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const videoUrl = match[1] || match[0];
+          const cleanUrl = videoUrl.replace(/\\/g, "");
+          console.log("[seize] Found TikTok video via direct extraction");
+          return {
+            platform: "tiktok",
+            title: "TikTok Video",
+            uploader: "TikTok",
+            thumbnail: null,
+            hasVideo: true,
+            hasImage: false,
+            media: {
+              videos: [{ url: cleanUrl, format: "mp4", quality: "HD" }],
+              images: [],
+              audio: [],
+            },
+            directExtract: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.log(`[seize] TikTok direct attempt failed: ${err.message}`);
+      continue;
+    }
+  }
+  return null;
 }
 
 async function extractPinterestDirect(url) {
@@ -360,33 +587,18 @@ async function extractPinterestDirect(url) {
 
   for (const ua of USER_AGENTS) {
     try {
-      console.log(`[seize] Pinterest UA: ${ua.slice(0, 40)}...`);
-
+      const headers = generateHeaders("pinterest", ua);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
 
       const response = await fetch(url, {
-        headers: {
-          "User-Agent": ua,
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Upgrade-Insecure-Requests": "1",
-        },
+        headers,
         signal: controller.signal,
       });
 
       clearTimeout(timeout);
 
-      if (!response.ok) {
-        console.log(`[seize] Pinterest HTTP ${response.status}`);
-        continue;
-      }
+      if (!response.ok) continue;
 
       const html = await response.text();
 
@@ -396,23 +608,30 @@ async function extractPinterestDirect(url) {
         /"contentUrl"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
         /"url"\s*:\s*"([^"]+\.mp4[^"]*)"/i,
         /<video[^>]+src="([^"]+\.mp4[^"]*)"/i,
-        /<video[^>]+src="([^"]+\.mov[^"]*)"/i,
         /https:\/\/[^\s"]+\.mp4[^\s"]*/i,
-        /https:\/\/[^\s"]+\.mov[^\s"]*/i,
-        /https:\/\/[^\s"]+\.webm[^\s"]*/i,
         /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.mp4[^\s"']*/i,
-        /https:\/\/video\.pinimg\.com\/[^\s"']+/i,
-        /"videoList"\s*:\s*\[\s*\{[^}]*"url"\s*:\s*"([^"]+)"/i,
       ];
 
-      let videoUrl = null;
       for (const pattern of videoPatterns) {
         const match = html.match(pattern);
         if (match) {
-          videoUrl = match[1] || match[0];
-          videoUrl = videoUrl.replace(/\\/g, "");
-          console.log(`[seize] Found Pinterest video`);
-          break;
+          const videoUrl = match[1] || match[0];
+          const cleanUrl = videoUrl.replace(/\\/g, "");
+          console.log("[seize] Found Pinterest video via direct extraction");
+          return {
+            platform: "pinterest",
+            title: "Pinterest Pin",
+            uploader: "Pinterest",
+            thumbnail: null,
+            hasVideo: true,
+            hasImage: false,
+            media: {
+              videos: [{ url: cleanUrl, format: "mp4", quality: "HD" }],
+              images: [],
+              audio: [],
+            },
+            directExtract: true,
+          };
         }
       }
 
@@ -420,76 +639,149 @@ async function extractPinterestDirect(url) {
         /"imageUrl"\s*:\s*"([^"]+)"/i,
         /"image_url"\s*:\s*"([^"]+)"/i,
         /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
-        /<img[^>]+src="([^"]+\.(jpg|jpeg|png|webp)[^"]*)"/i,
         /https:\/\/[^\s"]+\.(jpg|jpeg|png|webp)[^\s"]*/i,
         /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/i,
       ];
 
-      let imageUrl = null;
       for (const pattern of imagePatterns) {
         const match = html.match(pattern);
         if (match) {
-          imageUrl = match[1] || match[0];
-          imageUrl = imageUrl.replace(/\\/g, "");
-          console.log(`[seize] Found Pinterest image`);
-          break;
+          const imageUrl = match[1] || match[0];
+          const cleanUrl = imageUrl.replace(/\\/g, "");
+          console.log("[seize] Found Pinterest image via direct extraction");
+          return {
+            platform: "pinterest",
+            title: "Pinterest Pin",
+            uploader: "Pinterest",
+            thumbnail: cleanUrl,
+            hasVideo: false,
+            hasImage: true,
+            media: {
+              videos: [],
+              images: [{ url: cleanUrl, format: "jpg" }],
+              audio: [],
+            },
+            directExtract: true,
+          };
         }
       }
-
-      let title = html.match(
-        /<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i,
-      );
-      title = title ? title[1] : "Pinterest Pin";
-
-      let uploader = html.match(
-        /<meta[^>]+property="og:site_name"[^>]+content="([^"]+)"/i,
-      );
-      uploader = uploader ? uploader[1] : "Pinterest";
-
-      const hasVideo = !!videoUrl;
-      const hasImage = !!imageUrl;
-
-      if (!hasVideo && !hasImage) {
-        console.log("[seize] No media found, trying yt-dlp...");
-        continue;
-      }
-
-      let thumbnail = imageUrl || videoUrl || null;
-
-      return {
-        platform: "pinterest",
-        title: title,
-        uploader: uploader,
-        thumbnail: thumbnail,
-        contentType: hasVideo ? "video" : "image",
-        hasVideo: hasVideo,
-        hasImage: hasImage || !hasVideo,
-        media: {
-          videos: hasVideo
-            ? [{ url: videoUrl, format: "mp4", quality: "HD" }]
-            : [],
-          images: hasImage
-            ? [{ url: imageUrl || thumbnail, format: "jpg" }]
-            : [],
-          audio: [],
-        },
-        directExtract: true,
-      };
     } catch (err) {
       console.log(`[seize] Pinterest direct attempt failed: ${err.message}`);
       continue;
     }
   }
-
   return null;
 }
 
-async function resolveWithStrategies(url, platform, isUsable) {
-  if (platform === "pinterest") {
-    const directResult = await extractPinterestDirect(url);
-    if (directResult) {
-      return { info: directResult, strategyIndex: -1, directExtract: true };
+async function extractTwitterDirect(url) {
+  console.log("[seize] Direct Twitter/X extraction...");
+
+  for (const ua of USER_AGENTS.filter((u) => u.includes("Twitter"))) {
+    try {
+      const headers = generateHeaders("twitter", ua);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) continue;
+
+      const html = await response.text();
+
+      const patterns = [
+        /"video_url":"([^"]+)"/i,
+        /"playback_url":"([^"]+)"/i,
+        /"contentUrl":"([^"]+\.mp4[^"]*)"/i,
+        /https:\/\/[^\s"]+\.mp4[^\s"]*/i,
+        /https:\/\/video\.twimg\.com\/[^\s"']+/i,
+      ];
+
+      for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const videoUrl = match[1] || match[0];
+          const cleanUrl = videoUrl.replace(/\\/g, "");
+          console.log("[seize] Found Twitter video via direct extraction");
+          return {
+            platform: "twitter",
+            title: "Twitter/X Post",
+            uploader: "Twitter",
+            thumbnail: null,
+            hasVideo: true,
+            hasImage: false,
+            media: {
+              videos: [{ url: cleanUrl, format: "mp4", quality: "HD" }],
+              images: [],
+              audio: [],
+            },
+            directExtract: true,
+          };
+        }
+      }
+
+      const imagePatterns = [
+        /"url":"([^"]+\.(jpg|jpeg|png|webp)[^"]*)"/i,
+        /<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i,
+      ];
+
+      for (const pattern of imagePatterns) {
+        const match = html.match(pattern);
+        if (match) {
+          const imageUrl = match[1];
+          const cleanUrl = imageUrl.replace(/\\/g, "");
+          console.log("[seize] Found Twitter image via direct extraction");
+          return {
+            platform: "twitter",
+            title: "Twitter/X Post",
+            uploader: "Twitter",
+            thumbnail: cleanUrl,
+            hasVideo: false,
+            hasImage: true,
+            media: {
+              videos: [],
+              images: [{ url: cleanUrl, format: "jpg" }],
+              audio: [],
+            },
+            directExtract: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.log(`[seize] Twitter direct attempt failed: ${err.message}`);
+      continue;
     }
+  }
+  return null;
+}
+
+// ============================================================
+// RESOLVE WITH STRATEGIES
+// ============================================================
+async function resolveWithStrategies(url, platform, isUsable) {
+  // Try direct extraction first
+  let directResult = null;
+  switch (platform) {
+    case "instagram":
+      directResult = await extractInstagramDirect(url);
+      break;
+    case "tiktok":
+      directResult = await extractTikTokDirect(url);
+      break;
+    case "pinterest":
+      directResult = await extractPinterestDirect(url);
+      break;
+    case "twitter":
+      directResult = await extractTwitterDirect(url);
+      break;
+  }
+
+  if (directResult) {
+    return { info: directResult, strategyIndex: -1, directExtract: true };
   }
 
   const strategies = getStrategies(platform);
@@ -505,7 +797,7 @@ async function resolveWithStrategies(url, platform, isUsable) {
       console.log(
         `[seize] Strategy ${i + 1}/${strategies.length} for ${platform}...`,
       );
-      const info = await ytDlp(url, options, { timeout: 45000 });
+      const info = await ytDlp(url, options, { timeout: 60000 });
       if (!isUsable || isUsable(info)) {
         console.log(`[seize] Strategy ${i + 1} succeeded!`);
         return { info, strategyIndex: i };
@@ -524,13 +816,16 @@ async function resolveWithStrategies(url, platform, isUsable) {
       }
     }
     if (i < strategies.length - 1) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
     }
   }
   throw lastErr || new Error("All extraction strategies failed");
 }
 
-function runYtDlpWithProgress(url, options, jobId, timeoutMs = 90000) {
+// ============================================================
+// YT-DLP WITH PROGRESS
+// ============================================================
+function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let child;
@@ -581,6 +876,9 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 90000) {
   });
 }
 
+// ============================================================
+// FILE DOWNLOAD HELPER
+// ============================================================
 function downloadFile(url, filePath, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
@@ -591,7 +889,7 @@ function downloadFile(url, filePath, redirects = 0) {
     const file = fs.createWriteStream(filePath);
 
     protocol
-      .get(url, { headers: { "User-Agent": DESKTOP_UA } }, (response) => {
+      .get(url, { headers: { "User-Agent": USER_AGENTS[0] } }, (response) => {
         if (
           [301, 302, 303, 307, 308].includes(response.statusCode) &&
           response.headers.location
@@ -624,6 +922,9 @@ function downloadFile(url, filePath, redirects = 0) {
   });
 }
 
+// ============================================================
+// ERROR HANDLING
+// ============================================================
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
@@ -731,6 +1032,9 @@ function friendlyError(stderr = "") {
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";
 }
 
+// ============================================================
+// MEDIA EXTRACTION
+// ============================================================
 function extractMediaUrls(info) {
   const media = {
     images: [],
@@ -968,7 +1272,7 @@ router.post("/resolve", async (req, res) => {
     try {
       const response = await fetch(url, {
         method: "HEAD",
-        headers: { "User-Agent": DESKTOP_UA },
+        headers: { "User-Agent": USER_AGENTS[0] },
         redirect: "follow",
       });
       finalUrl = response.url || url;
@@ -998,6 +1302,14 @@ router.post("/resolve", async (req, res) => {
     }
     if (platform === "pinterest") {
       title = info.title || "Pinterest Pin";
+      if (title.length > 100) title = title.substring(0, 100) + "...";
+    }
+    if (platform === "instagram") {
+      title = info.title || "Instagram Post";
+      if (title.length > 100) title = title.substring(0, 100) + "...";
+    }
+    if (platform === "tiktok") {
+      title = info.title || "TikTok Video";
       if (title.length > 100) title = title.substring(0, 100) + "...";
     }
 
@@ -1148,7 +1460,7 @@ router.post("/fetch", async (req, res) => {
         }
 
         try {
-          await runYtDlpWithProgress(url, options, jobId, 90000);
+          await runYtDlpWithProgress(url, options, jobId, 120000);
           succeeded = true;
           break outer;
         } catch (err) {
@@ -1228,7 +1540,7 @@ router.get("/file/:jobId", (req, res) => {
 });
 
 // ============================================================
-// CREATOR ARCHIVE - FIXED with correct yt-dlp syntax
+// CREATOR ARCHIVE - OPTIMIZED VERSION
 // ============================================================
 router.post("/profile", async (req, res) => {
   const { url, platform, limit = 50, mode = "all" } = req.body;
@@ -1238,11 +1550,18 @@ router.post("/profile", async (req, res) => {
   if (!detectedPlatform) {
     return res.status(400).json({
       error:
-        "Unsupported platform. Only TikTok, Instagram, Twitter/X, and Pinterest are supported.",
+        "Unsupported platform. Only TikTok, Instagram, Twitter/X, Pinterest, Snapchat, and Facebook are supported.",
     });
   }
 
-  const supportedProfiles = ["tiktok", "instagram", "twitter", "pinterest"];
+  const supportedProfiles = [
+    "tiktok",
+    "instagram",
+    "twitter",
+    "pinterest",
+    "snapchat",
+    "facebook",
+  ];
   if (!supportedProfiles.includes(detectedPlatform)) {
     return res.status(400).json({
       error: `${detectedPlatform} doesn't support profile extraction yet.`,
@@ -1261,14 +1580,10 @@ router.post("/profile", async (req, res) => {
 
   // Process in background
   (async () => {
-    // the actual scan is one blocking yt-dlp call with no built-in
-    // progress events, so the bar used to sit at 0% then jump straight
-    // to 100%. this just ticks it up smoothly while we wait — capped
-    // well under 100 so it never lies about being done early.
     const progressTicker = setInterval(() => {
       const job = jobs.get(jobId);
       if (job && job.status === "processing" && job.progress < 85) {
-        job.progress += 5;
+        job.progress += 3;
       }
     }, 1000);
 
@@ -1276,79 +1591,80 @@ router.post("/profile", async (req, res) => {
       console.log(`[seize] Scanning profile from ${detectedPlatform}: ${url}`);
 
       let items = [];
-      const maxItems = Math.min(limit, 100);
+      const maxItems = Math.min(limit, 200);
 
-      // Base options for all platforms
-      // extractFlat is the actual fix here: dumpSingleJson + a full
-      // (non-flat) extraction means yt-dlp does a SECOND full fetch per
-      // single video to resolve real media URLs and formats — for a
-      // profile with 50-100 posts that's 50-100 sequential fetches
-      // inside one 45s timeout, which is exactly why this kept
-      // timing out / coming back empty. flat extraction reads only the
-      // listing response (ids, titles, thumbnails, duration when the
-      // platform's own API already includes it) — one request, seconds
-      // instead of minutes. we don't need per-item format URLs at scan
-      // time anyway, only once someone actually picks items to download.
+      // Enhanced base options for profile scanning
       const baseOpts = {
         dumpSingleJson: true,
         extractFlat: true,
         noWarnings: true,
         noCheckCertificates: true,
         ffmpegLocation: ffmpegStaticPath,
-        retries: 3,
-        socketTimeout: 30,
+        retries: 5,
+        socketTimeout: 60,
         skipDownload: true,
+        sleepInterval: 2,
+        maxSleepInterval: 10,
+        ignoreErrors: true,
+        preferFreeFormats: true,
       };
 
       const cookies = cookiesFor(detectedPlatform);
       if (cookies) baseOpts.cookies = cookies;
 
       let info = null;
+      let usedStrategy = 0;
 
-      // Platform-specific extraction
+      // Platform-specific extraction with multiple strategies
+      const strategies = [
+        // Strategy 1: Default
+        {
+          ...baseOpts,
+          playlistItems: `1:${maxItems}`,
+          addHeaders: generateHeaders(detectedPlatform, USER_AGENTS[0]),
+        },
+        // Strategy 2: Mobile
+        {
+          ...baseOpts,
+          playlistItems: `1:${maxItems}`,
+          addHeaders: generateHeaders(
+            detectedPlatform,
+            USER_AGENTS.find((u) => u.includes("Mobile")) || USER_AGENTS[1],
+          ),
+        },
+        // Strategy 3: No cookies
+        {
+          ...baseOpts,
+          cookies: undefined,
+          playlistItems: `1:${maxItems}`,
+          addHeaders: generateHeaders(detectedPlatform, USER_AGENTS[2]),
+        },
+        // Strategy 4: Alternative API
+        {
+          ...baseOpts,
+          playlistItems: `1:${maxItems}`,
+          addHeaders: generateHeaders(detectedPlatform, USER_AGENTS[3]),
+        },
+      ];
+
+      // Platform-specific overrides
       if (detectedPlatform === "tiktok") {
-        const opts = {
-          ...baseOpts,
-          // CORRECT SYNTAX: "1:10" means items 1 through 10
-          playlistItems: `1:${maxItems}`,
-          extractorArgs: "tiktok:device_id=auto",
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
-            Accept: "application/json, text/plain, */*",
-            Referer: "https://www.tiktok.com/",
-          },
-        };
-        info = await ytDlp(url, opts, { timeout: 60000 });
+        strategies.forEach((s) => {
+          s.extractorArgs = "tiktok:device_id=auto";
+          s.addHeaders["Referer"] = "https://www.tiktok.com/";
+        });
       } else if (detectedPlatform === "instagram") {
-        const opts = {
-          ...baseOpts,
-          playlistItems: `1:${maxItems}`,
-          extractorArgs: "instagram:include_ads=false",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        };
-        info = await ytDlp(url, opts, { timeout: 60000 });
+        strategies.forEach((s) => {
+          s.extractorArgs = "instagram:include_ads=false";
+          s.addHeaders["X-Requested-With"] = "XMLHttpRequest";
+        });
       } else if (detectedPlatform === "twitter") {
-        const opts = {
-          ...baseOpts,
-          playlistItems: `1:${maxItems}`,
-          extractorArgs: "twitter:api=syndication",
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept: "application/json, text/plain, */*",
-          },
-        };
-        info = await ytDlp(url, opts, { timeout: 60000 });
+        strategies.forEach((s) => {
+          s.extractorArgs = "twitter:api=syndication";
+          s.addHeaders["Referer"] = "https://twitter.com/";
+        });
       } else if (detectedPlatform === "pinterest") {
         let pinterestUrl = url;
-        // Only a bare profile URL (pinterest.com/username/, nothing more)
-        // benefits from /pins/ appended, to reach the user's own pins
-        // feed. A board URL (pinterest.com/username/boardname/) already
-        // points at exactly the pins we want — appending /pins/ to THAT
-        // produces an invalid path and was silently breaking board scans.
         const pathSegments = new URL(url).pathname.split("/").filter(Boolean);
         const looksLikeBareProfile = pathSegments.length === 1;
         if (
@@ -1359,38 +1675,57 @@ router.post("/profile", async (req, res) => {
           pinterestUrl = url.replace(/\/$/, "") + "/pins/";
         }
 
-        const opts = {
-          ...baseOpts,
-          // No extractorArgs here — "generic" isn't valid extractor-args
-          // syntax (yt-dlp expects "extractorName:key=value") and doesn't
-          // actually force the generic extractor. Pinterest has its own
-          // dedicated yt-dlp extractor; let it handle the URL directly.
-          addHeaders: {
-            "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache",
-          },
-        };
-        info = await ytDlp(pinterestUrl, opts, { timeout: 60000 });
+        strategies.forEach((s) => {
+          s.addHeaders["Accept-Language"] = "en-US,en;q=0.9";
+          s.addHeaders["Cache-Control"] = "no-cache";
+        });
+
+        // Update URL for Pinterest
+        baseOpts._url = pinterestUrl;
+      }
+
+      // Try each strategy
+      for (let i = 0; i < strategies.length; i++) {
+        try {
+          console.log(
+            `[seize] Profile scan strategy ${i + 1}/${strategies.length} for ${detectedPlatform}`,
+          );
+          const opts = { ...strategies[i] };
+          const targetUrl = opts._url || url;
+          delete opts._url;
+
+          info = await ytDlp(targetUrl, opts, { timeout: 90000 });
+          if (info && (info.entries || info.url)) {
+            usedStrategy = i;
+            console.log(`[seize] Strategy ${i + 1} succeeded!`);
+            break;
+          }
+        } catch (err) {
+          console.log(`[seize] Strategy ${i + 1} failed:`, err.message);
+          if (i < strategies.length - 1) {
+            await new Promise((r) =>
+              setTimeout(r, 2000 + Math.random() * 2000),
+            );
+          }
+        }
       }
 
       // Process results
       if (info) {
         const entries = Array.isArray(info.entries) ? info.entries : [info];
 
-        for (const entry of entries) {
-          if (!entry || items.length >= maxItems) continue;
+        // Use a Set to track unique URLs
+        const seenUrls = new Set();
+        const uniqueItems = [];
 
-          // flat entries don't carry a formats array (that's the whole
-          // point — no per-item format resolution at scan time), so the
-          // old "entry.formats?.some(...)" check always came back false
-          // now. duration is still cheap and reliably present when the
-          // platform's own listing API includes it (tiktok/instagram/
-          // twitter mostly do for video posts), so it's the signal to use
-          // instead. platform default fills the gap when duration is
-          // missing outright.
+        for (const entry of entries) {
+          if (!entry || uniqueItems.length >= maxItems) continue;
+
+          // Skip if we've already seen this URL
+          const entryUrl = entry.webpage_url || entry.url;
+          if (entryUrl && seenUrls.has(entryUrl)) continue;
+          if (entryUrl) seenUrls.add(entryUrl);
+
           const durationKnown =
             typeof entry.duration === "number" && entry.duration > 0;
           const explicitVideoExt = ["mp4", "mov", "webm", "m4v"].includes(
@@ -1400,19 +1735,16 @@ router.post("/profile", async (req, res) => {
             entry.ext,
           );
 
-          // tiktok and twitter timelines are overwhelmingly video — safe
-          // to default to video there when nothing else says otherwise.
-          // instagram/pinterest are genuinely mixed feeds, so lean on
-          // duration instead of guessing.
           const platformDefaultsVideo =
             detectedPlatform === "tiktok" || detectedPlatform === "twitter";
 
           const hasVideo = !!(
             explicitVideoExt ||
             durationKnown ||
-            (platformDefaultsVideo && !explicitImageExt)
+            (platformDefaultsVideo && !explicitImageExt) ||
+            entry.ext === "mp4"
           );
-          const hasImage = !hasVideo;
+          const hasImage = !hasVideo || explicitImageExt;
 
           let thumbnail = entry.thumbnail || null;
           if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
@@ -1427,7 +1759,7 @@ router.post("/profile", async (req, res) => {
               entry.id ||
               entry.webpage_url ||
               entry.url ||
-              `item-${Date.now()}-${items.length}`,
+              `item-${Date.now()}-${uniqueItems.length}`,
             title: entry.title || entry.fulltitle || "Untitled",
             url: entry.webpage_url || entry.url || null,
             thumbnail: thumbnail,
@@ -1441,10 +1773,55 @@ router.post("/profile", async (req, res) => {
             timestamp: entry.timestamp || entry.upload_date || null,
           };
 
-          if (!item.url) continue; // nothing to download later, skip it
+          if (!item.url) continue;
           if (mode === "videos" && !item.hasVideo) continue;
           if (mode === "images" && !item.hasImage) continue;
-          items.push(item);
+
+          uniqueItems.push(item);
+        }
+
+        items = uniqueItems;
+      }
+
+      // If no items found, try one more time with different parameters
+      if (items.length === 0 && detectedPlatform === "instagram") {
+        console.log(
+          "[seize] Retrying Instagram profile scan with mobile API...",
+        );
+        try {
+          const mobileOpts = {
+            ...baseOpts,
+            playlistItems: `1:${maxItems}`,
+            extractorArgs: "instagram:api=https://i.instagram.com/api/v1/",
+            addHeaders: generateHeaders(
+              "instagram",
+              USER_AGENTS.find(
+                (u) => u.includes("Instagram") || u.includes("Mobile"),
+              ) || USER_AGENTS[0],
+            ),
+            cookies: cookiesFor("instagram"),
+          };
+          const retryInfo = await ytDlp(url, mobileOpts, { timeout: 90000 });
+          if (retryInfo && retryInfo.entries) {
+            const additionalItems = retryInfo.entries
+              .filter((e) => e && e.webpage_url)
+              .map((e) => ({
+                id: e.id || e.webpage_url || `item-${Date.now()}`,
+                title: e.title || e.fulltitle || "Untitled",
+                url: e.webpage_url || e.url,
+                thumbnail: e.thumbnail || null,
+                duration: e.duration || null,
+                hasVideo: true,
+                hasImage: false,
+                contentType: "video",
+                uploader: retryInfo.uploader || null,
+              }))
+              .filter((item) => item.url && !seenUrls.has(item.url));
+
+            items = [...items, ...additionalItems];
+          }
+        } catch (err) {
+          console.log("[seize] Instagram retry failed:", err.message);
         }
       }
 
@@ -1570,17 +1947,17 @@ router.post("/profile/batch", async (req, res) => {
               noWarnings: true,
               noCheckCertificates: true,
               ffmpegLocation: ffmpegStaticPath,
-              retries: 2,
-              socketTimeout: 30,
-              addHeaders: { "User-Agent": DESKTOP_UA },
-              concurrentFragments: 16,
-              throttledRate: "50M",
+              retries: 5,
+              socketTimeout: 60,
+              addHeaders: generateHeaders(platform, USER_AGENTS[0]),
+              concurrentFragments: 32,
+              throttledRate: "100M",
             };
 
             const cookies = cookiesFor(platform);
             if (cookies) options.cookies = cookies;
 
-            await runYtDlpWithProgress(url, options, itemJobId, 60000);
+            await runYtDlpWithProgress(url, options, itemJobId, 90000);
 
             let finalPath = outputPath;
             if (!fs.existsSync(finalPath)) {

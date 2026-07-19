@@ -10,8 +10,12 @@ const {
   generatePlainCoverFallback,
   embedAudioTags,
 } = require("../utils/ffmpeg");
-const { recognizeSong, isConfigured: songIdConfigured } = require("../utils/songid");
+const {
+  recognizeSong,
+  isConfigured: songIdConfigured,
+} = require("../utils/songid");
 const { scheduleCleanup } = require("../utils/cleanup");
+const { logEvent } = require("../utils/activityLog");
 
 const router = express.Router();
 
@@ -180,7 +184,11 @@ function convertFriendlyError(err) {
     s.includes("moov atom not found")
   )
     return "This file appears to be corrupt or incomplete.";
-  if (s.includes("could not find codec parameters") || s.includes("unknown codec") || s.includes("decoder not found"))
+  if (
+    s.includes("could not find codec parameters") ||
+    s.includes("unknown codec") ||
+    s.includes("decoder not found")
+  )
     return "This file's codec isn't supported for conversion.";
   if (s.includes("no such file or directory") && s.includes("upload-"))
     return "The uploaded file couldn't be found on the server — please try uploading again.";
@@ -217,6 +225,11 @@ router.post("/video-to-audio", uploadSingle, async (req, res) => {
   const outputPath = path.join(TMP_DIR, `${jobId}.${format}`);
 
   jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
+  logEvent("conversion:started", {
+    jobId,
+    direction: "video-to-audio",
+    format,
+  });
   res.json({ jobId });
 
   try {
@@ -274,8 +287,10 @@ router.post("/video-to-audio", uploadSingle, async (req, res) => {
           tagErr.message || tagErr,
         );
       } finally {
-        if (coverPath && fs.existsSync(coverPath)) fs.unlink(coverPath, () => {});
-        if (taggedPath && fs.existsSync(taggedPath)) fs.unlink(taggedPath, () => {});
+        if (coverPath && fs.existsSync(coverPath))
+          fs.unlink(coverPath, () => {});
+        if (taggedPath && fs.existsSync(taggedPath))
+          fs.unlink(taggedPath, () => {});
       }
     }
 
@@ -287,12 +302,18 @@ router.post("/video-to-audio", uploadSingle, async (req, res) => {
       recognizedTrack,
       finishedAt: Date.now(),
     });
+    logEvent("conversion:done", { jobId, direction: "video-to-audio", format });
   } catch (err) {
     console.error("[convert] video-to-audio failed:", err.message || err);
     jobs.set(jobId, {
       status: "error",
       error: convertFriendlyError(err),
       finishedAt: Date.now(),
+    });
+    logEvent("conversion:error", {
+      jobId,
+      direction: "video-to-audio",
+      error: err.message || String(err),
     });
     if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
   } finally {
@@ -316,6 +337,7 @@ router.post("/audio-to-video", uploadSingle, async (req, res) => {
   const outputPath = path.join(TMP_DIR, `${jobId}.mp4`);
 
   jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
+  logEvent("conversion:started", { jobId, direction: "audio-to-video" });
   res.json({ jobId });
 
   try {
@@ -333,12 +355,18 @@ router.post("/audio-to-video", uploadSingle, async (req, res) => {
       downloadName: "seize-video.mp4",
       finishedAt: Date.now(),
     });
+    logEvent("conversion:done", { jobId, direction: "audio-to-video" });
   } catch (err) {
     console.error("[convert] audio-to-video failed:", err.message || err);
     jobs.set(jobId, {
       status: "error",
       error: convertFriendlyError(err),
       finishedAt: Date.now(),
+    });
+    logEvent("conversion:error", {
+      jobId,
+      direction: "audio-to-video",
+      error: err.message || String(err),
     });
     if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
   } finally {

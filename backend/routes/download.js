@@ -8,6 +8,7 @@ const https = require("https");
 const http = require("http");
 const { execFile } = require("child_process");
 const { scheduleCleanup } = require("../utils/cleanup");
+const { logEvent } = require("../utils/activityLog");
 
 const router = express.Router();
 
@@ -107,8 +108,8 @@ function baseOptions(platform) {
     noWarnings: true,
     noCheckCertificates: true,
     ffmpegLocation: ffmpegStaticPath,
-    retries: 5,
-    socketTimeout: 45,
+    retries: 3,
+    socketTimeout: 30,
     concurrentFragments: 16,
     throttledRate: "50M",
   };
@@ -175,15 +176,6 @@ function getStrategies(platform) {
           cookies: undefined,
           addHeaders: {
             "User-Agent": DESKTOP_UA,
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          },
-        },
-        {
-          ...base,
-          cookies: undefined,
-          addHeaders: {
-            "User-Agent": ANDROID_UA,
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
           },
@@ -663,16 +655,13 @@ function friendlyError(stderr = "") {
     return "TikTok is rate limiting. Wait a moment.";
   }
   if (s.includes("instagram") && s.includes("private")) {
-    return "This Instagram post is private. Try using a public profile or check your cookies.";
+    return "This Instagram post is private.";
   }
   if (s.includes("instagram") && s.includes("not found")) {
-    return "This Instagram profile doesn't exist or was removed.";
+    return "This Instagram post doesn't exist or was removed.";
   }
   if (s.includes("instagram") && s.includes("rate limit")) {
     return "Instagram is rate limiting. Wait a moment.";
-  }
-  if (s.includes("instagram") && s.includes("login")) {
-    return "Instagram requires login. Make sure your cookies are valid.";
   }
   if (
     (s.includes("twitter") && s.includes("private")) ||
@@ -984,17 +973,18 @@ router.post("/resolve", async (req, res) => {
       });
       finalUrl = response.url || url;
     } catch (e) {
-      // whatever, just use the original url
+      // use original
     }
   }
 
   try {
-    console.log(`[seize] resolving ${platform}...`);
+    console.log(`[seize] Resolving ${platform}...`);
     const { info } = await resolveWithStrategies(
       finalUrl,
       platform,
       isUsableInfo,
     );
+
     const media = extractMediaUrls(info);
 
     let title = info.title || info.fulltitle || info.description || "Untitled";
@@ -1023,6 +1013,7 @@ router.post("/resolve", async (req, res) => {
     if (media.hasVideo) contentType = "video";
     else if (media.hasImage) contentType = "image";
     else if (media.audio.length > 0) contentType = "audio";
+
     if (media.isGif) contentType = "video";
 
     let thumbnail = media.thumbnail || "/icons/icon-192.png";
@@ -1052,7 +1043,7 @@ router.post("/resolve", async (req, res) => {
     });
   } catch (err) {
     const stderr = err.stderr || err.message || "";
-    console.error("[resolve] failed:", stderr);
+    console.error("[resolve] Failed:", stderr);
     if (
       stderr.toLowerCase().includes("429") ||
       stderr.toLowerCase().includes("rate limit")
@@ -1078,16 +1069,12 @@ router.post("/fetch", async (req, res) => {
   }
 
   const jobId = uuid();
-  const guessedExt =
-    mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
-  const outputPath = path.join(TMP_DIR, `${jobId}.${guessedExt}`);
+  const ext = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
+  const outputPath = path.join(TMP_DIR, `${jobId}.${ext}`);
 
   jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
+  logEvent("capture:started", { jobId, platform, mode });
   res.json({ jobId });
-
-  function realExtOf(filePath) {
-    return (path.extname(filePath).slice(1) || guessedExt).toLowerCase();
-  }
 
   try {
     if (mode === "image") {
@@ -1104,18 +1091,17 @@ router.post("/fetch", async (req, res) => {
         return bSize - aSize;
       });
       const bestImage = sortedImages[0];
-      const actualExt = (bestImage.format || "jpg").toLowerCase();
-      const realOutputPath = path.join(TMP_DIR, `${jobId}.${actualExt}`);
 
-      await downloadFile(bestImage.url, realOutputPath);
+      await downloadFile(bestImage.url, outputPath);
 
       jobs.set(jobId, {
         status: "done",
         progress: 100,
-        outputPath: realOutputPath,
-        downloadName: `seize-${platform}-image.${actualExt}`,
+        outputPath,
+        downloadName: `seize-${platform}-image.${bestImage.format || "jpg"}`,
         finishedAt: Date.now(),
       });
+      logEvent("capture:done", { jobId, platform, mode });
       return;
     }
 
@@ -1194,23 +1180,23 @@ router.post("/fetch", async (req, res) => {
       throw new Error("Output file not produced.");
     }
 
-    const actualExt = realExtOf(finalPath);
-
     jobs.set(jobId, {
       status: "done",
       progress: 100,
       outputPath: finalPath,
-      downloadName: `seize-${platform}-${mode}.${actualExt}`,
+      downloadName: `seize-${platform}-${mode}.${ext}`,
       finishedAt: Date.now(),
     });
+    logEvent("capture:done", { jobId, platform, mode });
   } catch (err) {
     const stderr = err.stderr || err.message || "";
-    console.error("[fetch] failed:", stderr);
+    console.error("[fetch] Failed:", stderr);
     jobs.set(jobId, {
       status: "error",
       error: friendlyError(stderr),
       finishedAt: Date.now(),
     });
+    logEvent("capture:error", { jobId, platform, mode, error: stderr });
     if (fs.existsSync(outputPath)) {
       fs.unlink(outputPath, () => {});
     }
@@ -1223,12 +1209,7 @@ router.post("/fetch", async (req, res) => {
 router.get("/status/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ error: "Job not found" });
-  res.json({
-    status: job.status,
-    progress: job.progress,
-    error: job.error,
-    downloadName: job.downloadName || null,
-  });
+  res.json({ status: job.status, progress: job.progress, error: job.error });
 });
 
 // ============================================================
@@ -1247,7 +1228,7 @@ router.get("/file/:jobId", (req, res) => {
 });
 
 // ============================================================
-// CREATOR ARCHIVE - FIXED for all platforms
+// CREATOR ARCHIVE - FIXED with correct yt-dlp syntax
 // ============================================================
 router.post("/profile", async (req, res) => {
   const { url, platform, limit = 50, mode = "all" } = req.body;
@@ -1278,6 +1259,7 @@ router.post("/profile", async (req, res) => {
     createdAt: Date.now(),
   });
 
+  // Process in background
   (async () => {
     try {
       console.log(`[seize] Scanning profile from ${detectedPlatform}: ${url}`);
@@ -1285,13 +1267,14 @@ router.post("/profile", async (req, res) => {
       let items = [];
       const maxItems = Math.min(limit, 100);
 
+      // Base options for all platforms
       const baseOpts = {
         dumpSingleJson: true,
         noWarnings: true,
         noCheckCertificates: true,
         ffmpegLocation: ffmpegStaticPath,
-        retries: 5,
-        socketTimeout: 45,
+        retries: 3,
+        socketTimeout: 30,
         skipDownload: true,
       };
 
@@ -1300,10 +1283,11 @@ router.post("/profile", async (req, res) => {
 
       let info = null;
 
-      // Platform-specific extraction with better bypass
+      // Platform-specific extraction
       if (detectedPlatform === "tiktok") {
         const opts = {
           ...baseOpts,
+          // CORRECT SYNTAX: "1:10" means items 1 through 10
           playlistItems: `1:${maxItems}`,
           extractorArgs: "tiktok:device_id=auto",
           addHeaders: {
@@ -1312,15 +1296,8 @@ router.post("/profile", async (req, res) => {
             Referer: "https://www.tiktok.com/",
           },
         };
-        info = await ytDlp(url, opts, { timeout: 60000 });
+        info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "instagram") {
-        // Instagram needs careful handling - try multiple approaches
-        let instaUrl = url;
-        // Clean up Instagram URL - remove query params that might cause issues
-        instaUrl = instaUrl.split("?")[0];
-        // Ensure it ends with / for proper playlist extraction
-        if (!instaUrl.endsWith("/")) instaUrl += "/";
-
         const opts = {
           ...baseOpts,
           playlistItems: `1:${maxItems}`,
@@ -1329,28 +1306,9 @@ router.post("/profile", async (req, res) => {
             "User-Agent": DESKTOP_UA,
             Accept:
               "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
           },
         };
-
-        try {
-          info = await ytDlp(instaUrl, opts, { timeout: 60000 });
-        } catch (firstErr) {
-          console.log(
-            "[seize] Instagram first attempt failed, trying with mobile UA...",
-          );
-          // Try with mobile user agent
-          const mobileOpts = {
-            ...opts,
-            addHeaders: {
-              "User-Agent": ANDROID_UA,
-              Accept:
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-              "Accept-Language": "en-US,en;q=0.9",
-            },
-          };
-          info = await ytDlp(instaUrl, mobileOpts, { timeout: 60000 });
-        }
+        info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "twitter") {
         const opts = {
           ...baseOpts,
@@ -1361,9 +1319,14 @@ router.post("/profile", async (req, res) => {
             Accept: "application/json, text/plain, */*",
           },
         };
-        info = await ytDlp(url, opts, { timeout: 60000 });
+        info = await ytDlp(url, opts, { timeout: 45000 });
       } else if (detectedPlatform === "pinterest") {
         let pinterestUrl = url;
+        // Only a bare profile URL (pinterest.com/username/, nothing more)
+        // benefits from /pins/ appended, to reach the user's own pins
+        // feed. A board URL (pinterest.com/username/boardname/) already
+        // points at exactly the pins we want — appending /pins/ to THAT
+        // produces an invalid path and was silently breaking board scans.
         const pathSegments = new URL(url).pathname.split("/").filter(Boolean);
         const looksLikeBareProfile = pathSegments.length === 1;
         if (
@@ -1376,6 +1339,10 @@ router.post("/profile", async (req, res) => {
 
         const opts = {
           ...baseOpts,
+          // No extractorArgs here — "generic" isn't valid extractor-args
+          // syntax (yt-dlp expects "extractorName:key=value") and doesn't
+          // actually force the generic extractor. Pinterest has its own
+          // dedicated yt-dlp extractor; let it handle the URL directly.
           addHeaders: {
             "User-Agent": DESKTOP_UA,
             Accept:
@@ -1384,7 +1351,7 @@ router.post("/profile", async (req, res) => {
             "Cache-Control": "no-cache",
           },
         };
-        info = await ytDlp(pinterestUrl, opts, { timeout: 60000 });
+        info = await ytDlp(pinterestUrl, opts, { timeout: 45000 });
       }
 
       // Process results
@@ -1437,95 +1404,6 @@ router.post("/profile", async (req, res) => {
           if (mode === "images" && !item.hasImage) continue;
           if (mode === "all" || item.hasVideo || item.hasImage) {
             items.push(item);
-          }
-        }
-      }
-
-      // If we got no items but the platform is Instagram, try an alternative approach
-      if (items.length === 0 && detectedPlatform === "instagram") {
-        console.log(
-          "[seize] Instagram returned no items, trying alternative approach...",
-        );
-        // Try with just the username
-        const usernameMatch = url.match(/instagram\.com\/([^\/?]+)/);
-        if (usernameMatch) {
-          const username = usernameMatch[1];
-          const altUrl = `https://www.instagram.com/${username}/`;
-          try {
-            const opts = {
-              ...baseOpts,
-              playlistItems: `1:${maxItems}`,
-              extractorArgs: "instagram:include_ads=false",
-              addHeaders: {
-                "User-Agent": DESKTOP_UA,
-                Accept:
-                  "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-              },
-            };
-            const altInfo = await ytDlp(altUrl, opts, { timeout: 45000 });
-            if (altInfo) {
-              const altEntries = Array.isArray(altInfo.entries)
-                ? altInfo.entries
-                : [altInfo];
-              for (const entry of altEntries) {
-                if (!entry || items.length >= maxItems) continue;
-                const hasVideo = !!(
-                  entry.formats?.some((f) => f.vcodec && f.vcodec !== "none") ||
-                  entry.ext === "mp4" ||
-                  entry.ext === "mov" ||
-                  entry.ext === "webm"
-                );
-                const hasImage = !!(
-                  entry.formats?.some(
-                    (f) =>
-                      f.ext && ["jpg", "jpeg", "png", "webp"].includes(f.ext),
-                  ) ||
-                  entry.ext === "jpg" ||
-                  entry.ext === "jpeg" ||
-                  entry.ext === "png" ||
-                  entry.ext === "webp"
-                );
-                let thumbnail = entry.thumbnail || null;
-                if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
-                  const largest = [...entry.thumbnails].sort(
-                    (a, b) => (b.width || 0) - (a.width || 0),
-                  )[0];
-                  thumbnail = largest?.url || null;
-                }
-                const item = {
-                  id: entry.id || entry.webpage_url || `item-${Date.now()}`,
-                  title: entry.title || entry.fulltitle || "Untitled",
-                  url: entry.webpage_url || entry.url || null,
-                  thumbnail: thumbnail,
-                  duration: entry.duration || null,
-                  hasVideo: hasVideo,
-                  hasImage: hasImage || (!hasVideo && !!thumbnail),
-                  contentType: hasVideo
-                    ? "video"
-                    : hasImage
-                      ? "image"
-                      : "unknown",
-                  uploader:
-                    altInfo.uploader ||
-                    altInfo.channel ||
-                    altInfo.author ||
-                    null,
-                  viewCount: entry.view_count || entry.views || null,
-                  likeCount: entry.like_count || entry.likes || null,
-                  timestamp: entry.timestamp || entry.upload_date || null,
-                };
-                if (mode === "videos" && !item.hasVideo) continue;
-                if (mode === "images" && !item.hasImage) continue;
-                if (mode === "all" || item.hasVideo || item.hasImage) {
-                  items.push(item);
-                }
-              }
-            }
-          } catch (altErr) {
-            console.log(
-              "[seize] Alternative Instagram approach failed:",
-              altErr.message,
-            );
           }
         }
       }

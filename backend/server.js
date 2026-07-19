@@ -13,9 +13,11 @@ const convertRoutes = require("./routes/convert");
 const downloadRoutes = require("./routes/download");
 const authRoutes = require("./routes/auth");
 const collectionsRoutes = require("./routes/collections");
+const adminRoutes = require("./routes/admin");
 
 // ===== Middleware =====
 const { trackUser, adminRateLimit } = require("./utils/middleware");
+const { requestLoggerMiddleware } = require("./utils/activityLog");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -100,6 +102,11 @@ app.use(
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 // ============================================================
+// REQUEST LOGGER (for admin dashboard)
+// ============================================================
+app.use(requestLoggerMiddleware);
+
+// ============================================================
 // BODY PARSERS
 // ============================================================
 app.use(express.json({ limit: "10mb" }));
@@ -150,6 +157,11 @@ app.get("/api/status", (req, res) => {
 // AUTH ROUTES
 // ============================================================
 app.use("/api/auth", authRoutes);
+
+// ============================================================
+// ADMIN ROUTES
+// ============================================================
+app.use("/api/admin", adminRoutes);
 
 // ============================================================
 // MAIN APP ROUTES
@@ -218,6 +230,9 @@ const server = app.listen(PORT, () => {
   console.log("=".repeat(60));
   console.log("📱 Main App:      http://localhost:" + PORT);
   console.log("🔗 API Base:      http://localhost:" + PORT + "/api");
+  console.log(
+    "📊 Admin:         http://localhost:" + PORT + "/admin-login.html",
+  );
   console.log("=".repeat(60) + "\n");
 });
 

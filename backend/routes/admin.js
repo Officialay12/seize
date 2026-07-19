@@ -46,13 +46,10 @@ const TMP_DIR = path.join(__dirname, "..", "tmp");
 
 // ============================================================
 // OPTIONAL IP ALLOWLIST
-// set ADMIN_ALLOWED_IPS="1.2.3.4,5.6.7.8" in your env to restrict
-// who can even hit these routes. leave it unset and this is a no-op
-// (just requireAdmin below still applies).
 // ============================================================
 function ipAllowlist(req, res, next) {
   const raw = process.env.ADMIN_ALLOWED_IPS;
-  if (!raw) return next(); // not configured, don't block anyone
+  if (!raw) return next();
   const allowed = raw
     .split(",")
     .map((s) => s.trim())
@@ -67,11 +64,7 @@ function ipAllowlist(req, res, next) {
 
 router.use(ipAllowlist);
 
-// EventSource (used by /live) can't set an Authorization header, so
-// for that one route specifically we accept ?token= and splice it
-// into the header before requireAdmin runs. every other route still
-// requires a real Bearer header — this isn't a general auth bypass,
-// just a workaround for a real browser API limitation.
+// EventSource (used by /live) can't set an Authorization header
 router.use((req, res, next) => {
   if (req.path === "/live" && req.query.token && !req.headers.authorization) {
     req.headers.authorization = `Bearer ${req.query.token}`;
@@ -133,14 +126,33 @@ router.get("/stats", (req, res) => {
   });
 });
 
-router.get("/platforms", (req, res) =>
-  res.json({ platforms: getPlatformBreakdown() }),
-);
-router.get("/platforms/health", (req, res) =>
-  res.json({ platforms: getPlatformHealth() }),
-);
-router.get("/heatmap", (req, res) => res.json({ heatmap: getHeatmap() }));
-router.get("/breakdowns", (req, res) => res.json(getBreakdowns()));
+// ============================================================
+// GET /api/admin/platforms
+// ============================================================
+router.get("/platforms", (req, res) => {
+  res.json({ platforms: getPlatformBreakdown() });
+});
+
+// ============================================================
+// GET /api/admin/platforms/health
+// ============================================================
+router.get("/platforms/health", (req, res) => {
+  res.json({ platforms: getPlatformHealth() });
+});
+
+// ============================================================
+// GET /api/admin/heatmap
+// ============================================================
+router.get("/heatmap", (req, res) => {
+  res.json({ heatmap: getHeatmap() });
+});
+
+// ============================================================
+// GET /api/admin/breakdowns
+// ============================================================
+router.get("/breakdowns", (req, res) => {
+  res.json(getBreakdowns());
+});
 
 // ============================================================
 // GET /api/admin/health
@@ -174,8 +186,7 @@ router.get("/health", (req, res) => {
 });
 
 // ============================================================
-// GET /api/admin/activity — quick recent feed (kept for compat
-// with the simpler dashboard view)
+// GET /api/admin/activity — quick recent feed
 // ============================================================
 router.get("/activity", (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 500);
@@ -183,8 +194,7 @@ router.get("/activity", (req, res) => {
 });
 
 // ============================================================
-// GET /api/admin/logs — the real filter/search/export endpoint
-// query params: type, q, from, to, limit, format=json|csv
+// GET /api/admin/logs — filter/search/export
 // ============================================================
 router.get("/logs", (req, res) => {
   const { type, q, from, to, format } = req.query;
@@ -212,9 +222,6 @@ router.get("/logs", (req, res) => {
 
 // ============================================================
 // GET /api/admin/live — Server-Sent Events stream
-// no new dependency, no socket.io — SSE is just a long-lived
-// http response the client reads with EventSource. one-way
-// (server -> client), which is all a live dashboard needs.
 // ============================================================
 router.get("/live", (req, res) => {
   res.writeHead(200, {
@@ -228,8 +235,6 @@ router.get("/live", (req, res) => {
 
   addSseClient(res);
 
-  // heartbeat so proxies/load balancers don't quietly kill an idle
-  // connection thinking it's dead
   const heartbeat = setInterval(() => {
     try {
       res.write(": ping\n\n");
@@ -252,7 +257,9 @@ router.get("/login-history", (req, res) => {
   res.json({ history: getLoginHistory(limit) });
 });
 
-router.get("/sessions", (req, res) => res.json({ sessions: getSessions() }));
+router.get("/sessions", (req, res) => {
+  res.json({ sessions: getSessions() });
+});
 
 router.post("/sessions/:jti/revoke", (req, res) => {
   const ok = revokeSession(req.params.jti);
@@ -301,9 +308,6 @@ router.post("/actions/cleanup-temp", (req, res) => {
   res.json({ message: `Removed ${removed} file(s).`, removed, skipped });
 });
 
-// triggers the same self-update check download.js already runs on a
-// timer — this just lets you fire it on demand instead of waiting
-// for the next 6hr cycle.
 router.post("/actions/update-ytdlp", (req, res) => {
   const ytDlpExec = require("yt-dlp-exec");
   const bin =
@@ -328,11 +332,6 @@ router.post("/actions/update-ytdlp", (req, res) => {
   });
 });
 
-// there's no server-side "cache" beyond the browser service worker's
-// caches, which live on each user's device — a server endpoint can't
-// reach into those. what this DOES do: bump a version marker the
-// frontend can check to force its own SW to skip-waiting + reclaim.
-// see the accompanying note for the two-line sw.js/app.js hook.
 let cacheBustVersion = Date.now();
 router.post("/actions/clear-cache", (req, res) => {
   cacheBustVersion = Date.now();
@@ -341,23 +340,19 @@ router.post("/actions/clear-cache", (req, res) => {
     version: cacheBustVersion,
   });
   res.json({
-    message:
-      "Cache-bust version updated — clients will refresh their SW on next load.",
+    message: "Cache-bust version updated.",
     version: cacheBustVersion,
   });
 });
-router.get("/cache-version", (req, res) =>
-  res.json({ version: cacheBustVersion }),
-);
 
-// restarts the process. only makes sense on a host that auto-restarts
-// crashed/exited processes (Render, most PaaS, pm2, systemd with
-// Restart=always). on plain `node server.js` with no supervisor, this
-// just kills the server and nothing brings it back.
+router.get("/cache-version", (req, res) => {
+  res.json({ version: cacheBustVersion });
+});
+
 router.post("/actions/restart-server", (req, res) => {
   logEvent("admin:restart-server", { by: req.admin?.sub });
   res.json({ message: "Restarting…" });
-  setTimeout(() => process.exit(1), 300); // give the response time to flush
+  setTimeout(() => process.exit(1), 300);
 });
 
 router.get("/export", (req, res) => {

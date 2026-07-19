@@ -1,9 +1,8 @@
 const geoip = require("geoip-lite");
-const { parseUserAgent } = require("./parseUserAgent"); // Fixed: was "./uaParse"
+const { parseUserAgent } = require("./parseUserAgent");
 
 // ============================================================
-// still in-memory, still dies on restart. this is "what's
-// happening right now" tooling, not a data warehouse.
+// IN-MEMORY STORE — resets on server restart
 // ============================================================
 
 const MAX_EVENTS = 2000;
@@ -20,7 +19,7 @@ const MAX_TRACKED_IPS = 5000;
 const ipsAllTime = new Set();
 const ipsByDay = new Map();
 
-// hour-of-day x day-of-week usage grid, for the heatmap
+// hour-of-day x day-of-week usage grid
 const heatmap = Array.from({ length: 7 }, () => Array(24).fill(0));
 
 const deviceCounts = {};
@@ -31,13 +30,9 @@ const geoCounts = {};
 const MAX_LOGIN_HISTORY = 300;
 const loginHistory = [];
 
-// active sessions
 const sessions = new Map();
-
-// SSE subscribers
 const sseClients = new Set();
 
-// alert thresholds
 const alertConfig = {
   errorRatePct: 25,
   errorRateWindow: 20,
@@ -103,7 +98,7 @@ function recordRequest(ip, userAgent = "") {
       if (geo?.country)
         geoCounts[geo.country] = (geoCounts[geo.country] || 0) + 1;
     } catch {
-      // bad/local ip, skip
+      // skip
     }
   }
 
@@ -124,16 +119,15 @@ function recordRequest(ip, userAgent = "") {
 }
 
 function requestLoggerMiddleware(req, res, next) {
-  recordRequest(
-    req.ip || req.connection?.remoteAddress || "unknown",
-    req.headers["user-agent"],
-  );
+  const ip =
+    req.ip ||
+    req.connection?.remoteAddress ||
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
+    "unknown";
+  recordRequest(ip, req.headers["user-agent"]);
   next();
 }
 
-// ============================================================
-// ALERTS
-// ============================================================
 function checkAlerts() {
   const recent = events.slice(0, alertConfig.errorRateWindow);
   const relevant = recent.filter(
@@ -166,9 +160,6 @@ function checkMemoryAlert(usedPct) {
   lastAlertCheck.memoryHigh = high;
 }
 
-// ============================================================
-// LOGIN HISTORY + SESSIONS
-// ============================================================
 function recordLogin({ username, ip, userAgent, success }) {
   const entry = { username, ip, userAgent, success, timestamp: Date.now() };
   loginHistory.unshift(entry);
@@ -193,6 +184,7 @@ function registerSession(jti, { sub, ip, userAgent }) {
     issuedAt: Date.now(),
     revoked: false,
   });
+  logEvent("session:created", { sub, ip });
 }
 
 function isSessionRevoked(jti) {
@@ -212,9 +204,6 @@ function getSessions() {
   return [...sessions.entries()].map(([jti, s]) => ({ jti, ...s }));
 }
 
-// ============================================================
-// READ HELPERS
-// ============================================================
 function getRecentEvents(limit = 50) {
   return events.slice(0, limit);
 }

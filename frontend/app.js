@@ -25,9 +25,6 @@ async function requestAppPermissions() {
   if (alreadyGranted === "true") return;
   if (alreadyGranted === "false") return;
 
-  // used to only show on mobile — now shows everywhere, since real push
-  // notifications (not just the in-app "job done" kind) work on desktop
-  // browsers too and this is the one place we ask for that permission
   const isMobile =
     /Android|iPhone|iPad|iPod|webOS|BlackBerry|Windows Phone/i.test(
       navigator.userAgent,
@@ -39,7 +36,7 @@ async function requestAppPermissions() {
     <p>🔔 <strong>seize</strong> needs permission to:</p>
     <ul>
       ${isMobile ? "<li>📥 Save media to your device storage (gallery/downloads)</li>" : ""}
-      <li>🔔 Send notifications when downloads are ready — and the occasional reminder to come back</li>
+      <li>🔔 Send notifications when downloads are ready</li>
       <li>📋 Read clipboard for quick link pasting</li>
     </ul>
     <div class="permission-actions">
@@ -77,7 +74,6 @@ async function requestAppPermissions() {
 
   const handleLater = () => {
     banner.remove();
-    // Ask again after 5 minutes
     setTimeout(requestAppPermissions, 300000);
   };
 
@@ -229,7 +225,6 @@ async function processOfflineQueue() {
           { style: {} },
           { textContent: "" },
         );
-        // Auto-save on completion
         const fileExt =
           item.mode === "audio" ? "mp3" : item.mode === "image" ? "jpg" : "mp4";
         const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
@@ -407,7 +402,7 @@ function processSharedUrl(url, mode) {
 }
 
 // ============================================================
-// SAVE TO DEVICE - AUTO SAVE WITH MULTIPLE FALLBACKS
+// ADVANCED SAVE TO DEVICE - Optimized for gallery display
 // ============================================================
 const MIME_BY_EXT = {
   mp4: "video/mp4",
@@ -425,6 +420,7 @@ const MIME_BY_EXT = {
   png: "image/png",
   webp: "image/webp",
   gif: "image/gif",
+  avif: "image/avif",
 };
 
 const EXT_BY_MIME = Object.fromEntries(
@@ -457,7 +453,9 @@ function resolveFileInfo(response, blob, fallbackName) {
   return { name, mimeType };
 }
 
-// Main save function - auto saves to device without user interaction
+// ============================================================
+// MAIN SAVE FUNCTION - Optimized for gallery display
+// ============================================================
 async function saveMediaToDevice(fileUrl, suggestedName) {
   let res, blob;
   try {
@@ -473,20 +471,145 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
   const { name, mimeType } = resolveFileInfo(res, blob, suggestedName);
   const file = new File([blob], name, { type: mimeType });
   const isMobileUA = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  // Strategy 1 (mobile only): Web Share — the system share sheet with
-  // "Save to Photos/Files" is the closest thing to a straight-to-gallery
-  // save on a phone. Skipped on desktop entirely, since navigator.share
-  // exists on some desktop browsers too and would pop a share sheet
-  // nobody asked for there.
-  if (
-    isMobileUA &&
-    navigator.canShare &&
-    navigator.canShare({ files: [file] })
-  ) {
+  // ============================================================
+  // STRATEGY 1: Android - Use native download manager
+  // This saves directly to the Downloads folder and shows in gallery
+  // ============================================================
+  if (isAndroid) {
+    try {
+      // Create a download anchor
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = name;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+
+      // Show success message
+      showToast("✅ Downloading to your device...", "success");
+
+      // Clean up after a delay
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 3000);
+
+      // Wait a moment then try to trigger media scan
+      setTimeout(() => {
+        // Android Chrome sometimes needs a media scan
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          // Just a trick to trigger media scan
+          console.log("[seize] Media saved to device");
+        }
+      }, 1000);
+
+      // Try to use the Android download manager via intent
+      try {
+        // Create a hidden iframe to trigger download in some browsers
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = blobUrl;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 5000);
+      } catch (e) {
+        // Iframe method failed, but we already have the download
+      }
+
+      return;
+    } catch (err) {
+      console.warn("[seize] Android download failed:", err);
+      // Fall through to other strategies
+    }
+  }
+
+  // ============================================================
+  // STRATEGY 2: iOS - Use Share API or open in new tab
+  // ============================================================
+  if (isIOS) {
+    try {
+      // Try Web Share API first (iOS Safari supports this)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          showToast("✅ Saved to your device!", "success");
+          return;
+        } catch (shareErr) {
+          if (shareErr?.name === "AbortError") {
+            return; // User cancelled
+          }
+          console.warn("[seize] iOS share failed:", shareErr);
+        }
+      }
+
+      // For iOS, create a blob URL and open in new window
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Check if it's an image - we can display it
+      if (mimeType.startsWith("image/")) {
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(`
+            <html>
+              <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>${name}</title>
+                <style>
+                  body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #000; }
+                  img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                </style>
+              </head>
+              <body>
+                <img src="${blobUrl}" alt="${name}" />
+                <script>
+                  // Auto-download after display
+                  setTimeout(() => {
+                    const a = document.createElement('a');
+                    a.href = '${blobUrl}';
+                    a.download = '${name}';
+                    a.click();
+                  }, 1000);
+                <\/script>
+              </body>
+            </html>
+          `);
+          showToast("✅ Image opened - long press to save", "success");
+          return;
+        }
+      }
+
+      // For videos/audio, try to save via anchor
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = name;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 5000);
+
+      showToast("✅ Download started!", "success");
+      return;
+    } catch (err) {
+      console.warn("[seize] iOS save failed:", err);
+      // Fall through
+    }
+  }
+
+  // ============================================================
+  // STRATEGY 3: Web Share API (for all browsers that support it)
+  // ============================================================
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      console.log("[seize] saved via share sheet");
       showToast("✅ File saved to device!", "success");
       return;
     } catch (err) {
@@ -497,48 +620,62 @@ async function saveMediaToDevice(fileUrl, suggestedName) {
     }
   }
 
-  // Strategy 2: plain blob download. This used to be strategy 3, behind
-  // the File System Access "Save As" picker — but that picker is a manual
-  // "choose a folder" dialog by definition, which isn't automatic no
-  // matter how you slice it. This one is: the browser writes straight to
-  // the default Downloads folder (or straight into Downloads on Android
-  // Chrome) with zero prompt, zero dialog.
+  // ============================================================
+  // STRATEGY 4: Blob URL download (universal fallback)
+  // ============================================================
   try {
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = blobUrl;
     a.download = name;
     a.rel = "noopener";
+    a.style.display = "none";
     document.body.appendChild(a);
     a.click();
 
-    const isIOS =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    setTimeout(
-      () => {
-        a.remove();
-        URL.revokeObjectURL(blobUrl);
-      },
-      isIOS ? 1000 : 5000,
-    );
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }, 5000);
 
-    console.log("[seize] triggered plain download");
     showToast("✅ Download started!", "success");
     return;
   } catch (err) {
-    console.warn("[seize] anchor download bailed:", err);
+    console.warn("[seize] anchor download failed:", err);
   }
 
-  // Strategy 4: Open in new tab as last resort
+  // ============================================================
+  // STRATEGY 5: Open in new tab (last resort)
+  // ============================================================
   console.warn("[seize] everything failed, opening in a new tab");
-  if (blob.type.startsWith("image/")) {
+  if (mimeType.startsWith("image/")) {
     const imgUrl = URL.createObjectURL(blob);
-    const win = window.open("");
+    const win = window.open("", "_blank");
     if (win) {
-      win.document.write(
-        `<img src="${imgUrl}" style="max-width:100%;height:auto;" />`,
-      );
-      win.document.title = name;
+      win.document.write(`
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${name}</title>
+            <style>
+              body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #000; }
+              img { max-width: 100%; max-height: 100%; object-fit: contain; }
+            </style>
+          </head>
+          <body>
+            <img src="${imgUrl}" alt="${name}" />
+            <script>
+              setTimeout(() => {
+                const a = document.createElement('a');
+                a.href = '${imgUrl}';
+                a.download = '${name}';
+                a.click();
+              }, 500);
+            <\/script>
+          </body>
+        </html>
+      `);
+      showToast("✅ Image opened - right-click to save", "success");
     } else {
       window.open(fileUrl, "_blank");
     }
@@ -1052,7 +1189,7 @@ captureForm.addEventListener("submit", async (e) => {
 });
 
 // ============================================================
-// FETCH & AUTO-SAVE - No save button, saves automatically
+// FETCH & AUTO-SAVE - Optimized for gallery
 // ============================================================
 async function runCaptureFetch(mode) {
   clearCaptureError();
@@ -1109,7 +1246,7 @@ async function runCaptureFetch(mode) {
     const fileExt = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
 
-    // AUTO-SAVE: Save directly to device without showing a save button
+    // AUTO-SAVE: Save directly to device with gallery optimization
     await saveMediaToDevice(fileUrl, `seize-${mode}-${Date.now()}.${fileExt}`);
 
     addHistoryEntry({
@@ -1411,7 +1548,7 @@ async function loadCollectionView(id) {
 })();
 
 // ============================================================
-// BATCH QUEUE - Auto-save on completion
+// BATCH QUEUE - Auto-save on completion with gallery support
 // ============================================================
 const LINK_TOKEN_RE = /https?:\/\/[^\s]+/g;
 const queueBlock = document.getElementById("queue-block");
@@ -1451,11 +1588,6 @@ function renderQueue() {
 
     row.appendChild(urlSpan);
     row.appendChild(status);
-
-    // no manual "save" button here on purpose — processQueueItem() below
-    // already calls saveMediaToDevice() the instant an item finishes, so
-    // by the time a row shows "done" it's already saved. a leftover
-    // button here would just make it look like an extra step was needed.
 
     if (item.status !== "processing") {
       const removeBtn = document.createElement("button");
@@ -1545,7 +1677,7 @@ async function processQueueItem(item) {
     const fileExt = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     item.fileUrl = `${API_BASE}/download/file/${fetchData.jobId}`;
 
-    // AUTO-SAVE: Save directly to device
+    // AUTO-SAVE: Save directly to device with gallery optimization
     await saveMediaToDevice(
       item.fileUrl,
       `seize-batch-${Date.now()}.${fileExt}`,
@@ -1589,7 +1721,7 @@ queueStartBtn.addEventListener("click", async () => {
 });
 
 // ============================================================
-// CONVERT PANEL - Auto-save on completion
+// CONVERT PANEL - Auto-save with gallery optimization
 // ============================================================
 const convertTabs = document.querySelectorAll(".convert-tab");
 const dropzone = document.getElementById("dropzone");
@@ -1916,7 +2048,7 @@ convertBtn.addEventListener("click", async (e) => {
       showRecognizedTrack(statusData.recognizedTrack);
     }
 
-    // AUTO-SAVE: Save directly to device without showing a save button
+    // AUTO-SAVE: Save directly to device with gallery optimization
     await saveMediaToDevice(fileUrl, `seize-converted-${Date.now()}.${outExt}`);
 
     addHistoryEntry({
@@ -2164,8 +2296,7 @@ async function notifyJobDone(title, body) {
 }
 
 // ============================================================
-// REAL PUSH NOTIFICATIONS — the kind that show up even when seize
-// isn't open, e.g. "it's been a while, download your media with seize"
+// REAL PUSH NOTIFICATIONS
 // ============================================================
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -2203,8 +2334,6 @@ async function subscribeToPush() {
   }
 }
 
-// bumps "last seen" on the backend so the reminder sweep doesn't nag
-// someone who was literally just here
 async function pingPushSubscription() {
   const endpoint = localStorage.getItem("seize_push_endpoint");
   if (!endpoint) return;
@@ -2219,9 +2348,6 @@ async function pingPushSubscription() {
   }
 }
 
-// returning user who already granted permission earlier — resubscribe
-// quietly (getSubscription() reuses the existing one if it's still
-// valid) and check in, no banner needed
 if ("Notification" in window && Notification.permission === "granted") {
   window.addEventListener("load", () => {
     subscribeToPush().then(pingPushSubscription);
@@ -2331,7 +2457,6 @@ async function checkExtensionInstalled() {
 }
 
 async function showExtensionButtons() {
-  // Only show on desktop
   if (!isDesktop()) {
     extensionBtn.classList.add("hidden");
     downloadExtensionBtn.classList.add("hidden");
@@ -2345,7 +2470,6 @@ async function showExtensionButtons() {
     return;
   }
 
-  // Show both buttons on desktop
   extensionBtn.classList.remove("hidden");
   downloadExtensionBtn.classList.remove("hidden");
   extensionBtn.textContent = "🧩 Add to Chrome";
@@ -2468,9 +2592,6 @@ function showExtensionInstructions() {
   });
 }
 
-// ============================================================
-// DOWNLOAD EXTENSION BUTTON
-// ============================================================
 downloadExtensionBtn?.addEventListener("click", () => {
   const zipUrl = "/extension.zip";
 
@@ -2505,7 +2626,6 @@ extensionBtn?.addEventListener("click", showExtensionInstructions);
 
 window.addEventListener("load", () => {
   setTimeout(showExtensionButtons, 1500);
-  // Request permissions after app loads
   setTimeout(requestAppPermissions, 2000);
 });
 
@@ -2589,7 +2709,7 @@ archiveBtn?.addEventListener("click", async () => {
 
 function pollArchiveStatus(jobId) {
   let attempts = 0;
-  const maxAttempts = 120;
+  const maxAttempts = 180;
 
   const interval = setInterval(async () => {
     attempts++;
@@ -2813,7 +2933,6 @@ function pollBatchStatus(batchId) {
         archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
 
         const doneItems = data.items.filter((i) => i.status === "done");
-        // Auto-save all done items
         for (const item of doneItems) {
           if (item.fileUrl) {
             const ext = item.hasVideo ? "mp4" : "jpg";

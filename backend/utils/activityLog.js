@@ -7,7 +7,7 @@ const { loadStore, scheduleSave, flushSave } = require("./persistence");
 // ============================================================
 
 const MAX_EVENTS = 2000;
-const events = [];
+let events = [];
 
 const counters = {
   conversions: { started: 0, done: 0, error: 0 },
@@ -85,7 +85,7 @@ function hydrateFromDisk() {
       for (const [jti, s] of saved.sessions) sessions.set(jti, s);
     }
     if (Array.isArray(saved.recentEvents)) {
-      events.push(...saved.recentEvents.slice(0, MAX_EVENTS));
+      events = saved.recentEvents.slice(0, MAX_EVENTS);
     }
     console.log(`[activityLog] Restored from disk (${events.length} events)`);
   } catch (err) {
@@ -154,7 +154,7 @@ function removeSseClient(res) {
 }
 
 // ============================================================
-// LOG EVENT — THIS IS THE FIXED VERSION
+// LOG EVENT — FIXED VERSION
 // ============================================================
 function logEvent(type, detail = {}) {
   // Create the event
@@ -164,7 +164,9 @@ function logEvent(type, detail = {}) {
   events.unshift(event);
 
   // Keep only MAX_EVENTS
-  if (events.length > MAX_EVENTS) events.length = MAX_EVENTS;
+  if (events.length > MAX_EVENTS) {
+    events = events.slice(0, MAX_EVENTS);
+  }
 
   // Update counters
   const [category, stage] = type.split(":");
@@ -419,7 +421,7 @@ function getBreakdowns() {
 
 function clearLogs() {
   const removed = events.length;
-  events.length = 0;
+  events = [];
   persistNow();
   return { removedEvents: removed };
 }

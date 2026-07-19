@@ -7,17 +7,21 @@
     <title>seize — admin dashboard</title>
     <link rel="stylesheet" href="style.css" />
     <style>
-        body {
-            margin: 0;
-            padding: 24px;
-            background: #0B0D0C;
-            color: #E8EDE9;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        /* ===== BASE ===== */
+        * {
+            box-sizing: border-box;
         }
 
-        /* ============================================================
-           HEADER
-        ============================================================ */
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #0B0D0C;
+            color: #E8EDE9;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+        }
+
+        /* ===== HEADER ===== */
         .admin-header {
             display: flex;
             align-items: center;
@@ -72,9 +76,7 @@
             color: #7FFFB0;
         }
 
-        /* ============================================================
-           TABS
-        ============================================================ */
+        /* ===== TABS ===== */
         .tabs {
             display: flex;
             gap: 4px;
@@ -125,9 +127,7 @@
             }
         }
 
-        /* ============================================================
-           CARDS
-        ============================================================ */
+        /* ===== CARDS ===== */
         .section-label {
             font-size: 0.7rem;
             color: #8A928C;
@@ -193,31 +193,7 @@
             margin-top: 4px;
         }
 
-        .card.status-ok .value {
-            color: #7FFFB0;
-        }
-
-        .card.status-bad .value {
-            color: #FF6B6B;
-        }
-
-        .card.pulse {
-            animation: cardPulse 0.6s ease;
-        }
-
-        @keyframes cardPulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(127, 255, 176, 0.4);
-            }
-
-            100% {
-                box-shadow: 0 0 0 8px rgba(127, 255, 176, 0);
-            }
-        }
-
-        /* ============================================================
-           PANELS
-        ============================================================ */
+        /* ===== PANELS ===== */
         .two-col {
             display: grid;
             grid-template-columns: 1.3fr 1fr;
@@ -256,9 +232,7 @@
             margin-left: 8px;
         }
 
-        /* ============================================================
-           ACTIVITY ROWS
-        ============================================================ */
+        /* ===== ACTIVITY ROWS ===== */
         .activity-row {
             display: flex;
             justify-content: space-between;
@@ -294,9 +268,7 @@
             text-align: center;
         }
 
-        /* ============================================================
-           BAR ROWS (Platform breakdown, devices, etc.)
-        ============================================================ */
+        /* ===== BAR ROWS ===== */
         .bar-row {
             display: flex;
             align-items: center;
@@ -333,9 +305,7 @@
             text-align: right;
         }
 
-        /* ============================================================
-           HEATMAP
-        ============================================================ */
+        /* ===== HEATMAP ===== */
         .heatmap-grid {
             display: grid;
             grid-template-columns: 36px repeat(24, 1fr);
@@ -357,9 +327,7 @@
             transition: background 0.3s;
         }
 
-        /* ============================================================
-           LOGS TABLE
-        ============================================================ */
+        /* ===== FILTER ===== */
         .filter-row {
             display: flex;
             flex-wrap: wrap;
@@ -480,9 +448,7 @@
             color: #FFB86B;
         }
 
-        /* ============================================================
-           TOASTS
-        ============================================================ */
+        /* ===== TOASTS ===== */
         #toast-container {
             position: fixed;
             top: 16px;
@@ -520,9 +486,7 @@
             }
         }
 
-        /* ============================================================
-           LOADING / ERROR
-        ============================================================ */
+        /* ===== LOADING / ERROR ===== */
         #admin-loading,
         #admin-error {
             text-align: center;
@@ -543,9 +507,7 @@
             display: none !important;
         }
 
-        /* ============================================================
-           RESPONSIVE
-        ============================================================ */
+        /* ===== RESPONSIVE ===== */
         @media (max-width: 600px) {
             body {
                 padding: 12px;
@@ -587,17 +549,8 @@
                 grid-template-columns: 1fr;
             }
 
-            .logs-container {
-                max-height: 300px;
-            }
-
             .heatmap-grid {
                 font-size: 0.5rem;
-            }
-
-            .activity-row {
-                font-size: 0.7rem;
-                flex-wrap: wrap;
             }
 
             .bar-name {
@@ -606,32 +559,6 @@
             }
         }
 
-        @media (max-width: 400px) {
-            .cards {
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-            }
-
-            .card {
-                padding: 10px;
-            }
-
-            .card .value {
-                font-size: 1rem;
-            }
-
-            .card .label {
-                font-size: 0.6rem;
-            }
-
-            .admin-header h1 {
-                font-size: 1rem;
-            }
-        }
-
-        /* ============================================================
-           SCROLLBAR
-        ============================================================ */
         ::-webkit-scrollbar {
             width: 4px;
             height: 4px;
@@ -654,15 +581,13 @@
 
 <body>
 
-    <!-- TOAST CONTAINER -->
     <div id="toast-container"></div>
 
-    <!-- LOADING -->
     <div id="admin-loading">Loading dashboard…</div>
     <p id="admin-error"></p>
 
-    <!-- DASHBOARD -->
     <div id="admin-content" class="hidden">
+
         <!-- HEADER -->
         <div class="admin-header">
             <div>
@@ -681,9 +606,7 @@
             <button class="tab-btn" data-tab="system">System</button>
         </div>
 
-        <!-- ============================================================
-        OVERVIEW
-        ============================================================ -->
+        <!-- OVERVIEW -->
         <div class="tab-panel active" id="tab-overview">
             <div class="section-label">Live stats</div>
             <div class="cards" id="stats-cards"></div>
@@ -693,63 +616,45 @@
 
             <div class="section-label">Recent activity</div>
             <div class="panel">
-                <div id="activity-list">
-                    <div class="activity-empty">Loading activity...</div>
-                </div>
+                <div id="activity-list"></div>
             </div>
         </div>
 
-        <!-- ============================================================
-        ANALYTICS
-        ============================================================ -->
+        <!-- ANALYTICS -->
         <div class="tab-panel" id="tab-analytics">
             <div class="two-col">
                 <div>
                     <div class="panel">
                         <h2>Usage heatmap (hour × day)</h2>
-                        <div class="heatmap-grid" id="heatmap-grid">
-                            <div class="activity-empty">Loading heatmap...</div>
-                        </div>
+                        <div class="heatmap-grid" id="heatmap-grid"></div>
                     </div>
                     <div class="panel">
                         <h2>Platform breakdown</h2>
-                        <div id="platform-list">
-                            <div class="activity-empty">Loading platforms...</div>
-                        </div>
+                        <div id="platform-list"></div>
                     </div>
                     <div class="panel">
                         <h2>Platform health (success rate)</h2>
-                        <div id="platform-health-list">
-                            <div class="activity-empty">Loading platform health...</div>
-                        </div>
+                        <div id="platform-health-list"></div>
                     </div>
                 </div>
                 <div>
                     <div class="panel">
                         <h2>Device</h2>
-                        <div id="device-list">
-                            <div class="activity-empty">Loading devices...</div>
-                        </div>
+                        <div id="device-list"></div>
                     </div>
                     <div class="panel">
                         <h2>Browser</h2>
-                        <div id="browser-list">
-                            <div class="activity-empty">Loading browsers...</div>
-                        </div>
+                        <div id="browser-list"></div>
                     </div>
                     <div class="panel">
                         <h2>Country</h2>
-                        <div id="country-list">
-                            <div class="activity-empty">Loading countries...</div>
-                        </div>
+                        <div id="country-list"></div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- ============================================================
-        LOGS
-        ============================================================ -->
+        <!-- LOGS -->
         <div class="tab-panel" id="tab-logs">
             <div class="panel">
                 <h2>Filter &amp; search</h2>
@@ -766,35 +671,25 @@
                     <button class="action-btn" id="log-export-json-btn">Export JSON</button>
                     <button class="action-btn" id="log-export-csv-btn">Export CSV</button>
                 </div>
-                <div id="logs-table-wrap">
-                    <div class="activity-empty">Loading logs...</div>
-                </div>
+                <div id="logs-table-wrap"></div>
             </div>
         </div>
 
-        <!-- ============================================================
-        SECURITY
-        ============================================================ -->
+        <!-- SECURITY -->
         <div class="tab-panel" id="tab-security">
             <div class="two-col">
                 <div class="panel">
                     <h2>Login history</h2>
-                    <div id="login-history-list">
-                        <div class="activity-empty">Loading login history...</div>
-                    </div>
+                    <div id="login-history-list"></div>
                 </div>
                 <div class="panel">
                     <h2>Active sessions</h2>
-                    <div id="sessions-list">
-                        <div class="activity-empty">Loading sessions...</div>
-                    </div>
+                    <div id="sessions-list"></div>
                 </div>
             </div>
         </div>
 
-        <!-- ============================================================
-        SYSTEM
-        ============================================================ -->
+        <!-- SYSTEM -->
         <div class="tab-panel" id="tab-system">
             <div class="panel">
                 <h2>Admin actions</h2>
@@ -809,6 +704,7 @@
                 <p class="action-status" id="action-status"></p>
             </div>
         </div>
+
     </div>
 
     <script>
@@ -844,24 +740,14 @@
         }
 
         async function authedFetchJson(path, opts = {}) {
-            let res;
-            try {
-                res = await authedFetch(path, opts);
-            } catch (err) {
-                throw new Error(`Network error reaching ${path}: ${err.message}`);
-            }
+            const res = await authedFetch(path, opts);
             if (res.status === 401) {
                 sessionStorage.removeItem("seize_admin_token");
                 window.location.href = "/admin-login.html";
                 throw new Error("Session expired.");
             }
-            let data;
-            try {
-                data = await res.json();
-            } catch {
-                throw new Error(`${path} returned a non-JSON response (${res.status}).`);
-            }
-            if (!res.ok) throw new Error(data.error || `${path} failed (${res.status}).`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `${path} failed (${res.status})`);
             return data;
         }
 
@@ -879,21 +765,6 @@
             el.textContent = message;
             document.getElementById("toast-container").appendChild(el);
             setTimeout(() => el.remove(), 7000);
-        }
-
-        function pulse(cardsContainerId) {
-            const el = document.getElementById(cardsContainerId);
-            if (!el) return;
-            el.classList.add("pulse");
-            setTimeout(() => el.classList.remove("pulse"), 600);
-        }
-
-        function showSectionError(containerId, err) {
-            const el = document.getElementById(containerId);
-            if (!el) return;
-            console.error(`[admin] ${containerId} failed:`, err);
-            el.innerHTML =
-                `<div class="activity-empty" style="color:#FF6B6B;">⚠️ Couldn't load — ${err.message}</div>`;
         }
 
         function eventDetailText(e) {
@@ -918,14 +789,6 @@
         // ============================================================
         // TABS
         // ============================================================
-        const tabLoaders = {
-            overview: loadOverview,
-            analytics: loadAnalytics,
-            logs: loadLogs,
-            security: loadSecurity,
-            system: () => { },
-        };
-
         document.querySelectorAll(".tab-btn").forEach((btn) => {
             btn.addEventListener("click", () => {
                 document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
@@ -933,8 +796,12 @@
                 btn.classList.add("active");
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
 
-                const loader = tabLoaders[btn.dataset.tab];
-                if (loader) loader();
+                // Load data when tab is clicked
+                const tab = btn.dataset.tab;
+                if (tab === "overview") loadOverview();
+                if (tab === "analytics") loadAnalytics();
+                if (tab === "logs") loadLogs();
+                if (tab === "security") loadSecurity();
             });
         });
 
@@ -1037,9 +904,9 @@
                 renderHealthCards(health);
                 renderActivity(activity.events);
             } catch (err) {
-                showSectionError("stats-cards", err);
-                showSectionError("health-cards", err);
-                showSectionError("activity-list", err);
+                console.error("Overview load error:", err);
+                document.getElementById("stats-cards").innerHTML =
+                    `<div class="activity-empty" style="color:#FF6B6B;">⚠️ ${err.message}</div>`;
             }
         }
 
@@ -1104,29 +971,23 @@
 
         async function loadAnalytics() {
             try {
-                const [platforms, healthPlat, heatmap, breakdowns] = await Promise.all([
-                    authedFetchJson("/admin/platforms"),
-                    authedFetchJson("/admin/platforms/health"),
-                    authedFetchJson("/admin/heatmap"),
-                    authedFetchJson("/admin/breakdowns"),
-                ]);
+                // Load each endpoint separately so one failure doesn't break everything
+                const platformsData = await authedFetchJson("/admin/platforms").catch(() => ({ platforms: [] }));
+                const healthData = await authedFetchJson("/admin/platforms/health").catch(() => ({ platforms: [] }));
+                const heatmapData = await authedFetchJson("/admin/heatmap").catch(() => ({ heatmap: [] }));
+                const breakdownsData = await authedFetchJson("/admin/breakdowns").catch(() => ({}));
 
-                renderBarList("platform-list", platforms.platforms, "platform");
-                renderPlatformHealth(healthPlat.platforms);
-                renderHeatmap(heatmap.heatmap);
+                renderBarList("platform-list", platformsData.platforms, "platform");
+                renderPlatformHealth(healthData.platforms);
+                renderHeatmap(heatmapData.heatmap);
 
-                if (breakdowns) {
-                    renderBarList("device-list", breakdowns.devices);
-                    renderBarList("browser-list", breakdowns.browsers);
-                    renderBarList("country-list", breakdowns.countries);
-                }
+                if (breakdownsData.devices) renderBarList("device-list", breakdownsData.devices);
+                if (breakdownsData.browsers) renderBarList("browser-list", breakdownsData.browsers);
+                if (breakdownsData.countries) renderBarList("country-list", breakdownsData.countries);
+
             } catch (err) {
-                showSectionError("platform-list", err);
-                showSectionError("platform-health-list", err);
-                showSectionError("heatmap-grid", err);
-                showSectionError("device-list", err);
-                showSectionError("browser-list", err);
-                showSectionError("country-list", err);
+                console.error("Analytics load error:", err);
+                // Don't show error everywhere, just log it
             }
         }
 
@@ -1173,7 +1034,8 @@
                     </table>
                 `;
             } catch (err) {
-                showSectionError("logs-table-wrap", err);
+                console.error("Logs load error:", err);
+                wrap.innerHTML = `<div class="activity-empty" style="color:#FF6B6B;">⚠️ ${err.message}</div>`;
             }
         }
 
@@ -1257,15 +1119,12 @@
 
         async function loadSecurity() {
             try {
-                const [history, sessions] = await Promise.all([
-                    authedFetchJson("/admin/login-history?limit=30"),
-                    authedFetchJson("/admin/sessions"),
-                ]);
+                const history = await authedFetchJson("/admin/login-history?limit=30").catch(() => ({ history: [] }));
+                const sessions = await authedFetchJson("/admin/sessions").catch(() => ({ sessions: [] }));
                 renderLoginHistory(history.history);
                 renderSessions(sessions.sessions);
             } catch (err) {
-                showSectionError("login-history-list", err);
-                showSectionError("sessions-list", err);
+                console.error("Security load error:", err);
             }
         }
 
@@ -1320,8 +1179,7 @@
                 try {
                     const { type, payload } = JSON.parse(msg.data);
                     if (type === "event") {
-                        pulse("stats-cards");
-                        // Refresh overview data silently
+                        // Refresh overview when new events come in
                         loadOverview();
                     } else if (type === "alert") {
                         showToast(payload.message, payload.level === "critical" ? "critical" : "info");
@@ -1354,12 +1212,14 @@
             setInterval(() => {
                 const activeTab = document.querySelector(".tab-btn.active");
                 if (activeTab) {
-                    const loader = tabLoaders[activeTab.dataset.tab];
-                    if (loader) loader();
+                    const tab = activeTab.dataset.tab;
+                    if (tab === "overview") loadOverview();
+                    if (tab === "analytics") loadAnalytics();
+                    if (tab === "logs") loadLogs();
+                    if (tab === "security") loadSecurity();
                 }
             }, 15000);
 
-            // Connect SSE
             connectLive();
         }
 

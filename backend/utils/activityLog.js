@@ -3,10 +3,7 @@ const { parseUserAgent } = require("./parseUserAgent");
 const { loadStore, scheduleSave, flushSave } = require("./persistence");
 
 // ============================================================
-// IN-MEMORY STORE — now hydrated from + saved to disk (see
-// hydrateFromDisk/persistState below), so it survives restarts as long
-// as the disk sticks around. still starts empty on a genuinely fresh
-// volume though (first boot, or an ephemeral fs that got wiped)
+// IN-MEMORY STORE
 // ============================================================
 
 const MAX_EVENTS = 2000;
@@ -23,7 +20,6 @@ const MAX_TRACKED_IPS = 5000;
 const ipsAllTime = new Set();
 const ipsByDay = new Map();
 
-// hour-of-day x day-of-week usage grid
 const heatmap = Array.from({ length: 7 }, () => Array(24).fill(0));
 
 const deviceCounts = {};
@@ -47,11 +43,6 @@ let lastAlertCheck = { errorSpike: false, memoryHigh: false };
 // ============================================================
 // RESTORE FROM DISK
 // ============================================================
-// pulls everything back from the last saved snapshot before the server
-// starts taking traffic. before this, "344 requests today" just meant
-// "since whenever the process last happened to restart" — now it
-// actually sticks around across restarts/crashes (assuming the disk
-// sticks around too, see the caveat in persistence.js)
 function hydrateFromDisk() {
   const saved = loadStore();
   if (!saved) return;
@@ -96,21 +87,16 @@ function hydrateFromDisk() {
     if (Array.isArray(saved.recentEvents)) {
       events.push(...saved.recentEvents.slice(0, MAX_EVENTS));
     }
-    console.log(
-      `[activityLog] Restored analytics from disk (last saved ${saved.savedAt ? new Date(saved.savedAt).toLocaleString() : "unknown time"}).`,
-    );
+    console.log(`[activityLog] Restored from disk (${events.length} events)`);
   } catch (err) {
-    console.warn(
-      "[activityLog] Failed to hydrate persisted store:",
-      err.message,
-    );
+    console.warn("[activityLog] Failed to hydrate:", err.message);
   }
 }
 hydrateFromDisk();
 
-// builds the thing that actually gets written to disk. capping recent
-// events separately from MAX_EVENTS (2000) so the file doesn't balloon —
-// 500 is plenty to make "recent activity" look alive after a restart
+// ============================================================
+// PERSISTENCE
+// ============================================================
 function persistState() {
   return {
     version: 1,
@@ -135,17 +121,15 @@ function persistNow() {
   scheduleSave(persistState);
 }
 
-// forces a save right now — use before the process is about to exit on
-// purpose (shutdown, admin restart button) so we don't lose whatever
-// happened in the last few seconds to the debounce
 function flushPersistence() {
   flushSave(persistState);
 }
 
-// backup autosave — even if it's a slow day and nothing's triggering the
-// debounce, this keeps the file from going more than 30s stale
 setInterval(() => scheduleSave(persistState), 30000).unref();
 
+// ============================================================
+// CORE FUNCTIONS
+// ============================================================
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -164,15 +148,25 @@ function broadcast(type, payload) {
 function addSseClient(res) {
   sseClients.add(res);
 }
+
 function removeSseClient(res) {
   sseClients.delete(res);
 }
 
+// ============================================================
+// LOG EVENT — THIS IS THE FIXED VERSION
+// ============================================================
 function logEvent(type, detail = {}) {
+  // Create the event
   const event = { type, detail, timestamp: Date.now() };
+
+  // Add to events array (newest first)
   events.unshift(event);
+
+  // Keep only MAX_EVENTS
   if (events.length > MAX_EVENTS) events.length = MAX_EVENTS;
 
+  // Update counters
   const [category, stage] = type.split(":");
   if (category === "conversion" && counters.conversions[stage] !== undefined) {
     counters.conversions[stage]++;
@@ -181,9 +175,17 @@ function logEvent(type, detail = {}) {
     counters.captures[stage]++;
   }
 
+  // Broadcast to SSE clients
   broadcast("event", event);
+
+  // Check alerts
   checkAlerts();
+
+  // Save to disk
   persistNow();
+
+  // Log to console for debugging
+  console.log(`[activityLog] ${type}`, detail);
 }
 
 function recordRequest(ip, userAgent = "") {
@@ -236,6 +238,9 @@ function requestLoggerMiddleware(req, res, next) {
   next();
 }
 
+// ============================================================
+// ALERTS
+// ============================================================
 function checkAlerts() {
   const recent = events.slice(0, alertConfig.errorRateWindow);
   const relevant = recent.filter(
@@ -268,6 +273,9 @@ function checkMemoryAlert(usedPct) {
   lastAlertCheck.memoryHigh = high;
 }
 
+// ============================================================
+// LOGIN HISTORY + SESSIONS
+// ============================================================
 function recordLogin({ username, ip, userAgent, success }) {
   const entry = { username, ip, userAgent, success, timestamp: Date.now() };
   loginHistory.unshift(entry);
@@ -293,6 +301,7 @@ function registerSession(jti, { sub, ip, userAgent }) {
     revoked: false,
   });
   logEvent("session:created", { sub, ip });
+  persistNow();
 }
 
 function isSessionRevoked(jti) {
@@ -305,6 +314,7 @@ function revokeSession(jti) {
   if (!s) return false;
   s.revoked = true;
   logEvent("admin:session-revoked", { jti, sub: s.sub });
+  persistNow();
   return true;
 }
 
@@ -312,6 +322,9 @@ function getSessions() {
   return [...sessions.entries()].map(([jti, s]) => ({ jti, ...s }));
 }
 
+// ============================================================
+// QUERY FUNCTIONS
+// ============================================================
 function getRecentEvents(limit = 50) {
   return events.slice(0, limit);
 }
@@ -436,14 +449,18 @@ function eventsToCsv(list) {
   return [header, ...rows].join("\n");
 }
 
+// ============================================================
+// EXPORTS
+// ============================================================
 module.exports = {
   logEvent,
+  recordRequest,
+  requestLoggerMiddleware,
   getRecentEvents,
   queryEvents,
   getCounters,
-  requestLoggerMiddleware,
-  getRequestStats,
   getActiveJobCounts,
+  getRequestStats,
   getPlatformBreakdown,
   getPlatformHealth,
   getHeatmap,

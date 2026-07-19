@@ -203,9 +203,18 @@
   </div>
 
   <script>
-    const API_BASE = "https://seize-1lxs.onrender.com/api";
+    // Was hardcoded to a specific Render deployment URL, which silently broke
+    // every tab except Overview whenever this page was served from anywhere
+    // else (localhost, a different deploy, a custom domain) — those requests
+    // just went to the wrong server and failed with no visible error.
+    // admin.html is always served by the same backend that exposes /api
+    // (see server.js), so derive it from wherever this page actually loaded.
+    const API_BASE = window.location.origin + "/api";
     const token = sessionStorage.getItem("seize_admin_token");
-    if (!token) window.location.href = "/admin-login.html";
+    if (!token) {
+      window.location.href = "/admin-login.html";
+      throw new Error("Not authenticated — redirecting to login.");
+    }
 
     const loadingEl = document.getElementById("admin-loading");
     const errorEl = document.getElementById("admin-error");
@@ -218,6 +227,42 @@
 
     function authedFetch(path, opts = {}) {
       return fetch(`${API_BASE}${path}`, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(opts.headers || {}) } });
+    }
+
+    // Every tab section used to fetch + render with no error handling at
+    // all, so a single failed request just left that panel blank forever
+    // with nothing in the UI (only the browser console) telling you why.
+    // This wraps that: does the fetch, throws a readable error on any
+    // non-2xx/network/parse failure.
+    async function authedFetchJson(path, opts = {}) {
+      let res;
+      try {
+        res = await authedFetch(path, opts);
+      } catch (err) {
+        throw new Error(`Network error reaching ${path}: ${err.message}`);
+      }
+      if (res.status === 401) {
+        sessionStorage.removeItem("seize_admin_token");
+        window.location.href = "/admin-login.html";
+        throw new Error("Session expired.");
+      }
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`${path} returned a non-JSON response (${res.status}).`);
+      }
+      if (!res.ok) throw new Error(data.error || `${path} failed (${res.status}).`);
+      return data;
+    }
+
+    // Renders a visible "couldn't load this" message inside a panel
+    // instead of quietly leaving it blank when a fetch throws.
+    function showSectionError(containerId, err) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      console.error(`[admin] ${containerId} failed to load:`, err);
+      el.innerHTML = `<div class="activity-empty" style="color:#ff8a8a;">Couldn't load this section — ${err.message}</div>`;
     }
 
     function relTime(ts) {
@@ -340,6 +385,7 @@
 
     // ---------- logs tab ----------
     async function loadLogs() {
+      const wrap = document.getElementById("logs-table-wrap");
       const type = document.getElementById("log-type-filter").value;
       const q = document.getElementById("log-search").value;
       const params = new URLSearchParams();
@@ -347,9 +393,12 @@
       if (q) params.set("q", q);
       params.set("limit", "150");
 
-      const res = await authedFetch(`/admin/logs?${params}`);
-      const data = await res.json();
-      const wrap = document.getElementById("logs-table-wrap");
+      let data;
+      try {
+        data = await authedFetchJson(`/admin/logs?${params}`);
+      } catch (err) {
+        return showSectionError("logs-table-wrap", err);
+      }
       if (!data.events.length) return (wrap.innerHTML = `<div class="activity-empty">No matching logs.</div>`);
 
       wrap.innerHTML = `
@@ -411,12 +460,26 @@
     }
 
     async function loadSecurity() {
-      const [historyRes, sessionsRes] = await Promise.all([
-        authedFetch("/admin/login-history?limit=30"),
-        authedFetch("/admin/sessions"),
+      // Fetched independently (not Promise.all on a shared array) so one
+      // endpoint failing doesn't blank out the other — login history can
+      // still show up even if, say, sessions fails, and vice versa.
+      const results = await Promise.allSettled([
+        authedFetchJson("/admin/login-history?limit=30"),
+        authedFetchJson("/admin/sessions"),
       ]);
-      renderLoginHistory((await historyRes.json()).history);
-      renderSessions((await sessionsRes.json()).sessions);
+      const [historyResult, sessionsResult] = results;
+
+      if (historyResult.status === "fulfilled") {
+        renderLoginHistory(historyResult.value.history);
+      } else {
+        showSectionError("login-history-list", historyResult.reason);
+      }
+
+      if (sessionsResult.status === "fulfilled") {
+        renderSessions(sessionsResult.value.sessions);
+      } else {
+        showSectionError("sessions-list", sessionsResult.reason);
+      }
     }
 
     // ---------- system actions ----------
@@ -451,37 +514,105 @@
 
     document.getElementById("export-btn").addEventListener("click", () => downloadFromEndpoint("/admin/export", `seize-admin-export-${Date.now()}.json`));
 
-    // ---------- initial load ----------
-    async function loadAll() {
-      try {
-        const [statsRes, healthRes, activityRes, platformsRes, healthPlatRes, heatmapRes, breakdownsRes] = await Promise.all([
-          authedFetch("/admin/stats"), authedFetch("/admin/health"), authedFetch("/admin/activity?limit=40"),
-          authedFetch("/admin/platforms"), authedFetch("/admin/platforms/health"), authedFetch("/admin/heatmap"), authedFetch("/admin/breakdowns"),
-        ]);
-        if ([statsRes, healthRes].some((r) => r.status === 401)) {
-          sessionStorage.removeItem("seize_admin_token"); window.location.href = "/admin-login.html"; return;
-        }
-        renderStatsCards(await statsRes.json());
-        renderHealthCards(await healthRes.json());
-        renderActivity((await activityRes.json()).events);
-        renderBarList("platform-list", (await platformsRes.json()).platforms, "platform");
-        renderPlatformHealth((await healthPlatRes.json()).platforms);
-        renderHeatmap((await heatmapRes.json()).heatmap);
-        const b = await breakdownsRes.json();
+    // ---------- overview tab ----------
+    // Previously this and Analytics were fetched together in one
+    // Promise.all() — if any single one of the 7 endpoints failed (a stale
+    // deploy missing a route, a transient error, etc.) the whole batch
+    // rejected and NOTHING rendered, including sections that would
+    // otherwise have succeeded. Split apart + Promise.allSettled so each
+    // card/panel lives or dies on its own request.
+    async function loadOverview() {
+      const results = await Promise.allSettled([
+        authedFetchJson("/admin/stats"),
+        authedFetchJson("/admin/health"),
+        authedFetchJson("/admin/activity?limit=40"),
+      ]);
+      const [statsResult, healthResult, activityResult] = results;
+
+      if (statsResult.status === "fulfilled") renderStatsCards(statsResult.value);
+      else showSectionError("stats-cards", statsResult.reason);
+
+      if (healthResult.status === "fulfilled") renderHealthCards(healthResult.value);
+      else showSectionError("health-cards", healthResult.reason);
+
+      if (activityResult.status === "fulfilled") renderActivity(activityResult.value.events);
+      else showSectionError("activity-list", activityResult.reason);
+
+      return results.every((r) => r.status === "fulfilled");
+    }
+
+    // ---------- analytics tab ----------
+    async function loadAnalytics() {
+      const results = await Promise.allSettled([
+        authedFetchJson("/admin/platforms"),
+        authedFetchJson("/admin/platforms/health"),
+        authedFetchJson("/admin/heatmap"),
+        authedFetchJson("/admin/breakdowns"),
+      ]);
+      const [platformsResult, healthPlatResult, heatmapResult, breakdownsResult] = results;
+
+      if (platformsResult.status === "fulfilled") renderBarList("platform-list", platformsResult.value.platforms, "platform");
+      else showSectionError("platform-list", platformsResult.reason);
+
+      if (healthPlatResult.status === "fulfilled") renderPlatformHealth(healthPlatResult.value.platforms);
+      else showSectionError("platform-health-list", healthPlatResult.reason);
+
+      if (heatmapResult.status === "fulfilled") renderHeatmap(heatmapResult.value.heatmap);
+      else showSectionError("heatmap-grid", heatmapResult.reason);
+
+      if (breakdownsResult.status === "fulfilled") {
+        const b = breakdownsResult.value;
         renderBarList("device-list", b.devices);
         renderBarList("browser-list", b.browsers);
         renderBarList("country-list", b.countries);
+      } else {
+        showSectionError("device-list", breakdownsResult.reason);
+        showSectionError("browser-list", breakdownsResult.reason);
+        showSectionError("country-list", breakdownsResult.reason);
+      }
+    }
 
-        loadingEl.classList.add("hidden"); errorEl.classList.remove("show"); contentEl.classList.remove("hidden");
+    // ---------- tab-aware refresh ----------
+    // Re-fetches a tab's data the moment you switch to it, so a tab that
+    // failed on the initial page load (e.g. token wasn't ready yet, a
+    // transient network blip) doesn't just stay blank until the next
+    // 15s auto-refresh — you get a fresh attempt on every click.
+    const tabLoaders = {
+      overview: loadOverview,
+      analytics: loadAnalytics,
+      logs: loadLogs,
+      security: loadSecurity,
+    };
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const loader = tabLoaders[btn.dataset.tab];
+        if (loader) loader();
+      });
+    });
+
+    // ---------- initial load ----------
+    async function loadAll() {
+      try {
+        const ok = await loadOverview();
+        await loadAnalytics();
+        loadingEl.classList.add("hidden");
+        errorEl.classList.remove("show");
+        contentEl.classList.remove("hidden");
+        if (!ok) console.warn("[admin] Overview loaded with partial failures — see section errors above.");
       } catch (err) {
-        loadingEl.classList.add("hidden"); errorEl.textContent = "Couldn't reach the admin API. " + err.message; errorEl.classList.add("show");
+        // Only hit if something outside the per-section try/catches blows
+        // up (e.g. a bug in a render function itself) — everything else
+        // degrades to inline section errors instead of a full-page failure.
+        loadingEl.classList.add("hidden");
+        errorEl.textContent = "Couldn't reach the admin API. " + err.message;
+        errorEl.classList.add("show");
       }
     }
 
     loadLogs();
     loadSecurity();
     loadAll();
-    setInterval(loadAll, 15000); // SSE covers the truly live bits; this is just a periodic full resync
+    setInterval(() => { loadOverview(); loadAnalytics(); }, 15000); // SSE covers the truly live bits; this is just a periodic resync. Logs/Security stay manual so they don't clobber an in-progress search/filter.
 
     // ---------- SSE live feed ----------
     function connectLive() {

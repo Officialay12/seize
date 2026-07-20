@@ -7,6 +7,7 @@ const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const compression = require("compression");
 const path = require("path");
+const fs = require("fs");
 
 // ===== Routes =====
 const convertRoutes = require("./routes/convert");
@@ -14,7 +15,6 @@ const downloadRoutes = require("./routes/download");
 const authRoutes = require("./routes/auth");
 const collectionsRoutes = require("./routes/collections");
 const adminRoutes = require("./routes/admin");
-const pushRoutes = require("./routes/push");
 
 // ===== Middleware =====
 const { trackUser, adminRateLimit } = require("./utils/middleware");
@@ -38,6 +38,26 @@ process.on("unhandledRejection", (reason) => {
 process.on("uncaughtException", (err) => {
   console.error("[UNCAUGHT EXCEPTION]", err);
 });
+
+// ============================================================
+// ENSURE REQUIRED DIRECTORIES EXIST
+// ============================================================
+const REQUIRED_DIRS = [
+  path.join(__dirname, "data"),
+  path.join(__dirname, "tmp"),
+  path.join(__dirname, "cookies"),
+];
+
+for (const dir of REQUIRED_DIRS) {
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`[seize] Created directory: ${dir}`);
+    } catch (err) {
+      console.warn(`[seize] Could not create ${dir}:`, err.message);
+    }
+  }
+}
 
 // ============================================================
 // SECURITY HEADERS
@@ -85,7 +105,7 @@ app.use(
 app.use(compression());
 
 // ============================================================
-// CORS
+// CORS - FIXED FOR RENDER
 // ============================================================
 const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*")
   .split(",")
@@ -98,6 +118,8 @@ app.use(
     origin: allowAllOrigins ? true : allowedOrigins,
     credentials: true,
     optionsSuccessStatus: 200,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   }),
 );
 
@@ -114,16 +136,16 @@ app.use(requestLoggerMiddleware);
 // ============================================================
 // BODY PARSERS
 // ============================================================
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 // ============================================================
-// RATE LIMITER
+// RATE LIMITER - LESS STRICT
 // ============================================================
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 1000,
+  max: 2000,
   message: { error: "Too many requests, slow down and try again shortly." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -140,6 +162,7 @@ app.get("/api/health", (req, res) =>
     version: "3.0.0",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    memory: process.memoryUsage(),
   }),
 );
 
@@ -174,14 +197,47 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/convert", trackUser, adminRateLimit(200), convertRoutes);
 app.use("/api/download", trackUser, adminRateLimit(200), downloadRoutes);
 app.use("/api/collections", trackUser, collectionsRoutes);
-app.use("/api/push", trackUser, pushRoutes);
+
+// ============================================================
+// PUSH ROUTES - SAFELY LOADED
+// ============================================================
+try {
+  const pushRoutes = require("./routes/push_routes");
+  app.use("/api/push", trackUser, pushRoutes);
+} catch (err) {
+  console.warn("[seize] Push routes not found, skipping:", err.message);
+  // Create a fallback route
+  const fallbackRouter = express.Router();
+  fallbackRouter.get("/public-key", (req, res) => {
+    res.json({ publicKey: null });
+  });
+  fallbackRouter.post("/subscribe", (req, res) => {
+    res.json({ message: "Push not available" });
+  });
+  fallbackRouter.post("/ping", (req, res) => {
+    res.json({ ok: true });
+  });
+  app.use("/api/push", trackUser, fallbackRouter);
+}
 
 // ============================================================
 // SHARE HANDLER
 // ============================================================
-app.get("/share-handler", (req, res) => {
-  res.sendFile(path.join(__dirname, "..", "frontend", "share-handler.html"));
-});
+const shareHandlerPath = path.join(
+  __dirname,
+  "..",
+  "frontend",
+  "share-handler.html",
+);
+if (fs.existsSync(shareHandlerPath)) {
+  app.get("/share-handler", (req, res) => {
+    res.sendFile(shareHandlerPath);
+  });
+} else {
+  app.get("/share-handler", (req, res) => {
+    res.status(404).json({ error: "Share handler not found" });
+  });
+}
 
 app.post("/share-handler", (req, res) => {
   const { url, text, title } = req.body;
@@ -194,30 +250,42 @@ app.post("/share-handler", (req, res) => {
 // ============================================================
 // STATIC FILES
 // ============================================================
-// admin.html and admin-login.html were getting the same 1-day cache as
-// every other static file. fine for icons/style.css, not fine for a page
-// you're actively redeploying — browser just keeps serving the stale
-// version for 24h with zero indication anything's wrong. force these two
-// to always be fresh
-app.use(
-  express.static(path.join(__dirname, "..", "frontend"), {
-    maxAge: process.env.NODE_ENV === "production" ? "1d" : 0,
-    etag: true,
-    setHeaders: (res, filePath) => {
-      if (
-        filePath.endsWith("admin.html") ||
-        filePath.endsWith("admin-login.html")
-      ) {
-        res.setHeader(
-          "Cache-Control",
-          "no-store, no-cache, must-revalidate, proxy-revalidate",
-        );
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-      }
-    },
-  }),
-);
+const frontendPath = path.join(__dirname, "..", "frontend");
+if (fs.existsSync(frontendPath)) {
+  app.use(
+    express.static(frontendPath, {
+      maxAge: process.env.NODE_ENV === "production" ? "1d" : 0,
+      etag: true,
+      setHeaders: (res, filePath) => {
+        if (
+          filePath.endsWith("admin.html") ||
+          filePath.endsWith("admin-login.html")
+        ) {
+          res.setHeader(
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate, proxy-revalidate",
+          );
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+        }
+      },
+    }),
+  );
+} else {
+  console.warn("[seize] Frontend directory not found:", frontendPath);
+}
+
+// ============================================================
+// CATCH-ALL FOR SPA ROUTING
+// ============================================================
+app.get("*", (req, res) => {
+  const indexPath = path.join(__dirname, "..", "frontend", "index.html");
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).json({ error: "Not found" });
+  }
+});
 
 // ============================================================
 // 404 & ERROR HANDLERS
@@ -248,7 +316,7 @@ app.use((err, req, res, next) => {
 // ============================================================
 // START SERVER
 // ============================================================
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
   console.log("\n" + "=".repeat(60));
   console.log("🚀 seize backend running on http://localhost:" + PORT);
   console.log("=".repeat(60));
@@ -265,16 +333,26 @@ server.timeout = 120000;
 server.keepAliveTimeout = 120000;
 server.headersTimeout = 120000;
 
-// kicks off the "come back and use seize" sweep — reads real subscriber
-// activity, no-ops if nobody's subscribed yet
-startPushScheduler();
+// ============================================================
+// PUSH SCHEDULER - SAFELY STARTED
+// ============================================================
+try {
+  startPushScheduler();
+  console.log("[seize] Push scheduler started");
+} catch (err) {
+  console.warn("[seize] Push scheduler failed to start:", err.message);
+}
 
 // ============================================================
 // GRACEFUL SHUTDOWN
 // ============================================================
 function shutdown(signal) {
   console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
-  flushPersistence();
+  try {
+    flushPersistence();
+  } catch (err) {
+    console.warn("[seize] Failed to flush persistence:", err.message);
+  }
   server.close(() => {
     console.log("✅ Server closed.");
     process.exit(0);

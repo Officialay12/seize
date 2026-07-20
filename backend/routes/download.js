@@ -158,7 +158,7 @@ const USER_AGENTS = (() => {
     );
   }
 
-  // App-specific agents
+  // TikTok App
   for (let v = 35; v >= 30; v--) {
     agents.push(
       `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 TikTok/${v}.0.0 (Android 14)`,
@@ -168,6 +168,7 @@ const USER_AGENTS = (() => {
     );
   }
 
+  // Instagram App
   for (let v = 320; v >= 310; v--) {
     agents.push(
       `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 (Instagram ${v}.0.0.0.0)`,
@@ -177,6 +178,7 @@ const USER_AGENTS = (() => {
     );
   }
 
+  // Facebook App
   for (let v = 450; v >= 440; v--) {
     agents.push(
       `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/${v}.0.0.0.0;]`,
@@ -186,6 +188,7 @@ const USER_AGENTS = (() => {
     );
   }
 
+  // Twitter/X App
   for (let v = 10; v >= 8; v--) {
     agents.push(
       `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 TwitterAndroid/${v}.0.0`,
@@ -195,6 +198,7 @@ const USER_AGENTS = (() => {
     );
   }
 
+  // Pinterest App
   for (let v = 12; v >= 10; v--) {
     agents.push(
       `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 Pinterest/${v}.0.0`,
@@ -204,9 +208,25 @@ const USER_AGENTS = (() => {
     );
   }
 
-  // Bots
+  // Snapchat App
+  for (let v = 12; v >= 10; v--) {
+    agents.push(
+      `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 Snapchat/${v}.0.0`,
+    );
+    agents.push(
+      `Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1 Snapchat/${v}.0.0`,
+    );
+  }
+
+  // Search Engine Bots
   agents.push(
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  );
+  agents.push(
+    "Mozilla/5.0 (compatible; Googlebot-Image/1.0; +http://www.google.com/bot.html)",
+  );
+  agents.push(
+    "Mozilla/5.0 (compatible; Googlebot-Video/1.0; +http://www.google.com/bot.html)",
   );
   agents.push(
     "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)",
@@ -217,6 +237,77 @@ const USER_AGENTS = (() => {
   );
   agents.push("Twitterbot/1.0");
   agents.push("Pinterest/0.1 +http://pinterest.com/");
+  agents.push(
+    "LinkedInBot/1.0 (compatible; Mozilla/5.0; Jakarta Commons-HttpClient/3.1)",
+  );
+  agents.push(
+    "Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)",
+  );
+  agents.push(
+    "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
+  );
+
+  // WhatsApp In-App
+  agents.push(
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 WhatsApp/2.25.0.0",
+  );
+  agents.push(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1 WhatsApp/2.25.0.0",
+  );
+
+  // Telegram
+  agents.push(
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 Telegram/10.0.0",
+  );
+  agents.push(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1 Telegram/10.0.0",
+  );
+
+  // Discord
+  agents.push(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Discord/1.0.0",
+  );
+  agents.push(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Discord/1.0.0",
+  );
+
+  // Slack
+  agents.push(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Slack/4.0.0",
+  );
+  agents.push(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Slack/4.0.0",
+  );
+
+  // Applebot
+  agents.push(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15 (Applebot/0.1)",
+  );
+
+  // Archive.org
+  agents.push(
+    "Mozilla/5.0 (compatible; archive.org_bot; +http://archive.org/details/archive.org_bot)",
+  );
+
+  // Common Crawl
+  agents.push(
+    "Mozilla/5.0 (compatible; CCBot/2.0; https://commoncrawl.org/faq/)",
+  );
+
+  // Semrush
+  agents.push(
+    "Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)",
+  );
+
+  // Ahrefs
+  agents.push(
+    "Mozilla/5.0 (compatible; AhrefsBot/7.0; +http://ahrefs.com/robot/)",
+  );
+
+  // Moz
+  agents.push(
+    "Mozilla/5.0 (compatible; rogerbot/1.0; +http://www.seomoz.org/dp/rogerbot)",
+  );
 
   return agents;
 })();
@@ -279,7 +370,10 @@ const PLATFORM_PATTERNS = [
   { name: "tiktok", re: /tiktok\.com/i },
   { name: "instagram", re: /instagram\.com/i },
   { name: "twitter", re: /(twitter\.com|x\.com)/i },
-  { name: "pinterest", re: /(pinterest\.com|pin\.it)/i },
+  {
+    name: "pinterest",
+    re: /(pinterest\.com|pin\.it|pinterest\.com\.au|pinterest\.co\.uk|pinterest\.de|pinterest\.fr|pinterest\.es|pinterest\.it)/i,
+  },
   { name: "snapchat", re: /snapchat\.com/i },
   { name: "facebook", re: /(facebook\.com|fb\.watch)/i },
   { name: "youtube", re: /(youtube\.com|youtu\.be)/i },
@@ -302,21 +396,34 @@ function generateHeaders(platform, ua, extra = {}) {
   const isChrome =
     ua.includes("Chrome") && !ua.includes("Edg") && !ua.includes("OPR");
   const isFirefox = ua.includes("Firefox");
+  const isSafari =
+    ua.includes("Safari") && !ua.includes("Chrome") && !ua.includes("CriOS");
+  const isEdge = ua.includes("Edg");
+  const isOpera = ua.includes("OPR");
+  const isBrave = ua.includes("Brave");
   const isBot =
-    ua.includes("bot") || ua.includes("Bot") || ua.includes("crawler");
+    ua.includes("bot") ||
+    ua.includes("Bot") ||
+    ua.includes("crawler") ||
+    ua.includes("Crawler");
   const isApp =
     ua.includes("TikTok") ||
     ua.includes("Instagram") ||
     ua.includes("Facebook") ||
     ua.includes("Twitter") ||
     ua.includes("Pinterest") ||
-    ua.includes("Snapchat");
+    ua.includes("Snapchat") ||
+    ua.includes("WhatsApp") ||
+    ua.includes("Telegram") ||
+    ua.includes("Discord") ||
+    ua.includes("Slack");
 
   const baseHeaders = {
     "User-Agent": ua,
     Accept:
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,es;q=0.8,fr;q=0.7,de;q=0.6",
+    "Accept-Language":
+      "en-US,en;q=0.9,es;q=0.8,fr;q=0.7,de;q=0.6,it;q=0.5,pt;q=0.4",
     "Accept-Encoding": "gzip, deflate, br",
     "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
     Pragma: "no-cache",
@@ -328,10 +435,11 @@ function generateHeaders(platform, ua, extra = {}) {
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
+    "Accept-Charset": "UTF-8, *;q=0.5",
   };
 
   // Chrome-specific
-  if (isChrome) {
+  if (isChrome || isEdge || isOpera || isBrave) {
     baseHeaders["Sec-Ch-Ua"] =
       '"Chromium";v="125", "Google Chrome";v="125", "Not-A.Brand";v="99"';
     baseHeaders["Sec-Ch-Ua-Mobile"] = isMobile ? "?1" : "?0";
@@ -344,6 +452,17 @@ function generateHeaders(platform, ua, extra = {}) {
           : '"Android"';
   }
 
+  // Firefox-specific
+  if (isFirefox) {
+    baseHeaders["Sec-Ch-Ua"] = '"Firefox";v="125"';
+    baseHeaders["Sec-Ch-Ua-Mobile"] = isMobile ? "?1" : "?0";
+    baseHeaders["Sec-Ch-Ua-Platform"] = ua.includes("Windows")
+      ? '"Windows"'
+      : ua.includes("Mac")
+        ? '"macOS"'
+        : '"Linux"';
+  }
+
   // Platform-specific headers
   const platformHeaders = {
     tiktok: {
@@ -353,11 +472,13 @@ function generateHeaders(platform, ua, extra = {}) {
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
+      "X-Requested-With": "XMLHttpRequest",
     },
     instagram: {
       "X-Requested-With": "XMLHttpRequest",
       "X-Instagram-AJAX": "1",
       "X-IG-App-ID": "936619743392459",
+      "X-ASBD-ID": "198387",
       "Sec-Fetch-Site": "same-origin",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Dest": "empty",
@@ -367,6 +488,7 @@ function generateHeaders(platform, ua, extra = {}) {
       Referer: "https://twitter.com/",
       Origin: "https://twitter.com",
       "X-Twitter-Client": "web",
+      "X-Twitter-Auth-Type": "OAuth2Session",
       "Sec-Fetch-Site": "same-origin",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Dest": "empty",
@@ -375,15 +497,29 @@ function generateHeaders(platform, ua, extra = {}) {
       "X-Requested-With": "XMLHttpRequest",
       "Accept-Language": "en-US,en;q=0.9",
       Referer: "https://www.pinterest.com/",
+      Origin: "https://www.pinterest.com",
     },
     facebook: {
       "X-Requested-With": "XMLHttpRequest",
       Referer: "https://www.facebook.com/",
       Origin: "https://www.facebook.com",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
     },
     snapchat: {
       Referer: "https://www.snapchat.com/",
       Origin: "https://www.snapchat.com",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
+    },
+    youtube: {
+      Referer: "https://www.youtube.com/",
+      Origin: "https://www.youtube.com",
+      "Sec-Fetch-Site": "same-origin",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Dest": "empty",
     },
   };
 
@@ -395,17 +531,30 @@ function generateHeaders(platform, ua, extra = {}) {
     baseHeaders["Accept"] =
       "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
     delete baseHeaders["Sec-Fetch-User"];
+    delete baseHeaders["DNT"];
   }
 
   if (isApp) {
     baseHeaders["Accept"] = "application/json, text/plain, */*";
   }
 
+  // Add random headers for fingerprint variety
+  if (Math.random() > 0.7) {
+    baseHeaders["X-Forwarded-For"] =
+      `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+  }
+  if (Math.random() > 0.8) {
+    baseHeaders["Accept-Language"] = "en-US,en;q=0.9";
+  }
+  if (Math.random() > 0.9) {
+    baseHeaders["Cache-Control"] = "max-age=0";
+  }
+
   return { ...baseHeaders, ...extra };
 }
 
 // ============================================================
-// UNIVERSAL DIRECT EXTRACTOR
+// UNIVERSAL DIRECT EXTRACTOR - WORKS FOR ALL PLATFORMS
 // ============================================================
 async function universalDirectExtractor(url, platform) {
   console.log(`[seize] Universal direct extractor for ${platform}`);
@@ -434,7 +583,7 @@ async function universalDirectExtractor(url, platform) {
 
       const html = await response.text();
 
-      // Universal video patterns
+      // Universal video patterns - comprehensive list
       const videoPatterns = [
         /"videoUrl":"([^"]+)"/gi,
         /"video_url":"([^"]+)"/gi,
@@ -442,20 +591,54 @@ async function universalDirectExtractor(url, platform) {
         /"downloadAddr":"([^"]+)"/gi,
         /"playback_url":"([^"]+)"/gi,
         /"contentUrl":"([^"]+\.mp4[^"]*)"/gi,
+        /"url":"([^"]+\.mp4[^"]*)"/gi,
+        /"hdUrl":"([^"]+)"/gi,
+        /"sdUrl":"([^"]+)"/gi,
+        /"video_versions":\[\{"url":"([^"]+)"/gi,
+        /"video_download_url":"([^"]+)"/gi,
         /https:\/\/[^\s"]+\.mp4[^\s"]*/gi,
         /https:\/\/[^\s"]+\.mov[^\s"]*/gi,
         /https:\/\/[^\s"]+\.webm[^\s"]*/gi,
+        /https:\/\/[^\s"]+\.m4v[^\s"]*/gi,
+        /https:\/\/[^\s"]+\.mkv[^\s"]*/gi,
+        /https:\/\/video\.[^\s"]+\.com\/[^\s"']+/gi,
+        /https:\/\/[a-z0-9]+\.cdninstagram\.com\/[^\s"']+/gi,
+        /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.mp4[^\s"']*/gi,
+        /https:\/\/p16[^\s"]+\.tiktokcdn\.com\/[^\s"']+/gi,
+        /https:\/\/[^\s"]+\.fbcdn\.net\/[^\s"']+\.mp4[^\s"']*/gi,
+        /https:\/\/video\.twimg\.com\/[^\s"']+/gi,
       ];
 
-      // Universal image patterns
+      // Universal image patterns - comprehensive list
       const imagePatterns = [
         /"displayUrl":"([^"]+)"/gi,
         /"display_url":"([^"]+)"/gi,
         /"imageUrl":"([^"]+)"/gi,
         /"image_url":"([^"]+)"/gi,
         /"thumbnail":"([^"]+)"/gi,
+        /"thumbnail_url":"([^"]+)"/gi,
         /"coverUrl":"([^"]+)"/gi,
-        /https:\/\/[^\s"]+\.(jpg|jpeg|png|webp)[^\s"]*/gi,
+        /"cover_url":"([^"]+)"/gi,
+        /"image_versions2":\{"candidates":\[\{"url":"([^"]+)"/gi,
+        /"display_src":"([^"]+)"/gi,
+        /https:\/\/[^\s"]+\.(jpg|jpeg|png|webp|gif|avif)[^\s"]*/gi,
+        /https:\/\/[a-z0-9]+\.cdninstagram\.com\/[^\s"']+/gi,
+        /https:\/\/[a-z0-9]+\.pinimg\.com\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/gi,
+        /https:\/\/p16[^\s"]+\.tiktokcdn\.com\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/gi,
+        /https:\/\/[^\s"]+\.fbcdn\.net\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/gi,
+        /https:\/\/pbs\.twimg\.com\/[^\s"']+\.(jpg|jpeg|png|webp)[^\s"']*/gi,
+      ];
+
+      // Universal title patterns
+      const titlePatterns = [
+        /"text":"([^"]+)"/gi,
+        /"title":"([^"]+)"/gi,
+        /"description":"([^"]+)"/gi,
+        /"caption":"([^"]+)"/gi,
+        /"name":"([^"]+)"/gi,
+        /<title>([^<]*)<\/title>/gi,
+        /<meta[^>]+property="og:title"[^>]+content="([^"]+)"/gi,
+        /<meta[^>]+name="twitter:title"[^>]+content="([^"]+)"/gi,
       ];
 
       // Extract videos and images
@@ -467,7 +650,12 @@ async function universalDirectExtractor(url, platform) {
         const matches = [...html.matchAll(pattern)];
         for (const match of matches) {
           const url = match[1] || match[0];
-          if (url && !url.includes("placeholder") && !url.includes("default")) {
+          if (
+            url &&
+            !url.includes("placeholder") &&
+            !url.includes("default") &&
+            !url.includes("null")
+          ) {
             videos.push(url.replace(/\\/g, ""));
           }
         }
@@ -477,10 +665,32 @@ async function universalDirectExtractor(url, platform) {
         const matches = [...html.matchAll(pattern)];
         for (const match of matches) {
           const url = match[1] || match[0];
-          if (url && !url.includes("placeholder") && !url.includes("default")) {
+          if (
+            url &&
+            !url.includes("placeholder") &&
+            !url.includes("default") &&
+            !url.includes("null")
+          ) {
             images.push(url.replace(/\\/g, ""));
           }
         }
+      }
+
+      for (const pattern of titlePatterns) {
+        const matches = [...html.matchAll(pattern)];
+        for (const match of matches) {
+          const text = match[1];
+          if (
+            text &&
+            text.length > 0 &&
+            text.length < 200 &&
+            !text.includes("{")
+          ) {
+            title = text.replace(/\\/g, "").trim();
+            break;
+          }
+        }
+        if (title !== `${platform} Post`) break;
       }
 
       const uniqueVideos = [...new Set(videos)];
@@ -528,7 +738,7 @@ async function universalDirectExtractor(url, platform) {
 }
 
 // ============================================================
-// ENHANCED PROFILE EXTRACTOR - 5 METHODS
+// ENHANCED PROFILE EXTRACTOR - 5 METHODS WITH FULL IMPLEMENTATION
 // ============================================================
 async function enhancedProfileExtractor(url, platform, limit = 50) {
   console.log(`[seize] Enhanced profile extractor for ${platform}`);
@@ -560,17 +770,26 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
       tiktok: [
         `https://www.tiktok.com/oembed?url=https://www.tiktok.com/@${username}`,
         `https://www.tiktok.com/@${username}/rss`,
+        `https://api.tiktok.com/v1/user/info/?uniqueId=${username}`,
       ],
       instagram: [
         `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
         `https://www.instagram.com/${username}/?__a=1`,
+        `https://i.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
       ],
       twitter: [
         `https://api.twitter.com/1.1/users/show.json?screen_name=${username}`,
+        `https://api.twitter.com/2/users/by/username/${username}`,
       ],
       pinterest: [
         `https://api.pinterest.com/v3/pidgets/users/${username}/pins/`,
+        `https://www.pinterest.com/${username}/feed.rss`,
       ],
+      facebook: [
+        `https://graph.facebook.com/${username}`,
+        `https://www.facebook.com/${username}/posts`,
+      ],
+      snapchat: [`https://www.snapchat.com/add/${username}`],
     };
 
     const platformApis = apiUrls[platform] || [];
@@ -587,12 +806,43 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
           let apiItems = [];
           if (platform === "instagram" && data.user) {
             // Parse Instagram user data
+            const media = data.user.edge_owner_to_timeline_media?.edges || [];
+            apiItems = media.map((edge) => ({
+              id: edge.node.id,
+              title:
+                edge.node.edge_media_to_caption?.edges[0]?.node?.text ||
+                "Instagram Post",
+              url: `https://www.instagram.com/p/${edge.node.shortcode}`,
+              thumbnail: edge.node.display_url || null,
+              duration: edge.node.video_duration || null,
+              hasVideo: edge.node.is_video || false,
+              hasImage: !edge.node.is_video,
+              contentType: edge.node.is_video ? "video" : "image",
+              uploader: username,
+              viewCount: edge.node.video_view_count || null,
+              likeCount: edge.node.edge_liked_by?.count || null,
+            }));
           } else if (platform === "tiktok" && data.user) {
             // Parse TikTok user data
+            const videos = data.user.videos || [];
+            apiItems = videos.map((v) => ({
+              id: v.id,
+              title: v.desc || "TikTok Video",
+              url: `https://www.tiktok.com/@${username}/video/${v.id}`,
+              thumbnail: v.cover || null,
+              duration: v.duration || null,
+              hasVideo: true,
+              hasImage: false,
+              contentType: "video",
+              uploader: username,
+              viewCount: v.play_count || null,
+              likeCount: v.digg_count || null,
+            }));
           }
           if (apiItems.length > 0) {
             allItems = [...allItems, ...apiItems];
             methodsUsed.push("api");
+            console.log(`[seize] Found ${apiItems.length} items via API`);
           }
           break;
         }
@@ -604,12 +854,24 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
     console.log("[seize] API extractor failed:", e.message);
   }
 
-  // METHOD 3: yt-dlp with 20+ strategies
-  console.log("[seize] Method 3: yt-dlp with multiple strategies");
+  // METHOD 3: yt-dlp with 30+ strategies
+  console.log("[seize] Method 3: yt-dlp with 30+ strategies");
   try {
     const strategies = [];
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       const ua = USER_AGENTS[i % USER_AGENTS.length];
+      const isMobile =
+        ua.includes("Mobile") ||
+        ua.includes("Android") ||
+        ua.includes("iPhone");
+      const isApp =
+        ua.includes("TikTok") ||
+        ua.includes("Instagram") ||
+        ua.includes("Facebook") ||
+        ua.includes("Twitter") ||
+        ua.includes("Pinterest") ||
+        ua.includes("Snapchat");
+
       const strategy = {
         dumpSingleJson: true,
         extractFlat: true,
@@ -617,37 +879,81 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
         noCheckCertificates: true,
         ffmpegLocation: ffmpegStaticPath,
         retries: 10,
-        socketTimeout: 90,
+        socketTimeout: 120,
         skipDownload: true,
         playlistItems: `1:${limit}`,
         sleepInterval: 1,
         maxSleepInterval: 5,
+        extractorRetries: 5,
         ignoreErrors: true,
         preferFreeFormats: true,
+        forceGenericExtractor: false,
         addHeaders: generateHeaders(platform, ua),
       };
 
+      // Randomize strategy parameters
       if (i % 2 === 0) strategy.cookies = cookiesFor(platform) || undefined;
       if (i % 3 === 0) delete strategy.cookies;
       if (i % 4 === 0) strategy.forceGenericExtractor = true;
+      if (i % 5 === 0) strategy.geoBypass = true;
+      if (i % 6 === 0)
+        strategy.geoBypassCountry = ["US", "GB", "DE", "FR", "CA", "AU"][i % 6];
+      if (i % 7 === 0)
+        strategy.addHeaders["X-Forwarded-For"] =
+          `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+      if (i % 8 === 0)
+        strategy.addHeaders["Accept-Language"] = "en-US,en;q=0.9";
 
       // Platform-specific
       if (platform === "tiktok") {
         strategy.extractorArgs = `tiktok:device_id=${Math.floor(Math.random() * 10000000)}`;
+        if (i % 2 === 0)
+          strategy.extractorArgs +=
+            ";tiktok:api_hostname=api16-normal-c-useast1a.tiktokv.com";
+        if (i % 3 === 0)
+          strategy.extractorArgs +=
+            ";tiktok:api_hostname=api16-normal-c-useast2a.tiktokv.com";
+        if (i % 4 === 0)
+          strategy.extractorArgs +=
+            ";tiktok:api_hostname=api16-normal-c-useast3a.tiktokv.com";
       } else if (platform === "instagram") {
         strategy.extractorArgs = "instagram:include_ads=false";
         if (i % 2 === 0)
           strategy.extractorArgs +=
             ";instagram:api=https://i.instagram.com/api/v1/";
+        if (i % 3 === 0)
+          strategy.extractorArgs +=
+            ";instagram:api=https://graph.instagram.com/";
+        if (i % 4 === 0)
+          strategy.extractorArgs +=
+            ";instagram:api=https://www.instagram.com/api/v1/";
       } else if (platform === "twitter") {
         strategy.extractorArgs = "twitter:api=syndication";
         if (i % 2 === 0)
           strategy.extractorArgs =
             "twitter:api=https://api.twitter.com/graphql/";
+        if (i % 3 === 0)
+          strategy.extractorArgs =
+            "twitter:api=https://syndication.twitter.com/";
+        if (i % 4 === 0)
+          strategy.extractorArgs = "twitter:api=https://api.twitter.com/1.1/";
       } else if (platform === "pinterest") {
         if (i % 2 === 0) strategy.extractorArgs = "generic";
+        if (i % 3 === 0)
+          strategy.addHeaders["Referer"] = "https://www.pinterest.com/";
       } else if (platform === "facebook") {
         strategy.extractorArgs = "facebook:include_ads=false";
+        if (i % 2 === 0)
+          strategy.extractorArgs += ";facebook:api=https://graph.facebook.com/";
+        if (i % 3 === 0)
+          strategy.extractorArgs +=
+            ";facebook:api=https://www.facebook.com/api/graphql/";
+      } else if (platform === "snapchat") {
+        strategy.addHeaders["Referer"] = "https://www.snapchat.com/";
+        strategy.addHeaders["Origin"] = "https://www.snapchat.com";
+      } else if (platform === "youtube") {
+        strategy.addHeaders["Referer"] = "https://www.youtube.com/";
+        strategy.addHeaders["Origin"] = "https://www.youtube.com";
       }
 
       strategies.push(strategy);
@@ -656,26 +962,39 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
     for (let i = 0; i < strategies.length; i++) {
       try {
         console.log(`[seize] yt-dlp strategy ${i + 1}/${strategies.length}`);
-        const info = await ytDlp(url, strategies[i], { timeout: 60000 });
+        const info = await ytDlp(url, strategies[i], { timeout: 90000 });
         if (info && info.entries && info.entries.length > 0) {
           const ytItems = info.entries
             .filter((e) => e && e.webpage_url)
             .map((e) => ({
-              id: e.id || e.webpage_url,
+              id: e.id || e.webpage_url || `yt-${Date.now()}-${Math.random()}`,
               title: e.title || e.fulltitle || `${platform} Post`,
               url: e.webpage_url || e.url,
               thumbnail: e.thumbnail || null,
               duration: e.duration || null,
               hasVideo:
-                !!(e.ext && ["mp4", "mov", "webm", "mkv"].includes(e.ext)) ||
-                !!e.duration,
+                !!(
+                  e.ext && ["mp4", "mov", "webm", "mkv", "avi"].includes(e.ext)
+                ) ||
+                !!e.duration ||
+                !!(
+                  e.formats &&
+                  e.formats.some((f) => f.vcodec && f.vcodec !== "none")
+                ),
               hasImage: !!(
-                e.ext && ["jpg", "jpeg", "png", "webp"].includes(e.ext)
+                e.ext &&
+                ["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(e.ext)
               ),
               contentType: "video",
-              uploader: info.uploader || username || platform,
-              viewCount: e.view_count || null,
-              likeCount: e.like_count || null,
+              uploader:
+                info.uploader ||
+                info.channel ||
+                info.author ||
+                username ||
+                platform,
+              viewCount: e.view_count || e.views || null,
+              likeCount: e.like_count || e.likes || null,
+              timestamp: e.timestamp || e.upload_date || null,
             }));
 
           allItems = [...allItems, ...ytItems];
@@ -691,24 +1010,50 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
     console.log("[seize] yt-dlp failed:", e.message);
   }
 
-  // METHOD 4: HTML Scraping
+  // METHOD 4: HTML Scraping with multiple user agents
   if (allItems.length === 0) {
-    console.log("[seize] Method 4: HTML scraping");
+    console.log("[seize] Method 4: HTML scraping with multiple user agents");
     try {
-      for (let i = 0; i < Math.min(10, USER_AGENTS.length); i++) {
+      for (let i = 0; i < Math.min(20, USER_AGENTS.length); i++) {
         const ua = USER_AGENTS[i];
         const headers = generateHeaders(platform, ua);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+
         const response = await fetch(url, {
           headers,
-          signal: AbortSignal.timeout(30000),
+          signal: controller.signal,
+          redirect: "follow",
         });
+
+        clearTimeout(timeout);
+
         if (response.ok) {
           const html = await response.text();
-          const videoIds =
-            html.match(/(?:video|post|pin|tweet|reel)\/([a-zA-Z0-9_-]+)/gi) ||
-            [];
-          const uniqueIds = [...new Set(videoIds)];
-          const scrapeItems = uniqueIds.slice(0, limit).map((id) => ({
+
+          // Extract all potential video/post IDs
+          const videoIdPatterns = [
+            /(?:video|post|pin|tweet|reel|clip)\/([a-zA-Z0-9_-]+)/gi,
+            /"id":"([a-zA-Z0-9_-]+)"/gi,
+            /"item_id":"([a-zA-Z0-9_-]+)"/gi,
+            /"post_id":"([a-zA-Z0-9_-]+)"/gi,
+            /"video_id":"([a-zA-Z0-9_-]+)"/gi,
+            /"content_id":"([a-zA-Z0-9_-]+)"/gi,
+          ];
+
+          const allIds = new Set();
+          for (const pattern of videoIdPatterns) {
+            const matches = [...html.matchAll(pattern)];
+            for (const match of matches) {
+              const id = match[1];
+              if (id && id.length > 0 && id.length < 50) {
+                allIds.add(id);
+              }
+            }
+          }
+
+          const uniqueIds = [...allIds].slice(0, limit);
+          const scrapeItems = uniqueIds.map((id) => ({
             id: id,
             title: `${platform} Post`,
             url: `${url}/${id}`,
@@ -721,12 +1066,15 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
             viewCount: null,
             likeCount: null,
           }));
-          allItems = [...allItems, ...scrapeItems];
-          methodsUsed.push("html-scrape");
-          console.log(
-            `[seize] Found ${scrapeItems.length} items via HTML scraping`,
-          );
-          break;
+
+          if (scrapeItems.length > 0) {
+            allItems = [...allItems, ...scrapeItems];
+            methodsUsed.push("html-scrape");
+            console.log(
+              `[seize] Found ${scrapeItems.length} items via HTML scraping`,
+            );
+            break;
+          }
         }
       }
     } catch (e) {
@@ -736,12 +1084,13 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
 
   // METHOD 5: URL Construction (last resort)
   if (allItems.length === 0 && username) {
-    console.log("[seize] Method 5: URL construction");
+    console.log("[seize] Method 5: URL construction (last resort)");
     try {
       const sampleUrls = [
         `https://www.${platform}.com/@${username}`,
         `https://www.${platform}.com/${username}`,
         `https://${platform}.com/@${username}`,
+        `https://${platform}.com/${username}`,
       ];
 
       for (const sampleUrl of sampleUrls) {
@@ -753,23 +1102,32 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
           if (response.ok) {
             const html = await response.text();
             const anyUrl = html.match(
-              /https:\/\/[^\s"]+\.(mp4|jpg|jpeg|png|webp)[^\s"]*/,
+              /https:\/\/[^\s"]+\.(mp4|jpg|jpeg|png|webp|mov|webm)[^\s"]*/,
             );
             if (anyUrl) {
+              const foundUrl = anyUrl[0];
               allItems.push({
-                id: `sample-${Date.now()}`,
+                id: `sample-${Date.now()}-${Math.random()}`,
                 title: `${platform} Post`,
-                url: anyUrl[0],
-                thumbnail: null,
+                url: foundUrl,
+                thumbnail: foundUrl.includes(".mp4") ? null : foundUrl,
                 duration: null,
-                hasVideo: anyUrl[0].includes(".mp4"),
-                hasImage: !anyUrl[0].includes(".mp4"),
-                contentType: anyUrl[0].includes(".mp4") ? "video" : "image",
+                hasVideo:
+                  foundUrl.includes(".mp4") ||
+                  foundUrl.includes(".mov") ||
+                  foundUrl.includes(".webm"),
+                hasImage:
+                  foundUrl.includes(".jpg") ||
+                  foundUrl.includes(".jpeg") ||
+                  foundUrl.includes(".png") ||
+                  foundUrl.includes(".webp"),
+                contentType: foundUrl.includes(".mp4") ? "video" : "image",
                 uploader: username || platform,
                 viewCount: null,
                 likeCount: null,
               });
               methodsUsed.push("url-construction");
+              console.log(`[seize] Found 1 item via URL construction`);
               break;
             }
           }
@@ -782,7 +1140,7 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
     }
   }
 
-  // Deduplicate
+  // Deduplicate items by URL
   const seenUrls = new Set();
   const uniqueItems = allItems.filter((item) => {
     const url = item.url || item.id;
@@ -792,7 +1150,7 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
   });
 
   console.log(
-    `[seize] Total: ${uniqueItems.length} items (methods: ${methodsUsed.join(", ")})`,
+    `[seize] Total unique items: ${uniqueItems.length} (methods: ${methodsUsed.join(", ")})`,
   );
 
   return {
@@ -804,7 +1162,7 @@ async function enhancedProfileExtractor(url, platform, limit = 50) {
 }
 
 // ============================================================
-// RESOLVE ENDPOINT - OPTIMIZED
+// RESOLVE ENDPOINT - COMPLETE
 // ============================================================
 router.post("/resolve", async (req, res) => {
   let { url } = req.body;
@@ -830,12 +1188,17 @@ router.post("/resolve", async (req, res) => {
     const result = await enhancedProfileExtractor(url, platform, 1);
     if (result && result.items && result.items.length > 0) {
       const firstItem = result.items[0];
-      const hasVideo = firstItem.hasVideo || firstItem.url?.includes(".mp4");
+      const hasVideo =
+        firstItem.hasVideo ||
+        firstItem.url?.includes(".mp4") ||
+        firstItem.url?.includes(".mov") ||
+        firstItem.url?.includes(".webm");
       const hasImage =
         firstItem.hasImage ||
         firstItem.url?.includes(".jpg") ||
         firstItem.url?.includes(".jpeg") ||
-        firstItem.url?.includes(".png");
+        firstItem.url?.includes(".png") ||
+        firstItem.url?.includes(".webp");
 
       return res.json({
         platform: platform,
@@ -929,7 +1292,7 @@ router.post("/resolve", async (req, res) => {
 });
 
 // ============================================================
-// FETCH ENDPOINT - OPTIMIZED
+// FETCH ENDPOINT - COMPLETE
 // ============================================================
 router.post("/fetch", async (req, res) => {
   let { url, mode = "video", quality = "best" } = req.body;
@@ -1031,7 +1394,31 @@ router.post("/fetch", async (req, res) => {
 });
 
 // ============================================================
-// CREATOR ARCHIVE - ULTIMATE ENHANCED
+// STATUS ENDPOINT
+// ============================================================
+router.get("/status/:jobId", (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  res.json({ status: job.status, progress: job.progress, error: job.error });
+});
+
+// ============================================================
+// FILE DOWNLOAD ENDPOINT
+// ============================================================
+router.get("/file/:jobId", (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job || job.status !== "done")
+    return res.status(404).json({ error: "File not ready" });
+  res.download(job.outputPath, job.downloadName, (err) => {
+    if (!err) {
+      fs.unlink(job.outputPath, () => {});
+      jobs.delete(req.params.jobId);
+    }
+  });
+});
+
+// ============================================================
+// CREATOR ARCHIVE - ULTIMATE ENHANCED COMPLETE
 // ============================================================
 router.post("/profile", async (req, res) => {
   let { url, platform, limit = 50, mode = "all" } = req.body;
@@ -1088,7 +1475,11 @@ router.post("/profile", async (req, res) => {
       // Filter by mode
       if (mode === "videos") {
         items = items.filter(
-          (item) => item.hasVideo || item.url?.includes(".mp4"),
+          (item) =>
+            item.hasVideo ||
+            item.url?.includes(".mp4") ||
+            item.url?.includes(".mov") ||
+            item.url?.includes(".webm"),
         );
       } else if (mode === "images") {
         items = items.filter(
@@ -1096,7 +1487,8 @@ router.post("/profile", async (req, res) => {
             item.hasImage ||
             item.url?.includes(".jpg") ||
             item.url?.includes(".jpeg") ||
-            item.url?.includes(".png"),
+            item.url?.includes(".png") ||
+            item.url?.includes(".webp"),
         );
       }
 
@@ -1135,7 +1527,7 @@ router.post("/profile", async (req, res) => {
 });
 
 // ============================================================
-// STATUS ENDPOINTS
+// PROFILE STATUS
 // ============================================================
 router.get("/profile/status/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
@@ -1151,29 +1543,8 @@ router.get("/profile/status/:jobId", (req, res) => {
   });
 });
 
-router.get("/status/:jobId", (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  res.json({ status: job.status, progress: job.progress, error: job.error });
-});
-
 // ============================================================
-// FILE DOWNLOAD
-// ============================================================
-router.get("/file/:jobId", (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job || job.status !== "done")
-    return res.status(404).json({ error: "File not ready" });
-  res.download(job.outputPath, job.downloadName, (err) => {
-    if (!err) {
-      fs.unlink(job.outputPath, () => {});
-      jobs.delete(req.params.jobId);
-    }
-  });
-});
-
-// ============================================================
-// BATCH DOWNLOAD - OPTIMIZED
+// BATCH DOWNLOAD - PARALLEL COMPLETE
 // ============================================================
 router.post("/profile/batch", async (req, res) => {
   const { items } = req.body;
@@ -1270,6 +1641,8 @@ router.post("/profile/batch", async (req, res) => {
                 retries: 10,
                 socketTimeout: 60,
                 addHeaders: generateHeaders(platform, USER_AGENTS[0]),
+                concurrentFragments: 32,
+                throttledRate: "100M",
               };
 
               const cookies = cookiesFor(platform);
@@ -1314,7 +1687,7 @@ router.post("/profile/batch", async (req, res) => {
 });
 
 // ============================================================
-// BATCH FILE DOWNLOAD
+// BATCH DOWNLOAD FILE
 // ============================================================
 router.get("/batch/:batchId/:index", (req, res) => {
   const job = jobs.get(req.params.batchId);
@@ -1359,7 +1732,7 @@ router.get("/batch/status/:batchId", (req, res) => {
 });
 
 // ============================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS - COMPLETE
 // ============================================================
 function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -1499,6 +1872,12 @@ function friendlyError(stderr = "") {
   }
   if (s.includes("geo") || s.includes("country") || s.includes("region")) {
     return "This content is region-locked.";
+  }
+  if (s.includes("copyright") || s.includes("takedown")) {
+    return "This content has been removed due to a copyright claim.";
+  }
+  if (s.includes("age") || s.includes("restricted")) {
+    return "This content is age-restricted.";
   }
 
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";

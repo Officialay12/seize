@@ -89,6 +89,65 @@ if (ffprobePath) {
 
 const CPU_THREADS = Math.max(1, os.cpus()?.length || 1);
 
+// Hard safety net on every ffmpeg run. Without this, a malformed or
+// adversarial input that makes ffmpeg hang (rather than error out) leaves
+// the returned promise pending forever. That's bad on its own, but it's
+// worse combined with routes/convert.js's MAX_CONCURRENT_JOBS cap — a
+// handful of hung conversions would permanently eat concurrency slots
+// and the server would look "busy" forever with nothing actually
+// happening. Configurable via env for slower/larger jobs if needed.
+const DEFAULT_TIMEOUT_MS =
+  Number(process.env.SEIZE_FFMPEG_TIMEOUT_MS) || 15 * 60 * 1000; // 15 min
+
+function safeUnlink(p) {
+  if (p && fs.existsSync(p)) fs.unlink(p, () => {});
+}
+
+// Runs a built (but not yet executed) fluent-ffmpeg command, wiring up
+// progress/error/end consistently and enforcing the timeout above. Every
+// conversion helper below goes through this single execution path.
+function runCommand(
+  cmd,
+  outputPath,
+  { onProgress, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        cmd.kill("SIGKILL");
+      } catch {
+        /* process may already be gone — nothing to do */
+      }
+      safeUnlink(outputPath);
+      const err = new Error("Conversion timed out.");
+      err.seizeReason = "timeout";
+      reject(err);
+    }, timeoutMs);
+
+    cmd
+      .on("progress", (p) => {
+        if (onProgress) onProgress(Math.min(99, Math.round(p.percent || 0)));
+      })
+      .on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      })
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(outputPath);
+      })
+      .save(outputPath);
+  });
+}
+
 // ============================================================
 // CONVERSION HELPERS
 // (These are what routes/convert.js actually calls.)
@@ -103,11 +162,31 @@ const AUDIO_CODECS = {
   ogg: { codec: "libvorbis", bitrate: 192 },
 };
 
-function probe(filePath) {
+// NOTE: "m4a" is fully supported here but routes/convert.js's format
+// whitelist (`["mp3","wav","aac","flac","ogg"]`) never lets a request
+// select it, so this branch is currently unreachable dead code from the
+// route's perspective. Not fixed here since it's a route-layer decision,
+// but worth adding "m4a" to that whitelist if you want to expose it.
+
+function probe(filePath, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(filePath, (err, data) =>
-      err ? reject(err) : resolve(data),
-    );
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // Best-effort only: ffprobe has no handle exposed here to kill, so
+      // this frees up the caller (and the concurrency slot upstream)
+      // even though the underlying ffprobe process may still exit on
+      // its own shortly after. Still strictly better than hanging forever.
+      reject(new Error("Media inspection timed out."));
+    }, timeoutMs);
+
+    ffmpeg.ffprobe(filePath, (err, data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      err ? reject(err) : resolve(data);
+    });
   });
 }
 
@@ -151,63 +230,49 @@ async function videoToAudio(inputPath, outputPath, format = "mp3", onProgress) {
     throw err;
   }
 
-  return new Promise((resolve, reject) => {
-    const cmd = ffmpeg(inputPath).noVideo();
+  const cmd = ffmpeg(inputPath).noVideo();
 
-    if (canCopy) {
-      cmd.audioCodec("copy");
-    } else {
-      cmd.audioCodec(codec).outputOptions(["-threads", String(CPU_THREADS)]);
-      if (bitrate) cmd.audioBitrate(bitrate);
-    }
+  if (canCopy) {
+    cmd.audioCodec("copy");
+  } else {
+    cmd.audioCodec(codec).outputOptions(["-threads", String(CPU_THREADS)]);
+    if (bitrate) cmd.audioBitrate(bitrate);
+  }
 
-    cmd
-      .on("progress", (p) => {
-        if (onProgress) onProgress(Math.min(99, Math.round(p.percent || 0)));
-      })
-      .on("error", (err) => reject(err))
-      .on("end", () => resolve(outputPath))
-      .save(outputPath);
-  });
+  return runCommand(cmd, outputPath, { onProgress });
 }
 
 function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
-  return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(coverImagePath)
-      .loop()
-      .input(audioPath)
-      .videoCodec("libx264")
-      .audioCodec("aac")
-      .audioBitrate(192)
-      .outputOptions([
-        "-shortest",
-        // yuv420p requires even width/height. A branded cover asset with
-        // odd dimensions (or a resized/cropped one down the line) will
-        // otherwise fail every single conversion with an opaque ffmpeg
-        // error. This guarantees even dimensions regardless of source.
-        "-vf",
-        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-        "-pix_fmt",
-        "yuv420p",
-        "-tune",
-        "stillimage",
-        "-preset",
-        "ultrafast",
-        "-crf",
-        "28",
-        "-threads",
-        String(CPU_THREADS),
-        "-g",
-        "250",
-      ])
-      .on("progress", (p) => {
-        if (onProgress) onProgress(Math.min(99, Math.round(p.percent || 0)));
-      })
-      .on("error", (err) => reject(err))
-      .on("end", () => resolve(outputPath))
-      .save(outputPath);
-  });
+  const cmd = ffmpeg()
+    .input(coverImagePath)
+    .loop()
+    .input(audioPath)
+    .videoCodec("libx264")
+    .audioCodec("aac")
+    .audioBitrate(192)
+    .outputOptions([
+      "-shortest",
+      // yuv420p requires even width/height. A branded cover asset with
+      // odd dimensions (or a resized/cropped one down the line) will
+      // otherwise fail every single conversion with an opaque ffmpeg
+      // error. This guarantees even dimensions regardless of source.
+      "-vf",
+      "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+      "-pix_fmt",
+      "yuv420p",
+      "-tune",
+      "stillimage",
+      "-preset",
+      "ultrafast",
+      "-crf",
+      "28",
+      "-threads",
+      String(CPU_THREADS),
+      "-g",
+      "250",
+    ]);
+
+  return runCommand(cmd, outputPath, { onProgress });
 }
 
 // Generates a single-frame solid-color placeholder cover using ffmpeg's
@@ -217,15 +282,33 @@ function audioToVideo(audioPath, outputPath, coverImagePath, onProgress) {
 // real source of silent, hard-to-diagnose failures). lavfi is a single,
 // well-supported ffmpeg feature and needs no manual buffer math.
 function generatePlainCoverFallback(destPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input("color=c=0x0B0D0C:s=720x720:d=1")
-      .inputFormat("lavfi")
-      .outputOptions(["-frames:v", "1", "-update", "1"])
-      .on("error", (err) => reject(err))
-      .on("end", () => resolve(destPath))
-      .save(destPath);
+  const cmd = ffmpeg()
+    .input("color=c=0x0B0D0C:s=720x720:d=1")
+    .inputFormat("lavfi")
+    .outputOptions(["-frames:v", "1", "-update", "1"]);
+
+  // BUG FIX: the previous version let a failed generation leave behind
+  // a partial/corrupt file at destPath. Since callers (routes/convert.js)
+  // only check `fs.existsSync(FALLBACK_COVER_PATH)` to decide whether
+  // regeneration is needed, a broken leftover file would be treated as
+  // "ready" forever — every subsequent audio-to-video conversion would
+  // pick up the corrupt cover and fail, with no way to recover short of
+  // manually deleting the file or redeploying. runCommand already cleans
+  // up outputPath on a timeout; this covers the plain error case too.
+  return runCommand(cmd, destPath).catch((err) => {
+    safeUnlink(destPath);
+    throw err;
   });
+}
+
+// Strips characters that have no business in an ID3 metadata value —
+// mainly newlines/control characters, which some ffmpeg builds can
+// mishandle in `-metadata key=value` and which have no legitimate reason
+// to appear in a song title/artist/album pulled from an external API.
+function sanitizeMetadataValue(value) {
+  return String(value)
+    .replace(/[\r\n\x00-\x1f]/g, "")
+    .slice(0, 300);
 }
 
 // Remuxes an MP3 with ID3v2 tags and (optionally) embedded cover art. Only
@@ -235,38 +318,54 @@ function generatePlainCoverFallback(destPath) {
 // fails, the caller keeps the original untagged file — tagging is a
 // bonus, never a requirement for the download to succeed.
 function embedAudioTags(mp3Path, coverPath, tags = {}) {
-  return new Promise((resolve, reject) => {
-    const tmpOut = `${mp3Path}.tagged.mp3`;
-    const cmd = ffmpeg().input(mp3Path);
+  const tmpOut = `${mp3Path}.tagged.mp3`;
+  const cmd = ffmpeg().input(mp3Path);
 
-    const metadataArgs = [];
-    if (tags.title) metadataArgs.push("-metadata", `title=${tags.title}`);
-    if (tags.artist) metadataArgs.push("-metadata", `artist=${tags.artist}`);
-    if (tags.album) metadataArgs.push("-metadata", `album=${tags.album}`);
+  const metadataArgs = [];
+  if (tags.title)
+    metadataArgs.push(
+      "-metadata",
+      `title=${sanitizeMetadataValue(tags.title)}`,
+    );
+  if (tags.artist)
+    metadataArgs.push(
+      "-metadata",
+      `artist=${sanitizeMetadataValue(tags.artist)}`,
+    );
+  if (tags.album)
+    metadataArgs.push(
+      "-metadata",
+      `album=${sanitizeMetadataValue(tags.album)}`,
+    );
 
-    if (coverPath) {
-      cmd.input(coverPath);
-      cmd.outputOptions([
-        "-map",
-        "0:a",
-        "-map",
-        "1:0",
-        "-c",
-        "copy",
-        "-id3v2_version",
-        "3",
-        "-disposition:v:0",
-        "attached_pic",
-        ...metadataArgs,
-      ]);
-    } else {
-      cmd.outputOptions(["-c", "copy", "-id3v2_version", "3", ...metadataArgs]);
-    }
+  if (coverPath) {
+    cmd.input(coverPath);
+    cmd.outputOptions([
+      "-map",
+      "0:a",
+      "-map",
+      "1:0",
+      "-c",
+      "copy",
+      "-id3v2_version",
+      "3",
+      "-disposition:v:0",
+      "attached_pic",
+      ...metadataArgs,
+    ]);
+  } else {
+    cmd.outputOptions(["-c", "copy", "-id3v2_version", "3", ...metadataArgs]);
+  }
 
-    cmd
-      .on("error", (err) => reject(err))
-      .on("end", () => resolve(tmpOut))
-      .save(tmpOut);
+  // BUG FIX: previously, if this failed partway (bad cover image, ffmpeg
+  // error, timeout), the half-written `${mp3Path}.tagged.mp3` was never
+  // cleaned up — the caller only ever tracks `taggedPath` after a
+  // successful resolve, so nothing else in the app owns that file. Left
+  // alone, these orphaned temp files just accumulate on disk. Clean up
+  // here, at the source, on any failure.
+  return runCommand(cmd, tmpOut).catch((err) => {
+    safeUnlink(tmpOut);
+    throw err;
   });
 }
 

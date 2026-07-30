@@ -30,6 +30,28 @@ scheduleCleanup({ jobs, tmpDir: TMP_DIR });
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB, matches the UI's stated limit
 
+// Hard cap on simultaneous ffmpeg conversions. Render's free/hobby tiers
+// have very little CPU/RAM headroom, and letting an unbounded number of
+// concurrent conversions pile up is exactly the kind of thing that takes
+// the whole dyno down under real traffic. New requests past the cap get a
+// clean 503 instead of everyone's job silently crawling or the process OOMing.
+const MAX_CONCURRENT_JOBS = Number(process.env.SEIZE_MAX_CONCURRENT_JOBS) || 3;
+let activeJobs = 0;
+
+// Single source of truth for mutating a job's state. Previously some
+// handlers replaced the whole job object with `jobs.set(jobId, {...})`
+// on completion/error, which silently dropped fields set earlier
+// (most importantly `createdAt`). If the cleanup sweeper relies on
+// `createdAt` to decide what's stale, a finished job missing that field
+// could either never get swept or get treated as instantly stale —
+// this always merges onto whatever's already there.
+function updateJob(jobId, patch) {
+  const existing = jobs.get(jobId) || {};
+  const next = { ...existing, ...patch };
+  jobs.set(jobId, next);
+  return next;
+}
+
 // ============================================================
 // UPLOAD HANDLING
 // ============================================================
@@ -50,15 +72,25 @@ function fileFilter(req, file, cb) {
   // Be permissive rather than strict here: some browsers/mobile OSes send
   // generic mimetypes (application/octet-stream) for valid media files.
   // Reject only things that are clearly the wrong broad category.
+  //
+  // BUG FIX: the previous version also unconditionally allowed any
+  // "video/*" AND any "audio/*" mimetype regardless of which route was
+  // hit, which made `okPrefix` dead code — a video file uploaded to
+  // /audio-to-video (or vice versa) would sail through the filter and
+  // only fail later, deep inside ffmpeg, with a confusing error. Now we
+  // only allow the route-appropriate prefix, plus the octet-stream escape
+  // hatch for browsers that don't send a useful mimetype at all.
   if (
     file.mimetype.startsWith(okPrefix) ||
-    file.mimetype.startsWith("video/") ||
-    file.mimetype.startsWith("audio/") ||
     file.mimetype === "application/octet-stream"
   ) {
     cb(null, true);
   } else {
-    cb(new Error("Unsupported file type."));
+    cb(
+      new Error(
+        `Unsupported file type for this conversion (expected ${okPrefix}*).`,
+      ),
+    );
   }
 }
 
@@ -82,6 +114,29 @@ function uploadSingle(req, res, next) {
     }
     next();
   });
+}
+
+// Rejects the request before multer even starts buffering a (possibly
+// huge) file to disk if the conversion engine isn't available. There's no
+// point spending bandwidth and disk I/O on an upload that's guaranteed to
+// be thrown away a moment later.
+function requireEngine(req, res, next) {
+  if (!isAvailable()) {
+    return res.status(503).json({ error: "Conversion engine unavailable." });
+  }
+  next();
+}
+
+// Enforces the concurrency cap ahead of the (potentially large) upload too,
+// for the same reason as requireEngine — fail fast, don't waste I/O.
+function requireCapacity(req, res, next) {
+  if (activeJobs >= MAX_CONCURRENT_JOBS) {
+    return res.status(503).json({
+      error:
+        "Server is busy processing other conversions. Please try again shortly.",
+    });
+  }
+  next();
 }
 
 // ============================================================
@@ -175,6 +230,8 @@ function sanitizeFilename(name) {
 function convertFriendlyError(err) {
   if (err?.seizeReason === "no-audio-track")
     return "This file has no audio track to extract — it may be a video with muted/no sound.";
+  if (err?.seizeReason === "cover-image-unavailable")
+    return "Couldn't prepare a cover image for the video. Please try again in a moment.";
 
   const raw = String(err?.message || err || "");
   const s = raw.toLowerCase();
@@ -196,6 +253,8 @@ function convertFriendlyError(err) {
     return "The server ran out of temporary storage. Please try again in a moment.";
   if (s.includes("permission denied") || s.includes("eacces"))
     return "A server-side permissions issue prevented this conversion. This is a bug on our end.";
+  if (s.includes("etimedout") || s.includes("aborted"))
+    return "The conversion timed out. Please try again.";
 
   // Unknown cause — better to show a truncated real error than to lie
   // about it being a "corrupt file", which was misleading users and
@@ -205,174 +264,218 @@ function convertFriendlyError(err) {
     : "Conversion failed for an unknown reason.";
 }
 
+// Clamps progress into a sane 0-100 range so a flaky ffmpeg progress
+// parser can never push the UI into a nonsensical state (negative,
+// >100, NaN).
+function clampProgress(pct) {
+  const n = Number(pct);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.min(100, Math.max(0, Math.round(n)));
+}
+
 // ============================================================
 // VIDEO -> AUDIO
 // ============================================================
-router.post("/video-to-audio", uploadSingle, async (req, res) => {
-  if (!isAvailable()) {
-    cleanupUploadedFile(req);
-    return res.status(503).json({ error: "Conversion engine unavailable." });
-  }
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded." });
-  }
-
-  const format = ["mp3", "wav", "aac", "flac", "ogg"].includes(req.body.format)
-    ? req.body.format
-    : "mp3";
-
-  const jobId = uuid();
-  const outputPath = path.join(TMP_DIR, `${jobId}.${format}`);
-
-  jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
-  logEvent("conversion:started", {
-    jobId,
-    direction: "video-to-audio",
-    format,
-  });
-  res.json({ jobId });
-
-  try {
-    await videoToAudio(req.file.path, outputPath, format, (pct) => {
-      const job = jobs.get(jobId);
-      if (job && job.status === "processing") job.progress = pct;
-    });
-
-    let recognizedTrack = null;
-    let downloadName = `seize-audio.${format}`;
-
-    // Song ID is a bonus enhancement, scoped to mp3 only — that's the one
-    // format where embedded cover art is reliably supported everywhere.
-    // Every failure mode here (no API key configured, no match found,
-    // network hiccup, a bad cover image, a tagging error) falls straight
-    // through to the plain, already-successful converted file. This can
-    // never turn a working conversion into a failed one.
-    if (format === "mp3" && songIdConfigured()) {
-      let taggedPath = null;
-      let coverPath = null;
-      try {
-        const job = jobs.get(jobId);
-        if (job) job.progress = 99; // conversion done, just identifying now
-
-        const match = await recognizeSong(outputPath);
-        if (match && (match.title || match.artist)) {
-          if (match.coverUrl) {
-            coverPath = await downloadCoverArt(
-              match.coverUrl,
-              path.join(TMP_DIR, `${jobId}-cover.jpg`),
-            );
-          }
-          taggedPath = await embedAudioTags(outputPath, coverPath, {
-            title: match.title,
-            artist: match.artist,
-            album: match.album,
-          });
-
-          fs.unlinkSync(outputPath);
-          fs.renameSync(taggedPath, outputPath);
-          taggedPath = null; // renamed away, nothing left to clean up
-
-          recognizedTrack = {
-            title: match.title || null,
-            artist: match.artist || null,
-            album: match.album || null,
-          };
-          if (match.artist && match.title) {
-            downloadName = `${sanitizeFilename(`${match.artist} - ${match.title}`)}.mp3`;
-          }
-        }
-      } catch (tagErr) {
-        console.warn(
-          "[convert] Song ID/tagging skipped:",
-          tagErr.message || tagErr,
-        );
-      } finally {
-        if (coverPath && fs.existsSync(coverPath))
-          fs.unlink(coverPath, () => {});
-        if (taggedPath && fs.existsSync(taggedPath))
-          fs.unlink(taggedPath, () => {});
-      }
+router.post(
+  "/video-to-audio",
+  requireEngine,
+  requireCapacity,
+  uploadSingle,
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded." });
     }
 
-    jobs.set(jobId, {
-      status: "done",
-      progress: 100,
-      outputPath,
-      downloadName,
-      recognizedTrack,
-      finishedAt: Date.now(),
+    const format = ["mp3", "wav", "aac", "flac", "ogg"].includes(
+      req.body.format,
+    )
+      ? req.body.format
+      : "mp3";
+
+    const jobId = uuid();
+    const outputPath = path.join(TMP_DIR, `${jobId}.${format}`);
+
+    activeJobs += 1;
+    updateJob(jobId, {
+      status: "processing",
+      progress: 0,
+      createdAt: Date.now(),
     });
-    logEvent("conversion:done", { jobId, direction: "video-to-audio", format });
-  } catch (err) {
-    console.error("[convert] video-to-audio failed:", err.message || err);
-    jobs.set(jobId, {
-      status: "error",
-      error: convertFriendlyError(err),
-      finishedAt: Date.now(),
-    });
-    logEvent("conversion:error", {
+    logEvent("conversion:started", {
       jobId,
       direction: "video-to-audio",
-      error: err.message || String(err),
+      format,
     });
-    if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
-  } finally {
-    cleanupUploadedFile(req);
-  }
-});
+    res.json({ jobId });
+
+    try {
+      await videoToAudio(req.file.path, outputPath, format, (pct) => {
+        const job = jobs.get(jobId);
+        const clamped = clampProgress(pct);
+        if (job && job.status === "processing" && clamped !== undefined) {
+          job.progress = clamped;
+        }
+      });
+
+      let recognizedTrack = null;
+      let downloadName = `seize-audio.${format}`;
+
+      // Song ID is a bonus enhancement, scoped to mp3 only — that's the one
+      // format where embedded cover art is reliably supported everywhere.
+      // Every failure mode here (no API key configured, no match found,
+      // network hiccup, a bad cover image, a tagging error) falls straight
+      // through to the plain, already-successful converted file. This can
+      // never turn a working conversion into a failed one.
+      if (format === "mp3" && songIdConfigured()) {
+        let taggedPath = null;
+        let coverPath = null;
+        try {
+          const job = jobs.get(jobId);
+          if (job) job.progress = 99; // conversion done, just identifying now
+
+          const match = await recognizeSong(outputPath);
+          if (match && (match.title || match.artist)) {
+            if (match.coverUrl) {
+              coverPath = await downloadCoverArt(
+                match.coverUrl,
+                path.join(TMP_DIR, `${jobId}-cover.jpg`),
+              );
+            }
+            taggedPath = await embedAudioTags(outputPath, coverPath, {
+              title: match.title,
+              artist: match.artist,
+              album: match.album,
+            });
+
+            fs.unlinkSync(outputPath);
+            fs.renameSync(taggedPath, outputPath);
+            taggedPath = null; // renamed away, nothing left to clean up
+
+            recognizedTrack = {
+              title: match.title || null,
+              artist: match.artist || null,
+              album: match.album || null,
+            };
+            if (match.artist && match.title) {
+              downloadName = `${sanitizeFilename(`${match.artist} - ${match.title}`)}.mp3`;
+            }
+          }
+        } catch (tagErr) {
+          console.warn(
+            "[convert] Song ID/tagging skipped:",
+            tagErr.message || tagErr,
+          );
+        } finally {
+          if (coverPath && fs.existsSync(coverPath))
+            fs.unlink(coverPath, () => {});
+          if (taggedPath && fs.existsSync(taggedPath))
+            fs.unlink(taggedPath, () => {});
+        }
+      }
+
+      updateJob(jobId, {
+        status: "done",
+        progress: 100,
+        outputPath,
+        downloadName,
+        recognizedTrack,
+        finishedAt: Date.now(),
+      });
+      logEvent("conversion:done", {
+        jobId,
+        direction: "video-to-audio",
+        format,
+      });
+    } catch (err) {
+      console.error("[convert] video-to-audio failed:", err.message || err);
+      updateJob(jobId, {
+        status: "error",
+        error: convertFriendlyError(err),
+        finishedAt: Date.now(),
+      });
+      logEvent("conversion:error", {
+        jobId,
+        direction: "video-to-audio",
+        error: err.message || String(err),
+      });
+      if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
+    } finally {
+      activeJobs = Math.max(0, activeJobs - 1);
+      cleanupUploadedFile(req);
+    }
+  },
+);
 
 // ============================================================
 // AUDIO -> VIDEO
 // ============================================================
-router.post("/audio-to-video", uploadSingle, async (req, res) => {
-  if (!isAvailable()) {
-    cleanupUploadedFile(req);
-    return res.status(503).json({ error: "Conversion engine unavailable." });
-  }
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded." });
-  }
+router.post(
+  "/audio-to-video",
+  requireEngine,
+  requireCapacity,
+  uploadSingle,
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded." });
+    }
 
-  const jobId = uuid();
-  const outputPath = path.join(TMP_DIR, `${jobId}.mp4`);
+    const jobId = uuid();
+    const outputPath = path.join(TMP_DIR, `${jobId}.mp4`);
 
-  jobs.set(jobId, { status: "processing", progress: 0, createdAt: Date.now() });
-  logEvent("conversion:started", { jobId, direction: "audio-to-video" });
-  res.json({ jobId });
-
-  try {
-    const coverPath = await ensureCoverImage();
-
-    await audioToVideo(req.file.path, outputPath, coverPath, (pct) => {
-      const job = jobs.get(jobId);
-      if (job && job.status === "processing") job.progress = pct;
+    activeJobs += 1;
+    updateJob(jobId, {
+      status: "processing",
+      progress: 0,
+      createdAt: Date.now(),
     });
+    logEvent("conversion:started", { jobId, direction: "audio-to-video" });
+    res.json({ jobId });
 
-    jobs.set(jobId, {
-      status: "done",
-      progress: 100,
-      outputPath,
-      downloadName: "seize-video.mp4",
-      finishedAt: Date.now(),
-    });
-    logEvent("conversion:done", { jobId, direction: "audio-to-video" });
-  } catch (err) {
-    console.error("[convert] audio-to-video failed:", err.message || err);
-    jobs.set(jobId, {
-      status: "error",
-      error: convertFriendlyError(err),
-      finishedAt: Date.now(),
-    });
-    logEvent("conversion:error", {
-      jobId,
-      direction: "audio-to-video",
-      error: err.message || String(err),
-    });
-    if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
-  } finally {
-    cleanupUploadedFile(req);
-  }
-});
+    try {
+      let coverPath;
+      try {
+        coverPath = await ensureCoverImage();
+      } catch (coverErr) {
+        const wrapped = new Error(coverErr.message || String(coverErr));
+        wrapped.seizeReason = "cover-image-unavailable";
+        throw wrapped;
+      }
+
+      await audioToVideo(req.file.path, outputPath, coverPath, (pct) => {
+        const job = jobs.get(jobId);
+        const clamped = clampProgress(pct);
+        if (job && job.status === "processing" && clamped !== undefined) {
+          job.progress = clamped;
+        }
+      });
+
+      updateJob(jobId, {
+        status: "done",
+        progress: 100,
+        outputPath,
+        downloadName: "seize-video.mp4",
+        finishedAt: Date.now(),
+      });
+      logEvent("conversion:done", { jobId, direction: "audio-to-video" });
+    } catch (err) {
+      console.error("[convert] audio-to-video failed:", err.message || err);
+      updateJob(jobId, {
+        status: "error",
+        error: convertFriendlyError(err),
+        finishedAt: Date.now(),
+      });
+      logEvent("conversion:error", {
+        jobId,
+        direction: "audio-to-video",
+        error: err.message || String(err),
+      });
+      if (fs.existsSync(outputPath)) fs.unlink(outputPath, () => {});
+    } finally {
+      activeJobs = Math.max(0, activeJobs - 1);
+      cleanupUploadedFile(req);
+    }
+  },
+);
 
 // ============================================================
 // STATUS + DOWNLOAD
@@ -393,10 +496,22 @@ router.get("/download/:jobId", (req, res) => {
   if (!job || job.status !== "done") {
     return res.status(404).json({ error: "File not ready" });
   }
+  // The output file could in principle have been swept by the cleanup
+  // job between "done" being set and the download request arriving.
+  // Fail with a clear 410 instead of letting res.download throw an
+  // ENOENT that bubbles up as an unhandled error.
+  if (!fs.existsSync(job.outputPath)) {
+    jobs.delete(req.params.jobId);
+    return res
+      .status(410)
+      .json({ error: "This file has expired. Please convert again." });
+  }
   res.download(job.outputPath, job.downloadName, (err) => {
     if (!err) {
       fs.unlink(job.outputPath, () => {});
       jobs.delete(req.params.jobId);
+    } else {
+      console.error("[convert] download failed:", err.message || err);
     }
   });
 });

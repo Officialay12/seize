@@ -1,4 +1,4 @@
-const API_BASE = "https://seize-1lxs.onrender.com/api";
+const API_BASE = "https://seize-iw4w.onrender.com/api";
 
 // ============================================================
 // PRELOADER - Show logo before app loads

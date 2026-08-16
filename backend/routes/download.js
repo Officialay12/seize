@@ -155,27 +155,59 @@ function getRandomUserAgent() {
 }
 
 // ============================================================
-// CLEAN URL - FIXES ALL ENCODING ISSUES
+// CLEAN URL - FIXES ALL ENCODING ISSUES - MOVED TO TOP
 // ============================================================
 function cleanUrl(url) {
   if (!url) return url;
 
-  // Fix u002f encoding (Unicode for /) - CRITICAL FIX
-  if (typeof url === "string") {
-    url = url.replace(/u002f/g, "/");
-    url = url.replace(/\\/g, "");
-    url = url.replace(/\%2F/g, "/");
-    url = url.replace(/\%2f/g, "/");
-  }
+  // Fix u002f encoding (Unicode for /)
+  url = url.replace(/u002f/g, "/");
+  url = url.replace(/\\/g, "");
+  url = url.replace(/\%2F/g, "/");
+  url = url.replace(/\%2f/g, "/");
+
+  // Fix missing slash after protocol (e.g., "https:/" -> "https://")
+  url = url.replace(/^(https?:)\/([^\/])/, "$1//$2");
 
   // Fix double slashes
-  if (typeof url === "string") {
-    url = url.replace(/https:\/\/\/+/g, "https://");
-    url = url.replace(/http:\/\/\/+/g, "http://");
-    url = url.replace(/\/\/+/g, "/");
+  url = url.replace(/https:\/\/\/+/g, "https://");
+  url = url.replace(/http:\/\/\/+/g, "http://");
+  url = url.replace(/\/\/+/g, "/");
+
+  // Ensure protocol exists
+  if (url && !/^https?:\/\//i.test(url)) {
+    url = "https://" + url;
   }
 
   return url;
+}
+
+// ============================================================
+// NORMALIZE URL - VALIDATES AND FIXES URLS
+// ============================================================
+function normalizeUrl(url) {
+  if (!url) return null;
+
+  let normalized = url.trim();
+
+  // Fix missing slash after protocol
+  normalized = normalized.replace(/^(https?:)\/([^\/])/, "$1//$2");
+
+  // Remove escaped characters
+  normalized = normalized.replace(/u002f/gi, "/");
+  normalized = normalized.replace(/\\/g, "");
+
+  // Ensure protocol exists
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = "https://" + normalized;
+  }
+
+  try {
+    new URL(normalized);
+    return normalized;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================
@@ -187,27 +219,34 @@ async function resolveShortLink(url) {
 
   console.log(`[seize] Resolving short link: ${url}`);
 
+  // Normalize the URL first
+  const validUrl = normalizeUrl(url);
+  if (!validUrl) {
+    console.log(`[seize] Invalid URL format: ${url}`);
+    return url;
+  }
+
   // Already a full URL
   if (
-    !url.includes("vt.tiktok.com") &&
-    !url.includes("vm.tiktok.com") &&
-    !url.includes("pin.it") &&
-    !url.includes("fb.watch")
+    !validUrl.includes("vt.tiktok.com") &&
+    !validUrl.includes("vm.tiktok.com") &&
+    !validUrl.includes("pin.it") &&
+    !validUrl.includes("fb.watch")
   ) {
-    const cleaned = cleanUrl(url);
+    const cleaned = cleanUrl(validUrl);
     shortLinkCache.set(url, cleaned);
     return cleaned;
   }
 
-  // METHOD 1: yt-dlp (most reliable)
+  // METHOD 1: yt-dlp (most reliable) - REMOVED TIMEOUT OPTION
   try {
     console.log("[seize] Method 1: yt-dlp...");
-    const result = await ytDlp(url, {
+    const result = await ytDlp(validUrl, {
       dumpJson: true,
       noWarnings: true,
       noCheckCertificates: true,
       retries: 5,
-      timeout: 30,
+      // timeout: 30,  // REMOVED - causes error
     });
     if (result && result.webpage_url) {
       const resolved = cleanUrl(result.webpage_url);
@@ -222,7 +261,7 @@ async function resolveShortLink(url) {
   // METHOD 2: Fetch with redirect
   try {
     console.log("[seize] Method 2: Fetch redirect...");
-    const response = await fetch(url, {
+    const response = await fetch(validUrl, {
       method: "GET",
       headers: {
         "User-Agent":
@@ -251,7 +290,7 @@ async function resolveShortLink(url) {
   // METHOD 3: Mobile user agent
   try {
     console.log("[seize] Method 3: Mobile UA...");
-    const response = await fetch(url, {
+    const response = await fetch(validUrl, {
       method: "GET",
       headers: {
         "User-Agent":
@@ -277,7 +316,48 @@ async function resolveShortLink(url) {
   }
 
   console.log(`[seize] All methods failed, returning original`);
-  return url;
+  return validUrl;
+}
+
+// ============================================================
+// FETCH WITH RETRY - HANDLES DNS ERRORS
+// ============================================================
+async function fetchWithRetry(url, options = {}, retries = 3) {
+  const validUrl = normalizeUrl(url);
+  if (!validUrl) {
+    throw new Error("Invalid URL format");
+  }
+
+  const cleanedUrl = cleanUrl(validUrl);
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(cleanedUrl, {
+        ...options,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          ...options.headers,
+        },
+      });
+      return response;
+    } catch (error) {
+      if (error.code === "ENOTFOUND" || error.message.includes("ENOTFOUND")) {
+        console.error(
+          `[fetch] DNS resolution failed (attempt ${i + 1}):`,
+          error.message,
+        );
+        if (i === retries - 1) {
+          throw new Error(
+            "Could not reach the server. The domain may not exist.",
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+      } else if (i === retries - 1) {
+        throw error;
+      }
+    }
+  }
 }
 
 // ============================================================
@@ -411,7 +491,7 @@ async function universalDirectExtractor(url, platform) {
   for (const ua of userAgents) {
     try {
       const headers = generateHeaders(platform, ua);
-      const response = await fetch(cleanUrlStr, {
+      const response = await fetchWithRetry(cleanUrlStr, {
         headers,
         signal: AbortSignal.timeout(15000),
         redirect: "follow",
@@ -1090,6 +1170,8 @@ function friendlyError(stderr = "") {
     return "Could not reach the server. The URL may be invalid.";
   if (s.includes("ssl") || s.includes("certificate"))
     return "SSL error. Trying with relaxed security...";
+  if (s.includes("invalid url"))
+    return "Invalid URL format. Please check the URL.";
 
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";
 }

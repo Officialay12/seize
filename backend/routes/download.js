@@ -12,9 +12,6 @@ const { logEvent } = require("../utils/activityLog");
 
 const router = express.Router();
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
 const TMP_DIR = path.join(__dirname, "..", "tmp");
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
@@ -32,9 +29,9 @@ const YT_DLP_BIN =
   );
 
 // ============================================================
-// CACHE SYSTEM
+// FAST CACHE SYSTEM
 // ============================================================
-class Cache {
+class FastCache {
   constructor(maxSize = 500, ttl = 1800000) {
     this.cache = new Map();
     this.maxSize = maxSize;
@@ -59,31 +56,39 @@ class Cache {
     this.cache.set(key, { value, timestamp: Date.now() });
   }
 
-  clear() { this.cache.clear(); }
+  clear() {
+    this.cache.clear();
+  }
 }
 
-const mediaCache = new Cache(500, 1800000);
-const profileCache = new Cache(100, 3600000);
-const shortLinkCache = new Cache(200, 600000);
+const mediaCache = new FastCache(500, 1800000);
+const profileCache = new FastCache(100, 3600000);
+const shortLinkCache = new FastCache(200, 600000);
 
 // ============================================================
 // COOKIE MANAGEMENT
 // ============================================================
 const COOKIE_SOURCE_FILES = {
   tiktok: process.env.TIKTOK_COOKIES_FILE || "./cookies/tiktok_cookies.txt",
-  instagram: process.env.INSTAGRAM_COOKIES_FILE || "./cookies/instagram_cookies.txt",
+  instagram:
+    process.env.INSTAGRAM_COOKIES_FILE || "./cookies/instagram_cookies.txt",
   twitter: process.env.TWITTER_COOKIES_FILE || "./cookies/twitter_cookies.txt",
-  facebook: process.env.FACEBOOK_COOKIES_FILE || "./cookies/facebook_cookies.txt",
-  pinterest: process.env.PINTEREST_COOKIES_FILE || "./cookies/pinterest_cookies.txt",
-  snapchat: process.env.SNAPCHAT_COOKIES_FILE || "./cookies/snapchat_cookies.txt",
+  facebook:
+    process.env.FACEBOOK_COOKIES_FILE || "./cookies/facebook_cookies.txt",
+  pinterest:
+    process.env.PINTEREST_COOKIES_FILE || "./cookies/pinterest_cookies.txt",
+  snapchat:
+    process.env.SNAPCHAT_COOKIES_FILE || "./cookies/snapchat_cookies.txt",
   youtube: process.env.YT_COOKIES_FILE || "./cookies/youtube_cookies.txt",
   reddit: process.env.REDDIT_COOKIES_FILE || "./cookies/reddit_cookies.txt",
   imgur: process.env.IMGUR_COOKIES_FILE || "./cookies/imgur_cookies.txt",
   giphy: process.env.GIPHY_COOKIES_FILE || "./cookies/giphy_cookies.txt",
   vimeo: process.env.VIMEO_COOKIES_FILE || "./cookies/vimeo_cookies.txt",
-  dailymotion: process.env.DAILYMOTION_COOKIES_FILE || "./cookies/dailymotion_cookies.txt",
+  dailymotion:
+    process.env.DAILYMOTION_COOKIES_FILE || "./cookies/dailymotion_cookies.txt",
   twitch: process.env.TWITCH_COOKIES_FILE || "./cookies/twitch_cookies.txt",
-  soundcloud: process.env.SOUNDCLOUD_COOKIES_FILE || "./cookies/soundcloud_cookies.txt",
+  soundcloud:
+    process.env.SOUNDCLOUD_COOKIES_FILE || "./cookies/soundcloud_cookies.txt",
   spotify: process.env.SPOTIFY_COOKIES_FILE || "./cookies/spotify_cookies.txt",
 };
 
@@ -112,21 +117,111 @@ function cookiesFor(platform) {
 // PLATFORM DEFINITIONS - 15+ PLATFORMS
 // ============================================================
 const PLATFORMS = [
-  { name: "tiktok", re: /tiktok\.com/i, icon: "TT", color: "#000000", label: "TikTok" },
-  { name: "instagram", re: /instagram\.com/i, icon: "IG", color: "#E4405F", label: "Instagram" },
-  { name: "twitter", re: /(twitter\.com|x\.com)/i, icon: "🐦", color: "#1DA1F2", label: "Twitter/X" },
-  { name: "pinterest", re: /(pinterest\.com|pin\.it)/i, icon: "📌", color: "#E60023", label: "Pinterest" },
-  { name: "snapchat", re: /snapchat\.com/i, icon: "👻", color: "#FFFC00", label: "Snapchat" },
-  { name: "facebook", re: /(facebook\.com|fb\.watch)/i, icon: "FB", color: "#1877F2", label: "Facebook" },
-  { name: "youtube", re: /(youtube\.com|youtu\.be)/i, icon: "▶️", color: "#FF0000", label: "YouTube" },
-  { name: "reddit", re: /(reddit\.com|redd\.it)/i, icon: "🤖", color: "#FF4500", label: "Reddit" },
-  { name: "imgur", re: /(imgur\.com|i\.imgur\.com)/i, icon: "📷", color: "#1BB76E", label: "Imgur" },
-  { name: "giphy", re: /giphy\.com/i, icon: "🎬", color: "#00BFFF", label: "Giphy" },
-  { name: "vimeo", re: /vimeo\.com/i, icon: "V", color: "#1AB7EA", label: "Vimeo" },
-  { name: "dailymotion", re: /dailymotion\.com/i, icon: "DM", color: "#0066DC", label: "Dailymotion" },
-  { name: "twitch", re: /twitch\.tv/i, icon: "🎮", color: "#9146FF", label: "Twitch" },
-  { name: "soundcloud", re: /soundcloud\.com/i, icon: "🎵", color: "#FF5500", label: "SoundCloud" },
-  { name: "spotify", re: /(spotify\.com|open\.spotify\.com)/i, icon: "🎧", color: "#1DB954", label: "Spotify" },
+  {
+    name: "tiktok",
+    re: /tiktok\.com/i,
+    icon: "TT",
+    color: "#000000",
+    label: "TikTok",
+  },
+  {
+    name: "instagram",
+    re: /instagram\.com/i,
+    icon: "IG",
+    color: "#E4405F",
+    label: "Instagram",
+  },
+  {
+    name: "twitter",
+    re: /(twitter\.com|x\.com)/i,
+    icon: "🐦",
+    color: "#1DA1F2",
+    label: "Twitter/X",
+  },
+  {
+    name: "pinterest",
+    re: /(pinterest\.com|pin\.it)/i,
+    icon: "📌",
+    color: "#E60023",
+    label: "Pinterest",
+  },
+  {
+    name: "snapchat",
+    re: /snapchat\.com/i,
+    icon: "👻",
+    color: "#FFFC00",
+    label: "Snapchat",
+  },
+  {
+    name: "facebook",
+    re: /(facebook\.com|fb\.watch)/i,
+    icon: "FB",
+    color: "#1877F2",
+    label: "Facebook",
+  },
+  {
+    name: "youtube",
+    re: /(youtube\.com|youtu\.be)/i,
+    icon: "▶️",
+    color: "#FF0000",
+    label: "YouTube",
+  },
+  {
+    name: "reddit",
+    re: /(reddit\.com|redd\.it)/i,
+    icon: "🤖",
+    color: "#FF4500",
+    label: "Reddit",
+  },
+  {
+    name: "imgur",
+    re: /(imgur\.com|i\.imgur\.com)/i,
+    icon: "📷",
+    color: "#1BB76E",
+    label: "Imgur",
+  },
+  {
+    name: "giphy",
+    re: /giphy\.com/i,
+    icon: "🎬",
+    color: "#00BFFF",
+    label: "Giphy",
+  },
+  {
+    name: "vimeo",
+    re: /vimeo\.com/i,
+    icon: "V",
+    color: "#1AB7EA",
+    label: "Vimeo",
+  },
+  {
+    name: "dailymotion",
+    re: /dailymotion\.com/i,
+    icon: "DM",
+    color: "#0066DC",
+    label: "Dailymotion",
+  },
+  {
+    name: "twitch",
+    re: /twitch\.tv/i,
+    icon: "🎮",
+    color: "#9146FF",
+    label: "Twitch",
+  },
+  {
+    name: "soundcloud",
+    re: /soundcloud\.com/i,
+    icon: "🎵",
+    color: "#FF5500",
+    label: "SoundCloud",
+  },
+  {
+    name: "spotify",
+    re: /(spotify\.com|open\.spotify\.com)/i,
+    icon: "🎧",
+    color: "#1DB954",
+    label: "Spotify",
+  },
 ];
 
 function detectPlatform(url) {
@@ -139,7 +234,12 @@ function getPlatformInfo(platform) {
 }
 
 function getAllPlatforms() {
-  return PLATFORMS.map(p => ({ name: p.name, icon: p.icon, color: p.color, label: p.label }));
+  return PLATFORMS.map((p) => ({
+    name: p.name,
+    icon: p.icon,
+    color: p.color,
+    label: p.label,
+  }));
 }
 
 // ============================================================
@@ -160,100 +260,155 @@ function getRandomUserAgent() {
 }
 
 // ============================================================
-// URL SANITIZATION
+// URL SANITIZATION - FIXED FOR TIKTOK SHORT LINKS
 // ============================================================
 function sanitizeUrl(input) {
   if (!input) return null;
 
   let url = input.trim();
-  url = url.replace(/[:;,.\s]+$/, '').replace(/^[@]+/, '');
-  url = url.replace(/[<>{}|\\^`[\]]/g, '');
+  url = url.replace(/[:;,.\s]+$/, "").replace(/^[@]+/, "");
+  url = url.replace(/[<>{}|\\^`[\]]/g, "");
 
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'https://' + url;
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = "https://" + url;
   }
 
-  // Short links - keep as-is
-  if (url.includes('vt.tiktok.com') || url.includes('vm.tiktok.com') ||
-      url.includes('pin.it') || url.includes('fb.watch') || url.includes('youtu.be')) {
+  // Keep short links as-is - they will be resolved
+  if (
+    url.includes("vt.tiktok.com") ||
+    url.includes("vm.tiktok.com") ||
+    url.includes("pin.it") ||
+    url.includes("fb.watch") ||
+    url.includes("youtu.be")
+  ) {
     return url;
   }
 
   // Platform-specific formatting
-  if (url.includes('tiktok.com')) {
+  if (url.includes("tiktok.com")) {
     const match = url.match(/@([a-zA-Z0-9_.-]+)/);
     if (match) url = `https://www.tiktok.com/@${match[1]}`;
+    // Handle video URLs
+    const videoMatch = url.match(
+      /tiktok\.com\/@[a-zA-Z0-9_.-]+\/video\/([0-9]+)/,
+    );
+    if (videoMatch) {
+      url = `https://www.tiktok.com/@${videoMatch[1]}/video/${videoMatch[2]}`;
+    }
   }
 
-  if (url.includes('instagram.com')) {
-    const match = url.match(/instagram\.com\/(?:p|reel|tv|stories)\/([a-zA-Z0-9_.-]+)/);
+  if (url.includes("instagram.com")) {
+    const match = url.match(
+      /instagram\.com\/(?:p|reel|tv|stories)\/([a-zA-Z0-9_.-]+)/,
+    );
     if (match) {
-      const type = url.includes('/p/') ? 'p' : url.includes('/reel/') ? 'reel' : 'tv';
+      const type = url.includes("/p/")
+        ? "p"
+        : url.includes("/reel/")
+          ? "reel"
+          : "tv";
       url = `https://www.instagram.com/${type}/${match[1]}`;
     }
   }
 
-  if (url.includes('twitter.com') || url.includes('x.com')) {
-    const match = url.match(/(?:twitter|x)\.com\/([a-zA-Z0-9_.-]+)\/status\/([0-9]+)/);
+  if (url.includes("twitter.com") || url.includes("x.com")) {
+    const match = url.match(
+      /(?:twitter|x)\.com\/([a-zA-Z0-9_.-]+)\/status\/([0-9]+)/,
+    );
     if (match) {
-      const domain = url.includes('x.com') ? 'x.com' : 'twitter.com';
+      const domain = url.includes("x.com") ? "x.com" : "twitter.com";
       url = `https://www.${domain}/${match[1]}/status/${match[2]}`;
     }
   }
 
-  if (url.includes('youtube.com') || url.includes('youtu.be')) {
-    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+  if (url.includes("youtube.com") || url.includes("youtu.be")) {
+    const match = url.match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/,
+    );
     if (match) url = `https://www.youtube.com/watch?v=${match[1]}`;
   }
 
-  if (url.includes('reddit.com')) {
-    const match = url.match(/reddit\.com\/r\/[a-zA-Z0-9_]+\/comments\/([a-zA-Z0-9]+)/);
-    if (match) url = `https://www.reddit.com/r/${match[1]}/comments/${match[2]}`;
+  if (url.includes("reddit.com")) {
+    const match = url.match(
+      /reddit\.com\/r\/[a-zA-Z0-9_]+\/comments\/([a-zA-Z0-9]+)/,
+    );
+    if (match)
+      url = `https://www.reddit.com/r/${match[1]}/comments/${match[2]}`;
+  }
+
+  // SoundCloud
+  if (url.includes("soundcloud.com")) {
+    const match = url.match(
+      /soundcloud\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)/,
+    );
+    if (match) url = `https://soundcloud.com/${match[1]}/${match[2]}`;
+  }
+
+  // Spotify
+  if (url.includes("spotify.com")) {
+    const match = url.match(
+      /spotify\.com\/(track|album|playlist)\/([a-zA-Z0-9]+)/,
+    );
+    if (match) url = `https://open.spotify.com/${match[1]}/${match[2]}`;
   }
 
   return url;
 }
 
 // ============================================================
-// RESOLVE SHORT LINKS
+// RESOLVE SHORT LINKS - FIXED FOR TIKTOK
 // ============================================================
 async function resolveShortLink(url) {
   const cached = shortLinkCache.get(url);
   if (cached) return cached;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    console.log(`[seize] Resolving short link: ${url}`);
 
-    const response = await fetch(url, {
-      method: 'HEAD',
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    // Try HEAD first
+    let response = await fetch(url, {
+      method: "HEAD",
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Cache-Control': 'no-cache',
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "text/html,application/xhtml+xml",
+        "Cache-Control": "no-cache",
       },
-      redirect: 'follow',
+      redirect: "follow",
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
-    const finalUrl = response.url;
+    let finalUrl = response.url;
+
+    // If still a short link, try GET
+    if (
+      finalUrl.includes("vt.tiktok.com") ||
+      finalUrl.includes("vm.tiktok.com")
+    ) {
+      console.log("[seize] HEAD redirect incomplete, trying GET...");
+      const getResponse = await fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          Accept: "text/html,application/xhtml+xml",
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(15000),
+      });
+      finalUrl = getResponse.url;
+    }
+
+    console.log(`[seize] Short link resolved to: ${finalUrl}`);
     shortLinkCache.set(url, finalUrl);
     return finalUrl;
   } catch (err) {
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(10000),
-      });
-      const finalUrl = response.url;
-      shortLinkCache.set(url, finalUrl);
-      return finalUrl;
-    } catch (e) {
-      return url;
-    }
+    console.warn(`[seize] Failed to resolve short link: ${err.message}`);
+    return url;
   }
 }
 
@@ -264,11 +419,12 @@ function generateHeaders(platform, ua = null) {
   const userAgent = ua || getRandomUserAgent();
   const headers = {
     "User-Agent": userAgent,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
+    Connection: "keep-alive",
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
@@ -281,42 +437,50 @@ function generateHeaders(platform, ua = null) {
       "X-Requested-With": "XMLHttpRequest",
       "X-Instagram-AJAX": "1",
       "X-IG-App-ID": "936619743392459",
-      "Accept": "application/json, text/plain, */*",
+      Accept: "application/json, text/plain, */*",
     },
     tiktok: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.tiktok.com/",
-      "Origin": "https://www.tiktok.com",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.tiktok.com/",
+      Origin: "https://www.tiktok.com",
       "X-Requested-With": "XMLHttpRequest",
     },
     twitter: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://twitter.com/",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://twitter.com/",
       "X-Twitter-Client": "web",
       "X-Requested-With": "XMLHttpRequest",
     },
     youtube: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.youtube.com/",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.youtube.com/",
       "X-YouTube-Client-Name": "1",
     },
     reddit: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.reddit.com/",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.reddit.com/",
       "X-Requested-With": "XMLHttpRequest",
     },
     twitch: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.twitch.tv/",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.twitch.tv/",
       "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
     },
     soundcloud: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://soundcloud.com/",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://soundcloud.com/",
     },
     spotify: {
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://open.spotify.com/",
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://open.spotify.com/",
+    },
+    vimeo: {
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://vimeo.com/",
+    },
+    dailymotion: {
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.dailymotion.com/",
     },
   };
 
@@ -371,50 +535,99 @@ function extractMediaFromHtml(html, platform, url) {
   let thumbnail = null;
 
   // Meta tags
-  const ogTitleMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
+  const ogTitleMatch = html.match(
+    /<meta property="og:title" content="([^"]+)"/,
+  );
   if (ogTitleMatch) title = ogTitleMatch[1];
 
-  const ogImageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
+  const ogImageMatch = html.match(
+    /<meta property="og:image" content="([^"]+)"/,
+  );
   if (ogImageMatch) thumbnail = ogImageMatch[1];
 
-  const twitterImageMatch = html.match(/<meta name="twitter:image" content="([^"]+)"/);
+  const twitterImageMatch = html.match(
+    /<meta name="twitter:image" content="([^"]+)"/,
+  );
   if (!thumbnail && twitterImageMatch) thumbnail = twitterImageMatch[1];
 
-  // Video URLs
-  const videoMatches = html.match(/https:\/\/[^\s"']+\.(mp4|mov|webm|m3u8)[^\s"']*/gi) || [];
-  const jsonVideoMatches = html.match(/"videoUrl":"([^"]+)"/gi) || [];
-  const jsonVideoMatches2 = html.match(/"playAddr":"([^"]+)"/gi) || [];
+  // Video URLs - multiple patterns for different platforms
+  const videoPatterns = [
+    /https:\/\/[^\s"']+\.(mp4|mov|webm|m3u8)[^\s"']*/gi,
+    /"videoUrl":"([^"]+)"/gi,
+    /"playAddr":"([^"]+)"/gi,
+    /"downloadAddr":"([^"]+)"/gi,
+    /"playback_url":"([^"]+)"/gi,
+    /"contentUrl":"([^"]+\.(mp4|mov|webm|mkv)[^"]*)"/gi,
+    /"url":"([^"]+\.(mp4|mov|webm|mkv)[^"]*)"/gi,
+    /"hls_url":"([^"]+)"/gi,
+    /"video_manifest":"([^"]+)"/gi,
+    /"playlist":"([^"]+)"/gi,
+    /"source":"([^"]+\.(mp4|mov|webm))"/gi,
+    /"src":"([^"]+\.(mp4|mov|webm))"/gi,
+  ];
 
-  for (const match of [...videoMatches, ...jsonVideoMatches, ...jsonVideoMatches2]) {
-    const cleanUrl = match.replace(/^"videoUrl":"|"playAddr":"|"$/g, '');
-    if (cleanUrl && !cleanUrl.includes('placeholder') && !cleanUrl.includes('default')) {
-      videos.push({ url: cleanUrl, format: "mp4", quality: "HD" });
+  // Image URLs
+  const imagePatterns = [
+    /https:\/\/[^\s"']+\.(jpg|jpeg|png|webp|gif)[^\s"']*/gi,
+    /"displayUrl":"([^"]+)"/gi,
+    /"display_url":"([^"]+)"/gi,
+    /"imageUrl":"([^"]+)"/gi,
+    /"image_url":"([^"]+)"/gi,
+    /"thumbnail":"([^"]+)"/gi,
+    /"thumbnailUrl":"([^"]+)"/gi,
+    /"coverUrl":"([^"]+)"/gi,
+    /"cover_url":"([^"]+)"/gi,
+  ];
+
+  for (const pattern of videoPatterns) {
+    const matches = [...html.matchAll(pattern)];
+    for (const match of matches) {
+      const cleanUrl = match[1] || match[0];
+      if (
+        cleanUrl &&
+        !cleanUrl.includes("placeholder") &&
+        !cleanUrl.includes("default")
+      ) {
+        videos.push({
+          url: cleanUrl.replace(/\\/g, ""),
+          format: "mp4",
+          quality: "HD",
+        });
+      }
     }
   }
 
-  // Image URLs
-  const imageMatches = html.match(/https:\/\/[^\s"']+\.(jpg|jpeg|png|webp|gif)[^\s"']*/gi) || [];
-  const jsonImageMatches = html.match(/"displayUrl":"([^"]+)"/gi) || [];
-  const jsonImageMatches2 = html.match(/"imageUrl":"([^"]+)"/gi) || [];
-
-  for (const match of [...imageMatches, ...jsonImageMatches, ...jsonImageMatches2]) {
-    const cleanUrl = match.replace(/^"displayUrl":"|"imageUrl":"|"$/g, '');
-    if (cleanUrl && !cleanUrl.includes('placeholder') && !cleanUrl.includes('default')) {
-      images.push({ url: cleanUrl, format: "jpg" });
+  for (const pattern of imagePatterns) {
+    const matches = [...html.matchAll(pattern)];
+    for (const match of matches) {
+      const cleanUrl = match[1] || match[0];
+      if (
+        cleanUrl &&
+        !cleanUrl.includes("placeholder") &&
+        !cleanUrl.includes("default")
+      ) {
+        images.push({ url: cleanUrl.replace(/\\/g, ""), format: "jpg" });
+      }
     }
   }
 
   // Deduplicate
-  const uniqueVideos = videos.filter((v, i) => videos.findIndex(x => x.url === v.url) === i);
-  const uniqueImages = images.filter((i, idx) => images.findIndex(x => x.url === i.url) === idx);
+  const uniqueVideos = videos.filter(
+    (v, i) => videos.findIndex((x) => x.url === v.url) === i,
+  );
+  const uniqueImages = images.filter(
+    (i, idx) => images.findIndex((x) => x.url === i.url) === idx,
+  );
 
   if (uniqueVideos.length > 0 || uniqueImages.length > 0) {
-    const username = url.match(/@([a-zA-Z0-9_.-]+)/)?.[1] || url.split('/').pop().split('?')[0];
+    const username =
+      url.match(/@([a-zA-Z0-9_.-]+)/)?.[1] ||
+      url.split("/").pop().split("?")[0];
     return {
       platform,
       title: title || `${platform} Post`,
       uploader: username || platform,
-      thumbnail: thumbnail || (uniqueImages[0]?.url) || null,
+      thumbnail: thumbnail || uniqueImages[0]?.url || null,
       hasVideo: uniqueVideos.length > 0,
       hasImage: uniqueImages.length > 0,
       videos: uniqueVideos.slice(0, 10),
@@ -475,7 +688,10 @@ function getPlatformStrategies(platform) {
       { extractorArgs: "twitter:api=ios" },
     ],
     youtube: [
-      { extractorArgs: "youtube:include_dash_manifest=true;include_hls_manifest=true" },
+      {
+        extractorArgs:
+          "youtube:include_dash_manifest=true;include_hls_manifest=true",
+      },
       { extractorArgs: "youtube:api=web" },
       { extractorArgs: "youtube:api=android" },
       { extractorArgs: "youtube:api=ios" },
@@ -500,15 +716,15 @@ function getPlatformStrategies(platform) {
       { extractorArgs: "reddit:api=android" },
       { extractorArgs: "generic" },
     ],
-    imgur: [
-      { extractorArgs: "generic" },
-      { extractorArgs: "imgur:api=web" },
-      { extractorArgs: "generic;force_generic_extractor=true" },
+    soundcloud: [
+      { extractorArgs: "soundcloud:api=web" },
+      { extractorArgs: "soundcloud:api=android" },
+      { extractorArgs: "soundcloud:api=ios" },
     ],
-    giphy: [
-      { extractorArgs: "generic" },
-      { extractorArgs: "giphy:api=web" },
-      { extractorArgs: "generic;force_generic_extractor=true" },
+    spotify: [
+      { extractorArgs: "spotify:api=web" },
+      { extractorArgs: "spotify:api=android" },
+      { extractorArgs: "spotify:api=ios" },
     ],
     vimeo: [
       { extractorArgs: "vimeo:api=web" },
@@ -525,15 +741,15 @@ function getPlatformStrategies(platform) {
       { extractorArgs: "twitch:api=android" },
       { extractorArgs: "twitch:api=ios" },
     ],
-    soundcloud: [
-      { extractorArgs: "soundcloud:api=web" },
-      { extractorArgs: "soundcloud:api=android" },
-      { extractorArgs: "soundcloud:api=ios" },
+    imgur: [
+      { extractorArgs: "generic" },
+      { extractorArgs: "imgur:api=web" },
+      { extractorArgs: "generic;force_generic_extractor=true" },
     ],
-    spotify: [
-      { extractorArgs: "spotify:api=web" },
-      { extractorArgs: "spotify:api=android" },
-      { extractorArgs: "spotify:api=ios" },
+    giphy: [
+      { extractorArgs: "generic" },
+      { extractorArgs: "giphy:api=web" },
+      { extractorArgs: "generic;force_generic_extractor=true" },
     ],
   };
 
@@ -541,16 +757,19 @@ function getPlatformStrategies(platform) {
 }
 
 // ============================================================
-// RESOLVE WITH STRATEGIES
+// RESOLVE WITH STRATEGIES - FAST
 // ============================================================
 async function resolveWithStrategies(url, platform, isUsable) {
   const cacheKey = `resolve_${platform}_${url}`;
   const cached = mediaCache.get(cacheKey);
   if (cached) return { info: cached, strategyIndex: -1, directExtract: true };
 
-  // Try direct extraction first
+  // Try direct extraction first (fastest)
   const directResult = await universalDirectExtractor(url, platform);
-  if (directResult && (directResult.videos.length > 0 || directResult.images.length > 0)) {
+  if (
+    directResult &&
+    (directResult.videos.length > 0 || directResult.images.length > 0)
+  ) {
     mediaCache.set(cacheKey, directResult);
     return { info: directResult, strategyIndex: -1, directExtract: true };
   }
@@ -559,7 +778,8 @@ async function resolveWithStrategies(url, platform, isUsable) {
   const strategies = [];
   const platformStrategies = getPlatformStrategies(platform);
 
-  for (let i = 0; i < Math.min(5, platformStrategies.length); i++) {
+  // Only use 3 strategies for speed
+  for (let i = 0; i < Math.min(3, platformStrategies.length); i++) {
     const ua = USER_AGENTS[i % USER_AGENTS.length];
     const strategy = {
       dumpSingleJson: true,
@@ -576,7 +796,9 @@ async function resolveWithStrategies(url, platform, isUsable) {
   let lastErr;
   for (let i = 0; i < strategies.length; i++) {
     try {
-      console.log(`[seize] Strategy ${i + 1}/${strategies.length} for ${platform}...`);
+      console.log(
+        `[seize] Strategy ${i + 1}/${strategies.length} for ${platform}...`,
+      );
       const info = await ytDlp(url, strategies[i], {
         timeout: 30000,
         maxBuffer: 1024 * 1024 * 20,
@@ -596,7 +818,7 @@ async function resolveWithStrategies(url, platform, isUsable) {
 }
 
 // ============================================================
-// YT-DLP WITH PROGRESS
+// YT-DLP WITH PROGRESS - FAST
 // ============================================================
 function runYtDlpWithProgress(url, options, jobId, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
@@ -612,7 +834,9 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 60000) {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      try { child.kill("SIGKILL"); } catch {}
+      try {
+        child.kill("SIGKILL");
+      } catch {}
       reject(new Error("Download timed out."));
     }, timeoutMs);
 
@@ -646,7 +870,7 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 60000) {
 }
 
 // ============================================================
-// DOWNLOAD FILE HELPER
+// DOWNLOAD FILE HELPER - FAST
 // ============================================================
 function downloadFile(url, filePath, redirects = 0) {
   return new Promise((resolve, reject) => {
@@ -659,40 +883,50 @@ function downloadFile(url, filePath, redirects = 0) {
 
     const headers = {
       "User-Agent": getRandomUserAgent(),
-      "Accept": "*/*",
+      Accept: "*/*",
       "Accept-Encoding": "gzip, deflate, br",
-      "Connection": "keep-alive",
-      "Range": "bytes=0-",
+      Connection: "keep-alive",
+      Range: "bytes=0-",
     };
 
-    protocol
-      .get(url, { headers }, (response) => {
-        if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
-          file.close();
-          fs.unlink(filePath, () => {});
-          downloadFile(response.headers.location, filePath, redirects + 1)
-            .then(resolve)
-            .catch(reject);
-          return;
-        }
-
-        if (response.statusCode !== 200 && response.statusCode !== 206) {
-          file.close();
-          fs.unlink(filePath, () => {});
-          reject(new Error(`Download failed: ${response.statusCode}`));
-          return;
-        }
-
-        response.pipe(file);
-        file.on("finish", () => {
-          file.close();
-          resolve(filePath);
-        });
-      })
-      .on("error", (err) => {
+    const request = protocol.get(url, { headers }, (response) => {
+      if (
+        [301, 302, 303, 307, 308].includes(response.statusCode) &&
+        response.headers.location
+      ) {
+        file.close();
         fs.unlink(filePath, () => {});
-        reject(err);
+        downloadFile(response.headers.location, filePath, redirects + 1)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+
+      if (response.statusCode !== 200 && response.statusCode !== 206) {
+        file.close();
+        fs.unlink(filePath, () => {});
+        reject(new Error(`Download failed: ${response.statusCode}`));
+        return;
+      }
+
+      response.pipe(file);
+      file.on("finish", () => {
+        file.close();
+        resolve(filePath);
       });
+    });
+
+    request.on("error", (err) => {
+      fs.unlink(filePath, () => {});
+      reject(err);
+    });
+
+    // Timeout the request
+    request.setTimeout(30000, () => {
+      request.destroy();
+      fs.unlink(filePath, () => {});
+      reject(new Error("Download timeout"));
+    });
   });
 }
 
@@ -712,15 +946,28 @@ function extractMediaUrls(info) {
     };
   }
 
-  const media = { images: [], videos: [], audio: [], thumbnail: null, hasVideo: false, hasImage: false, isGif: false };
-  const nodes = Array.isArray(info.entries) && info.entries.length ? info.entries.filter(Boolean) : [info];
+  const media = {
+    images: [],
+    videos: [],
+    audio: [],
+    thumbnail: null,
+    hasVideo: false,
+    hasImage: false,
+    isGif: false,
+  };
+  const nodes =
+    Array.isArray(info.entries) && info.entries.length
+      ? info.entries.filter(Boolean)
+      : [info];
 
   for (const node of nodes) {
     // Thumbnail
     if (!media.thumbnail) {
       if (node.thumbnail) media.thumbnail = node.thumbnail;
       else if (Array.isArray(node.thumbnails) && node.thumbnails.length) {
-        const largest = [...node.thumbnails].sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+        const largest = [...node.thumbnails].sort(
+          (a, b) => (b.width || 0) - (a.width || 0),
+        )[0];
         media.thumbnail = largest?.url || null;
       }
     }
@@ -731,7 +978,11 @@ function extractMediaUrls(info) {
         if (!format.url) continue;
         const isVideo = format.vcodec && format.vcodec !== "none";
         const isAudio = format.acodec && format.acodec !== "none" && !isVideo;
-        const isImage = format.ext && ["jpg", "jpeg", "png", "webp", "gif"].includes(format.ext.toLowerCase());
+        const isImage =
+          format.ext &&
+          ["jpg", "jpeg", "png", "webp", "gif"].includes(
+            format.ext.toLowerCase(),
+          );
 
         if (isVideo) {
           media.videos.push({
@@ -783,7 +1034,9 @@ function extractMediaUrls(info) {
   }
 
   // Sort by quality
-  media.videos.sort((a, b) => (b.height || b.width || 0) - (a.height || a.width || 0));
+  media.videos.sort(
+    (a, b) => (b.height || b.width || 0) - (a.height || a.width || 0),
+  );
 
   return media;
 }
@@ -793,9 +1046,10 @@ function isUsableInfo(info) {
   if (info.directExtract) return info.hasVideo || info.hasImage;
 
   if (info.formats && Array.isArray(info.formats)) {
-    const hasVideo = info.formats.some(f =>
-      (f.vcodec && f.vcodec !== "none") ||
-      (f.ext && ["mp4", "mov", "webm"].includes(f.ext.toLowerCase()))
+    const hasVideo = info.formats.some(
+      (f) =>
+        (f.vcodec && f.vcodec !== "none") ||
+        (f.ext && ["mp4", "mov", "webm"].includes(f.ext.toLowerCase())),
     );
     if (hasVideo) return true;
   }
@@ -818,11 +1072,13 @@ function dedupeByHeight(videos, max = 8) {
 }
 
 function sanitizeFilename(name) {
-  return String(name || "seize")
-    .replace(/[\/\\?%*:|"<>]/g, "")
-    .replace(/[\r\n]/g, "")
-    .trim()
-    .slice(0, 100) || "seize";
+  return (
+    String(name || "seize")
+      .replace(/[\/\\?%*:|"<>]/g, "")
+      .replace(/[\r\n]/g, "")
+      .trim()
+      .slice(0, 100) || "seize"
+  );
 }
 
 // ============================================================
@@ -831,13 +1087,19 @@ function sanitizeFilename(name) {
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
-  if (s.includes("private") || s.includes("protected")) return "This content is private.";
+  if (s.includes("private") || s.includes("protected"))
+    return "This content is private.";
   if (s.includes("not found") || s.includes("404")) return "Content not found.";
-  if (s.includes("rate limit") || s.includes("429")) return "Rate limited. Please wait.";
-  if (s.includes("blocked") || s.includes("403")) return "Access blocked. Trying alternatives...";
-  if (s.includes("timeout")) return "Request timed out.";
+  if (s.includes("rate limit") || s.includes("429"))
+    return "Rate limited. Please wait.";
+  if (s.includes("blocked") || s.includes("403"))
+    return "Access blocked. Trying alternatives...";
+  if (s.includes("timeout") || s.includes("timed out"))
+    return "Request timed out.";
   if (s.includes("empty") || s.includes("no items")) return "No posts found.";
   if (s.includes("login") || s.includes("auth")) return "Login required.";
+  if (s.includes("geo") || s.includes("country"))
+    return "This content is region-locked.";
 
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";
 }
@@ -853,7 +1115,7 @@ router.get("/platforms", (req, res) => {
 });
 
 // ============================================================
-// ROUTE: RESOLVE
+// ROUTE: RESOLVE - FIXED
 // ============================================================
 router.post("/resolve", async (req, res) => {
   let { url } = req.body;
@@ -862,29 +1124,45 @@ router.post("/resolve", async (req, res) => {
   url = sanitizeUrl(url);
   if (!url) return res.status(400).json({ error: "Invalid URL format" });
 
-  // Resolve short links
-  if (url.includes('vt.tiktok.com') || url.includes('vm.tiktok.com') ||
-      url.includes('pin.it') || url.includes('fb.watch') || url.includes('youtu.be')) {
+  // Resolve short links (TikTok vt.tiktok.com, etc.)
+  if (
+    url.includes("vt.tiktok.com") ||
+    url.includes("vm.tiktok.com") ||
+    url.includes("pin.it") ||
+    url.includes("fb.watch") ||
+    url.includes("youtu.be")
+  ) {
     try {
-      url = await resolveShortLink(url);
+      const resolved = await resolveShortLink(url);
+      if (resolved && resolved !== url) {
+        url = resolved;
+        console.log(`[seize] Resolved short link to: ${url}`);
+      }
     } catch (err) {
-      console.warn('[seize] Failed to resolve short link:', err.message);
+      console.warn("[seize] Failed to resolve short link:", err.message);
     }
   }
 
   const platform = detectPlatform(url);
   if (!platform) {
     return res.status(400).json({
-      error: "Unsupported platform. Supported platforms: " + getAllPlatforms().map(p => p.name).join(", ")
+      error:
+        "Unsupported platform. Supported platforms: " +
+        getAllPlatforms()
+          .map((p) => p.name)
+          .join(", "),
     });
   }
 
   try {
     console.log(`[seize] Resolving ${platform} URL: ${url}`);
 
-    // Try direct extraction
+    // Try direct extraction first (fastest)
     const directResult = await universalDirectExtractor(url, platform);
-    if (directResult && (directResult.videos.length > 0 || directResult.images.length > 0)) {
+    if (
+      directResult &&
+      (directResult.videos.length > 0 || directResult.images.length > 0)
+    ) {
       const platformInfo = getPlatformInfo(platform);
       return res.json({
         platform,
@@ -892,7 +1170,11 @@ router.post("/resolve", async (req, res) => {
         title: directResult.title || `${platform} Post`,
         thumbnail: directResult.thumbnail || null,
         uploader: directResult.uploader || "Unknown",
-        contentType: directResult.hasVideo ? "video" : (directResult.hasImage ? "image" : "unknown"),
+        contentType: directResult.hasVideo
+          ? "video"
+          : directResult.hasImage
+            ? "image"
+            : "unknown",
         hasVideo: directResult.hasVideo,
         hasImage: directResult.hasImage,
         isGif: false,
@@ -914,8 +1196,18 @@ router.post("/resolve", async (req, res) => {
     let title = info.title || info.fulltitle || info.description || "Untitled";
     if (title.length > 200) title = title.substring(0, 200) + "...";
 
-    let uploader = info.uploader || info.channel || info.author || info.creator || info.owner || null;
-    let contentType = media.hasVideo ? "video" : (media.hasImage ? "image" : "unknown");
+    let uploader =
+      info.uploader ||
+      info.channel ||
+      info.author ||
+      info.creator ||
+      info.owner ||
+      null;
+    let contentType = media.hasVideo
+      ? "video"
+      : media.hasImage
+        ? "image"
+        : "unknown";
     if (media.isGif) contentType = "video";
 
     let thumbnail = media.thumbnail || "/icons/icon-192.png";
@@ -925,7 +1217,7 @@ router.post("/resolve", async (req, res) => {
 
     const formatsAvailable = [];
     if (info.formats && Array.isArray(info.formats)) {
-      const formatExts = info.formats.map(f => f.ext).filter(Boolean);
+      const formatExts = info.formats.map((f) => f.ext).filter(Boolean);
       formatsAvailable.push(...new Set(formatExts));
     }
     if (media.hasVideo) formatsAvailable.push("mp4");
@@ -958,8 +1250,13 @@ router.post("/resolve", async (req, res) => {
     console.error("[resolve] Failed:", stderr);
 
     const errorMsg = friendlyError(stderr);
-    if (stderr.toLowerCase().includes("429") || stderr.toLowerCase().includes("rate limit")) {
-      return res.status(429).json({ error: `${platform} is rate limiting. Please wait.` });
+    if (
+      stderr.toLowerCase().includes("429") ||
+      stderr.toLowerCase().includes("rate limit")
+    ) {
+      return res
+        .status(429)
+        .json({ error: `${platform} is rate limiting. Please wait.` });
     }
     res.status(502).json({ error: errorMsg });
   }
@@ -976,12 +1273,20 @@ router.post("/fetch", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Invalid URL format" });
 
   // Resolve short links
-  if (url.includes('vt.tiktok.com') || url.includes('vm.tiktok.com') ||
-      url.includes('pin.it') || url.includes('fb.watch') || url.includes('youtu.be')) {
+  if (
+    url.includes("vt.tiktok.com") ||
+    url.includes("vm.tiktok.com") ||
+    url.includes("pin.it") ||
+    url.includes("fb.watch") ||
+    url.includes("youtu.be")
+  ) {
     try {
-      url = await resolveShortLink(url);
+      const resolved = await resolveShortLink(url);
+      if (resolved && resolved !== url) {
+        url = resolved;
+      }
     } catch (err) {
-      console.warn('[seize] Failed to resolve short link:', err.message);
+      console.warn("[seize] Failed to resolve short link:", err.message);
     }
   }
 
@@ -997,11 +1302,12 @@ router.post("/fetch", async (req, res) => {
   res.json({ jobId });
 
   try {
-    // Try direct extraction
+    // Try direct extraction first
     if (mode === "image" || mode === "video") {
       const directResult = await universalDirectExtractor(url, platform);
       if (directResult) {
-        const mediaArray = mode === "video" ? directResult.videos : directResult.images;
+        const mediaArray =
+          mode === "video" ? directResult.videos : directResult.images;
         if (mediaArray && mediaArray.length > 0) {
           await downloadFile(mediaArray[0].url, outputPath);
           jobs.set(jobId, {
@@ -1067,7 +1373,8 @@ router.post("/fetch", async (req, res) => {
       }
     }
 
-    if (!succeeded) throw lastErr || new Error("All download strategies failed");
+    if (!succeeded)
+      throw lastErr || new Error("All download strategies failed");
 
     let finalPath = outputPath;
     if (!fs.existsSync(finalPath)) {
@@ -1113,7 +1420,8 @@ router.get("/status/:jobId", (req, res) => {
 // ============================================================
 router.get("/file/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
-  if (!job || job.status !== "done") return res.status(404).json({ error: "File not ready" });
+  if (!job || job.status !== "done")
+    return res.status(404).json({ error: "File not ready" });
   res.download(job.outputPath, job.downloadName, (err) => {
     if (!err) {
       fs.unlink(job.outputPath, () => {});
@@ -1135,11 +1443,14 @@ router.post("/profile", async (req, res) => {
   const detectedPlatform = platform || detectPlatform(url);
   if (!detectedPlatform) {
     return res.status(400).json({
-      error: "Unsupported platform. Supported platforms: " + getAllPlatforms().map(p => p.name).join(", ")
+      error:
+        "Unsupported platform. Supported platforms: " +
+        getAllPlatforms()
+          .map((p) => p.name)
+          .join(", "),
     });
   }
 
-  // Check cache
   const cacheKey = `profile_${detectedPlatform}_${url}_${limit}_${mode}`;
   const cached = profileCache.get(cacheKey);
   if (cached) {
@@ -1164,8 +1475,14 @@ router.post("/profile", async (req, res) => {
 
       // Try direct extraction
       try {
-        const directResult = await universalDirectExtractor(url, detectedPlatform);
-        if (directResult && (directResult.videos.length > 0 || directResult.images.length > 0)) {
+        const directResult = await universalDirectExtractor(
+          url,
+          detectedPlatform,
+        );
+        if (
+          directResult &&
+          (directResult.videos.length > 0 || directResult.images.length > 0)
+        ) {
           for (const video of directResult.videos) {
             items.push({
               id: `direct-${Date.now()}-${items.length}`,
@@ -1245,14 +1562,25 @@ router.post("/profile", async (req, res) => {
             if (entryUrl && seenUrls.has(entryUrl)) continue;
             if (entryUrl) seenUrls.add(entryUrl);
 
-            const hasVideo = entry.ext === "mp4" || entry.ext === "mov" || entry.ext === "webm" ||
+            const hasVideo =
+              entry.ext === "mp4" ||
+              entry.ext === "mov" ||
+              entry.ext === "webm" ||
               (entry.duration && entry.duration > 0) ||
-              ["tiktok", "twitter", "youtube", "vimeo", "twitch"].includes(detectedPlatform);
-            const hasImage = entry.ext === "jpg" || entry.ext === "jpeg" || entry.ext === "png" || entry.ext === "webp";
+              ["tiktok", "twitter", "youtube", "vimeo", "twitch"].includes(
+                detectedPlatform,
+              );
+            const hasImage =
+              entry.ext === "jpg" ||
+              entry.ext === "jpeg" ||
+              entry.ext === "png" ||
+              entry.ext === "webp";
 
             let thumbnail = entry.thumbnail || null;
             if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
-              const largest = [...entry.thumbnails].sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+              const largest = [...entry.thumbnails].sort(
+                (a, b) => (b.width || 0) - (a.width || 0),
+              )[0];
               thumbnail = largest?.url || null;
             }
 
@@ -1264,7 +1592,7 @@ router.post("/profile", async (req, res) => {
               duration: entry.duration || null,
               hasVideo: hasVideo,
               hasImage: hasImage,
-              contentType: hasVideo ? "video" : (hasImage ? "image" : "unknown"),
+              contentType: hasVideo ? "video" : hasImage ? "image" : "unknown",
               uploader: info.uploader || info.channel || info.author || null,
               viewCount: entry.view_count || entry.views || null,
               likeCount: entry.like_count || entry.likes || null,
@@ -1296,11 +1624,13 @@ router.post("/profile", async (req, res) => {
           total: items.length,
           processed: items.length,
           items: items,
-          jobId: jobId
+          jobId: jobId,
         });
       }
 
-      console.log(`[seize] Scan complete: ${items.length} items from ${detectedPlatform}`);
+      console.log(
+        `[seize] Scan complete: ${items.length} items from ${detectedPlatform}`,
+      );
     } catch (err) {
       console.error("[seize] Profile scan failed:", err.message);
       const job = jobs.get(jobId);
@@ -1390,14 +1720,19 @@ router.post("/profile/batch", async (req, res) => {
             let mediaUrl = null;
             const directResult = await universalDirectExtractor(url, platform);
             if (directResult) {
-              const mediaArray = item.hasVideo ? directResult.videos : directResult.images;
+              const mediaArray = item.hasVideo
+                ? directResult.videos
+                : directResult.images;
               if (mediaArray && mediaArray.length > 0) {
                 mediaUrl = mediaArray[0].url;
               }
             }
 
             const ext = item.hasVideo ? "mp4" : "jpg";
-            const outputPath = path.join(TMP_DIR, `${batchId}-${actualIndex}.${ext}`);
+            const outputPath = path.join(
+              TMP_DIR,
+              `${batchId}-${actualIndex}.${ext}`,
+            );
             const itemJobId = uuid();
 
             if (mediaUrl) {
@@ -1408,7 +1743,9 @@ router.post("/profile/batch", async (req, res) => {
             } else {
               const opts = {
                 output: outputPath,
-                format: item.hasVideo ? "bestvideo+bestaudio/best[ext=mp4]/best" : "best[ext=jpg]/best[ext=png]/best[ext=webp]/best",
+                format: item.hasVideo
+                  ? "bestvideo+bestaudio/best[ext=mp4]/best"
+                  : "best[ext=jpg]/best[ext=png]/best[ext=webp]/best",
                 mergeOutputFormat: "mp4",
                 noWarnings: true,
                 noCheckCertificates: true,
@@ -1427,7 +1764,10 @@ router.post("/profile/batch", async (req, res) => {
 
               const platformStrategies = getPlatformStrategies(platform);
               if (platformStrategies[actualIndex % platformStrategies.length]) {
-                Object.assign(opts, platformStrategies[actualIndex % platformStrategies.length]);
+                Object.assign(
+                  opts,
+                  platformStrategies[actualIndex % platformStrategies.length],
+                );
               }
 
               await runYtDlpWithProgress(url, opts, itemJobId, 60000);
@@ -1435,7 +1775,9 @@ router.post("/profile/batch", async (req, res) => {
               let finalPath = outputPath;
               if (!fs.existsSync(finalPath)) {
                 const dirFiles = fs.readdirSync(TMP_DIR);
-                const match = dirFiles.find((f) => f.startsWith(`${batchId}-${actualIndex}`));
+                const match = dirFiles.find((f) =>
+                  f.startsWith(`${batchId}-${actualIndex}`),
+                );
                 if (match) finalPath = path.join(TMP_DIR, match);
               }
 

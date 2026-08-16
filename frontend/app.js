@@ -1206,9 +1206,11 @@ function pollJob(url, progressFill, progressLabel) {
           clearInterval(interval);
           progressFill.style.width = "100%";
           resolve(data);
+          return;
         } else if (data.status === "error") {
           clearInterval(interval);
           reject(new Error(data.error || "Processing failed."));
+          return;
         } else {
           progressFill.style.width = `${data.progress || 10}%`;
         }
@@ -1393,7 +1395,10 @@ captureForm.addEventListener("submit", async (e) => {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // 60s (not 30s): the backend can legitimately take longer than 30s when
+    // it falls back through multiple yt-dlp strategies, so a short client
+    // timeout was aborting the UI while the server was still succeeding.
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const res = await fetch(`${API_BASE}/download/resolve`, {
       method: "POST",
@@ -1487,7 +1492,11 @@ captureForm.addEventListener("submit", async (e) => {
       contentType: data.contentType || null,
     });
   } catch (err) {
-    showCaptureError(err.message);
+    const message =
+      err?.name === "AbortError"
+        ? "This is taking longer than expected. The link may still resolve — please try again in a moment."
+        : err.message;
+    showCaptureError(message);
     setScopeState("idle");
   } finally {
     resolveBtn.disabled = false;
@@ -2249,9 +2258,12 @@ convertBtn.addEventListener("click", async () => {
 
 // ============================================================
 // SHARED FILE HANDLER
+// (URL-based share handling lives ONLY in the single "SHARED URL
+// HANDLER" block near the top of this file. This section is just for
+// native file shares / the File Handling API — a genuinely different
+// feature — so it doesn't duplicate that logic or fire a second/third
+// resolve for the same shared link.)
 // ============================================================
-const sharedUrl = sessionStorage.getItem("seize_shared_url");
-const sharedMode = sessionStorage.getItem("seize_shared_mode");
 
 async function handleSharedFile(file) {
   const isVideo = file.type.startsWith("video/");
@@ -2290,33 +2302,6 @@ async function handleSharedFile(file) {
   }
 }
 
-if (sharedUrl) {
-  window.addEventListener("load", () => {
-    if (urlInput) {
-      urlInput.value = sharedUrl;
-      urlInput.dispatchEvent(new Event("input"));
-    }
-    setTimeout(() => {
-      if (resolveBtn) resolveBtn.click();
-    }, 800);
-
-    if (sharedMode === "convert-video") {
-      document.querySelector('[data-mode="convert"]')?.click();
-      setTimeout(() => {
-        document.querySelector('[data-target="v2a"]')?.click();
-      }, 300);
-    } else if (sharedMode === "convert-audio") {
-      document.querySelector('[data-mode="convert"]')?.click();
-      setTimeout(() => {
-        document.querySelector('[data-target="a2v"]')?.click();
-      }, 300);
-    }
-    sessionStorage.removeItem("seize_shared_url");
-    sessionStorage.removeItem("seize_shared_title");
-    sessionStorage.removeItem("seize_shared_mode");
-  });
-}
-
 if ("launchQueue" in window) {
   window.launchQueue.setConsumer(async (launchParams) => {
     if (!launchParams.files || launchParams.files.length === 0) return;
@@ -2324,14 +2309,6 @@ if ("launchQueue" in window) {
     await handleSharedFile(file);
   });
 }
-
-window.addEventListener("load", () => {
-  const shareUrl = new URLSearchParams(window.location.search).get("share_url");
-  if (shareUrl) {
-    sessionStorage.setItem("seize_shared_url", shareUrl);
-    window.location.href = "/";
-  }
-});
 
 // ============================================================
 // CLIPBOARD DETECTION

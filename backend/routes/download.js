@@ -60,6 +60,10 @@ class FastCache {
 const mediaCache = new FastCache(500, 1800000);
 const profileCache = new FastCache(100, 3600000);
 const shortLinkCache = new FastCache(200, 600000);
+// Short cooldown for URLs that just failed extraction, so an immediate retry
+// (or a duplicate call in the same request) doesn't repeat the same slow,
+// doomed work. Deliberately much shorter-lived than the success caches above.
+const negativeCache = new FastCache(1000, 90000);
 
 // ============================================================
 // COOKIE MANAGEMENT
@@ -474,11 +478,14 @@ function generateHeaders(platform, ua = null) {
 // DIRECT EXTRACTOR - FAST HTML PARSING
 // ============================================================
 async function universalDirectExtractor(url, platform) {
-  const cacheKey = `direct_${platform}_${url}`;
+  const cleanUrlStr = cleanUrl(url);
+  // Cache key is built from the CLEANED url so functionally-identical inputs
+  // (trailing slash, mixed encoding, etc.) always hit the same cache entry.
+  const cacheKey = `direct_${platform}_${cleanUrlStr}`;
+
   const cached = mediaCache.get(cacheKey);
   if (cached) return cached;
-
-  const cleanUrlStr = cleanUrl(url);
+  if (negativeCache.get(cacheKey)) return null;
 
   // Try multiple user agents
   const userAgents = [
@@ -509,6 +516,7 @@ async function universalDirectExtractor(url, platform) {
     } catch (err) {}
   }
 
+  negativeCache.set(cacheKey, true);
   return null;
 }
 
@@ -822,21 +830,41 @@ function getPlatformStrategies(platform) {
 // ============================================================
 // RESOLVE WITH STRATEGIES
 // ============================================================
-async function resolveWithStrategies(url, platform, isUsable) {
-  const cacheKey = `resolve_${platform}_${url}`;
+async function resolveWithStrategies(
+  url,
+  platform,
+  isUsable,
+  preFetchedDirectResult = undefined,
+) {
+  const cleanUrlStr = cleanUrl(url);
+  const cacheKey = `resolve_${platform}_${cleanUrlStr}`;
+
   const cached = mediaCache.get(cacheKey);
   if (cached) return { info: cached, strategyIndex: -1, directExtract: true };
 
-  const cleanUrlStr = cleanUrl(url);
+  // The caller (e.g. the /resolve route) has typically already run direct
+  // extraction once before falling back here. Re-running it internally used
+  // to duplicate the entire 4-user-agent HTML scrape on every fallback —
+  // so we accept its result instead of repeating the work. Pass `undefined`
+  // (the default) if direct extraction genuinely hasn't been tried yet.
+  const directResult =
+    preFetchedDirectResult !== undefined
+      ? preFetchedDirectResult
+      : await universalDirectExtractor(cleanUrlStr, platform);
 
-  // Try direct extraction first
-  const directResult = await universalDirectExtractor(cleanUrlStr, platform);
   if (
     directResult &&
     (directResult.videos.length > 0 || directResult.images.length > 0)
   ) {
     mediaCache.set(cacheKey, directResult);
     return { info: directResult, strategyIndex: -1, directExtract: true };
+  }
+
+  const ytDlpCooldownKey = `ytdlp_${cacheKey}`;
+  if (negativeCache.get(ytDlpCooldownKey)) {
+    throw new Error(
+      "This link failed recently — cooling down before retrying.",
+    );
   }
 
   const base = baseOptions(platform);
@@ -878,6 +906,7 @@ async function resolveWithStrategies(url, platform, isUsable) {
       console.log(`[seize] Strategy ${i + 1} failed`);
     }
   }
+  negativeCache.set(ytDlpCooldownKey, true);
   throw lastErr || new Error("All extraction strategies failed");
 }
 
@@ -1188,6 +1217,8 @@ function friendlyError(stderr = "") {
     return "SSL error. Trying with relaxed security...";
   if (s.includes("invalid url"))
     return "Invalid URL format. Please check the URL.";
+  if (s.includes("cooling down"))
+    return "This link just failed — please wait a moment and try again.";
 
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";
 }
@@ -1301,8 +1332,14 @@ router.post("/resolve", async (req, res) => {
       });
     }
 
-    // Fallback to yt-dlp
-    const { info } = await resolveWithStrategies(url, platform, isUsableInfo);
+    // Fallback to yt-dlp — reuse the directResult we already fetched above
+    // (even though it was empty/null) instead of re-fetching it internally.
+    const { info } = await resolveWithStrategies(
+      url,
+      platform,
+      isUsableInfo,
+      directResult,
+    );
     const media = extractMediaUrls(info);
 
     let title = info.title || info.fulltitle || info.description || "Untitled";

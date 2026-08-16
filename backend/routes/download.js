@@ -155,89 +155,83 @@ function getRandomUserAgent() {
 }
 
 // ============================================================
-// FIX: CLEAN URL - REMOVES u002f ENCODING
+// CLEAN URL - FIXES ALL ENCODING ISSUES
 // ============================================================
 function cleanUrl(url) {
   if (!url) return url;
 
   // Fix u002f encoding (Unicode for /) - CRITICAL FIX
-  if (url.includes("u002f")) {
+  if (typeof url === "string") {
     url = url.replace(/u002f/g, "/");
     url = url.replace(/\\/g, "");
+    url = url.replace(/\%2F/g, "/");
+    url = url.replace(/\%2f/g, "/");
   }
 
-  // Fix double encoding
-  if (url.includes("%2F")) {
-    try {
-      url = decodeURIComponent(url);
-    } catch (e) {}
+  // Fix double slashes
+  if (typeof url === "string") {
+    url = url.replace(/https:\/\/\/+/g, "https://");
+    url = url.replace(/http:\/\/\/+/g, "http://");
+    url = url.replace(/\/\/+/g, "/");
   }
-
-  // Remove escape characters
-  url = url.replace(/\\/g, "");
-
-  // Fix double slashes in protocol
-  url = url.replace(/https:\/\/\/+/g, "https://");
-  url = url.replace(/http:\/\/\/+/g, "http://");
 
   return url;
 }
 
 // ============================================================
-// FIX: RESOLVE TIKTOK SHORT LINKS - WORKS EVERY TIME
+// RESOLVE TIKTOK SHORT LINKS - ULTIMATE FIX
 // ============================================================
 async function resolveShortLink(url) {
-  // Check cache first
   const cached = shortLinkCache.get(url);
   if (cached) return cached;
 
   console.log(`[seize] Resolving short link: ${url}`);
 
-  // If it's already a full TikTok URL, return it
+  // Already a full URL
   if (
-    url.includes("tiktok.com/@") &&
     !url.includes("vt.tiktok.com") &&
-    !url.includes("vm.tiktok.com")
+    !url.includes("vm.tiktok.com") &&
+    !url.includes("pin.it") &&
+    !url.includes("fb.watch")
   ) {
-    shortLinkCache.set(url, url);
-    return url;
+    const cleaned = cleanUrl(url);
+    shortLinkCache.set(url, cleaned);
+    return cleaned;
   }
 
-  // METHOD 1: Use yt-dlp to resolve (most reliable)
+  // METHOD 1: yt-dlp (most reliable)
   try {
-    console.log("[seize] Trying yt-dlp to resolve short link...");
+    console.log("[seize] Method 1: yt-dlp...");
     const result = await ytDlp(url, {
       dumpJson: true,
       noWarnings: true,
       noCheckCertificates: true,
-      retries: 3,
+      retries: 5,
       timeout: 30,
     });
     if (result && result.webpage_url) {
       const resolved = cleanUrl(result.webpage_url);
-      console.log(`[seize] yt-dlp resolved to: ${resolved}`);
+      console.log(`[seize] yt-dlp resolved: ${resolved}`);
       shortLinkCache.set(url, resolved);
       return resolved;
     }
   } catch (err) {
-    console.log(`[seize] yt-dlp resolve failed: ${err.message}`);
+    console.log(`[seize] yt-dlp failed: ${err.message}`);
   }
 
   // METHOD 2: Fetch with redirect
   try {
-    console.log("[seize] Trying fetch with redirect...");
+    console.log("[seize] Method 2: Fetch redirect...");
     const response = await fetch(url, {
       method: "GET",
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        Accept: "text/html,application/xhtml+xml",
         "Cache-Control": "no-cache",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(20000),
     });
     const finalUrl = response.url;
     if (
@@ -246,17 +240,17 @@ async function resolveShortLink(url) {
       !finalUrl.includes("vm.tiktok.com")
     ) {
       const cleaned = cleanUrl(finalUrl);
-      console.log(`[seize] Fetch resolved to: ${cleaned}`);
+      console.log(`[seize] Fetch resolved: ${cleaned}`);
       shortLinkCache.set(url, cleaned);
       return cleaned;
     }
   } catch (err) {
-    console.log(`[seize] Fetch resolve failed: ${err.message}`);
+    console.log(`[seize] Fetch failed: ${err.message}`);
   }
 
-  // METHOD 3: Try with different user agent (TikTok app)
+  // METHOD 3: Mobile user agent
   try {
-    console.log("[seize] Trying with TikTok app user agent...");
+    console.log("[seize] Method 3: Mobile UA...");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -265,7 +259,7 @@ async function resolveShortLink(url) {
         Accept: "text/html,application/xhtml+xml",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(20000),
     });
     const finalUrl = response.url;
     if (
@@ -274,43 +268,15 @@ async function resolveShortLink(url) {
       !finalUrl.includes("vm.tiktok.com")
     ) {
       const cleaned = cleanUrl(finalUrl);
-      console.log(`[seize] TikTok UA resolved to: ${cleaned}`);
+      console.log(`[seize] Mobile resolved: ${cleaned}`);
       shortLinkCache.set(url, cleaned);
       return cleaned;
     }
   } catch (err) {
-    console.log(`[seize] TikTok UA resolve failed: ${err.message}`);
+    console.log(`[seize] Mobile failed: ${err.message}`);
   }
 
-  // METHOD 4: Use HEAD request
-  try {
-    console.log("[seize] Trying HEAD request...");
-    const response = await fetch(url, {
-      method: "HEAD",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Accept: "text/html,application/xhtml+xml",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(10000),
-    });
-    const finalUrl = response.url;
-    if (
-      finalUrl &&
-      !finalUrl.includes("vt.tiktok.com") &&
-      !finalUrl.includes("vm.tiktok.com")
-    ) {
-      const cleaned = cleanUrl(finalUrl);
-      console.log(`[seize] HEAD resolved to: ${cleaned}`);
-      shortLinkCache.set(url, cleaned);
-      return cleaned;
-    }
-  } catch (err) {
-    console.log(`[seize] HEAD resolve failed: ${err.message}`);
-  }
-
-  console.log(`[seize] All methods failed, returning original URL`);
+  console.log(`[seize] All methods failed, returning original`);
   return url;
 }
 
@@ -321,7 +287,8 @@ function sanitizeUrl(input) {
   if (!input) return null;
 
   let url = input.trim();
-  url = url.replace(/[:;,.\s]+$/, "").replace(/^[@]+/, "");
+  url = url.replace(/[:;,.\s]+$/, "");
+  url = url.replace(/^[@]+/, "");
   url = url.replace(/[<>{}|\\^`[\]]/g, "");
 
   // Remove tracking
@@ -332,10 +299,7 @@ function sanitizeUrl(input) {
     url = "https://" + url;
   }
 
-  // Clean the URL
-  url = cleanUrl(url);
-
-  return url;
+  return cleanUrl(url);
 }
 
 // ============================================================
@@ -349,13 +313,16 @@ function generateHeaders(platform, ua = null) {
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
-    "Cache-Control": "no-cache",
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
     Connection: "keep-alive",
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
     "Upgrade-Insecure-Requests": "1",
+    DNT: "1",
   };
 
   const platformSpecific = {
@@ -381,6 +348,7 @@ function generateHeaders(platform, ua = null) {
       Accept: "application/json, text/plain, */*",
       Referer: "https://www.youtube.com/",
       "X-YouTube-Client-Name": "1",
+      "X-YouTube-Client-Version": "2.20240730.00.00",
     },
     reddit: {
       Accept: "application/json, text/plain, */*",
@@ -395,6 +363,24 @@ function generateHeaders(platform, ua = null) {
       Accept: "application/json, text/plain, */*",
       Referer: "https://open.spotify.com/",
     },
+    vimeo: {
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://vimeo.com/",
+    },
+    dailymotion: {
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.dailymotion.com/",
+    },
+    twitch: {
+      Accept: "application/json, text/plain, */*",
+      Referer: "https://www.twitch.tv/",
+      "Client-ID": "kimne78kx3ncx6brgo4mv6wki5h1ko",
+    },
+    facebook: {
+      "X-Requested-With": "XMLHttpRequest",
+      Referer: "https://www.facebook.com/",
+      Accept: "application/json, text/plain, */*",
+    },
   };
 
   if (platformSpecific[platform]) {
@@ -405,7 +391,7 @@ function generateHeaders(platform, ua = null) {
 }
 
 // ============================================================
-// DIRECT EXTRACTOR
+// DIRECT EXTRACTOR - FAST HTML PARSING
 // ============================================================
 async function universalDirectExtractor(url, platform) {
   const cacheKey = `direct_${platform}_${url}`;
@@ -414,24 +400,34 @@ async function universalDirectExtractor(url, platform) {
 
   const cleanUrlStr = cleanUrl(url);
 
-  try {
-    const headers = generateHeaders(platform);
-    const response = await fetch(cleanUrlStr, {
-      headers,
-      signal: AbortSignal.timeout(15000),
-      redirect: "follow",
-    });
+  // Try multiple user agents
+  const userAgents = [
+    getRandomUserAgent(),
+    USER_AGENTS[0],
+    USER_AGENTS[3],
+    USER_AGENTS[5],
+  ];
 
-    if (!response.ok) return null;
+  for (const ua of userAgents) {
+    try {
+      const headers = generateHeaders(platform, ua);
+      const response = await fetch(cleanUrlStr, {
+        headers,
+        signal: AbortSignal.timeout(15000),
+        redirect: "follow",
+      });
 
-    const html = await response.text();
-    const result = extractMediaFromHtml(html, platform, cleanUrlStr);
+      if (!response.ok) continue;
 
-    if (result && (result.videos.length > 0 || result.images.length > 0)) {
-      mediaCache.set(cacheKey, result);
-      return result;
-    }
-  } catch (err) {}
+      const html = await response.text();
+      const result = extractMediaFromHtml(html, platform, cleanUrlStr);
+
+      if (result && (result.videos.length > 0 || result.images.length > 0)) {
+        mediaCache.set(cacheKey, result);
+        return result;
+      }
+    } catch (err) {}
+  }
 
   return null;
 }
@@ -453,6 +449,11 @@ function extractMediaFromHtml(html, platform, url) {
   );
   if (ogImageMatch) thumbnail = ogImageMatch[1];
 
+  const twitterImageMatch = html.match(
+    /<meta name="twitter:image" content="([^"]+)"/,
+  );
+  if (!thumbnail && twitterImageMatch) thumbnail = twitterImageMatch[1];
+
   // Video patterns
   const videoPatterns = [
     /https:\/\/[^\s"']+\.(mp4|mov|webm|m3u8)[^\s"']*/gi,
@@ -460,8 +461,14 @@ function extractMediaFromHtml(html, platform, url) {
     /"video_url":"([^"]+)"/gi,
     /"playAddr":"([^"]+)"/gi,
     /"downloadAddr":"([^"]+)"/gi,
+    /"playback_url":"([^"]+)"/gi,
     /"contentUrl":"([^"]+\.(mp4|mov|webm|mkv)[^"]*)"/gi,
     /"url":"([^"]+\.(mp4|mov|webm|mkv)[^"]*)"/gi,
+    /"hls_url":"([^"]+)"/gi,
+    /"video_manifest":"([^"]+)"/gi,
+    /"playlist":"([^"]+)"/gi,
+    /"source":"([^"]+\.(mp4|mov|webm))"/gi,
+    /"src":"([^"]+\.(mp4|mov|webm))"/gi,
   ];
 
   // Image patterns
@@ -473,17 +480,23 @@ function extractMediaFromHtml(html, platform, url) {
     /"image_url":"([^"]+)"/gi,
     /"thumbnail":"([^"]+)"/gi,
     /"thumbnailUrl":"([^"]+)"/gi,
+    /"coverUrl":"([^"]+)"/gi,
+    /"cover_url":"([^"]+)"/gi,
+    /"poster":"([^"]+)"/gi,
+    /"data-src":"([^"]+\.(jpg|jpeg|png|webp|gif))"/gi,
+    /"data-image":"([^"]+)"/gi,
   ];
 
   for (const pattern of videoPatterns) {
     const matches = [...html.matchAll(pattern)];
     for (const match of matches) {
       let cleanUrlStr = match[1] || match[0];
-      if (cleanUrlStr) {
+      if (cleanUrlStr && typeof cleanUrlStr === "string") {
         cleanUrlStr = cleanUrl(cleanUrlStr);
         if (
           !cleanUrlStr.includes("placeholder") &&
-          !cleanUrlStr.includes("default")
+          !cleanUrlStr.includes("default") &&
+          !cleanUrlStr.includes("data:image")
         ) {
           videos.push({ url: cleanUrlStr, format: "mp4", quality: "HD" });
         }
@@ -495,15 +508,47 @@ function extractMediaFromHtml(html, platform, url) {
     const matches = [...html.matchAll(pattern)];
     for (const match of matches) {
       let cleanUrlStr = match[1] || match[0];
-      if (cleanUrlStr) {
+      if (cleanUrlStr && typeof cleanUrlStr === "string") {
         cleanUrlStr = cleanUrl(cleanUrlStr);
         if (
           !cleanUrlStr.includes("placeholder") &&
-          !cleanUrlStr.includes("default")
+          !cleanUrlStr.includes("default") &&
+          !cleanUrlStr.includes("data:image")
         ) {
           images.push({ url: cleanUrlStr, format: "jpg" });
         }
       }
+    }
+  }
+
+  // JSON-LD extraction
+  const jsonLdMatches = html.match(
+    /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g,
+  );
+  if (jsonLdMatches) {
+    for (const match of jsonLdMatches) {
+      try {
+        const json = JSON.parse(
+          match.replace(
+            /<script type="application\/ld\+json">|<\/script>/g,
+            "",
+          ),
+        );
+        const videoUrls = extractUrlsFromJson(json, "video");
+        const imageUrls = extractUrlsFromJson(json, "image");
+        for (const v of videoUrls) {
+          const cleanV = cleanUrl(v);
+          if (!cleanV.includes("placeholder")) {
+            videos.push({ url: cleanV, format: "mp4", quality: "HD" });
+          }
+        }
+        for (const i of imageUrls) {
+          const cleanI = cleanUrl(i);
+          if (!cleanI.includes("placeholder")) {
+            images.push({ url: cleanI, format: "jpg" });
+          }
+        }
+      } catch (e) {}
     }
   }
 
@@ -535,8 +580,49 @@ function extractMediaFromHtml(html, platform, url) {
   return null;
 }
 
+function extractUrlsFromJson(obj, type) {
+  const urls = [];
+  const pattern =
+    type === "video"
+      ? /\.(mp4|mov|webm|mkv|m3u8)/i
+      : /\.(jpg|jpeg|png|webp|gif)/i;
+
+  function traverse(obj) {
+    if (!obj || typeof obj !== "object") return;
+
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        if (typeof item === "string" && pattern.test(item)) {
+          urls.push(item);
+        } else if (typeof item === "object") {
+          traverse(item);
+        }
+      }
+    } else {
+      for (const key of Object.keys(obj)) {
+        if (typeof obj[key] === "string" && pattern.test(obj[key])) {
+          if (
+            key.includes("url") ||
+            key.includes("src") ||
+            key.includes("content") ||
+            key.includes("source") ||
+            key.includes("media")
+          ) {
+            urls.push(obj[key]);
+          }
+        } else if (typeof obj[key] === "object") {
+          traverse(obj[key]);
+        }
+      }
+    }
+  }
+
+  traverse(obj);
+  return urls;
+}
+
 // ============================================================
-// YT-DLP STRATEGIES
+// YT-DLP STRATEGIES - ULTIMATE BYPASS
 // ============================================================
 function baseOptions(platform) {
   const opts = {
@@ -575,11 +661,13 @@ function getPlatformStrategies(platform) {
       { extractorArgs: "instagram:include_ads=false" },
       { extractorArgs: "instagram:api=web;include_ads=false" },
       { extractorArgs: "instagram:api=android;include_ads=false" },
+      { extractorArgs: "instagram:api=ios;include_ads=false" },
     ],
     twitter: [
       { extractorArgs: "twitter:api=syndication" },
       { extractorArgs: "twitter:api=web" },
       { extractorArgs: "twitter:api=android" },
+      { extractorArgs: "twitter:api=ios" },
     ],
     youtube: [
       {
@@ -588,14 +676,23 @@ function getPlatformStrategies(platform) {
       },
       { extractorArgs: "youtube:api=web" },
       { extractorArgs: "youtube:api=android" },
+      { extractorArgs: "youtube:api=ios" },
     ],
     facebook: [
       { extractorArgs: "facebook:include_ads=false" },
       { extractorArgs: "facebook:api=web;include_ads=false" },
       { extractorArgs: "facebook:api=android;include_ads=false" },
     ],
-    pinterest: [{ extractorArgs: "generic" }],
-    snapchat: [{ extractorArgs: "generic" }],
+    pinterest: [
+      { extractorArgs: "generic" },
+      { extractorArgs: "pinterest:api=web" },
+      { extractorArgs: "pinterest:api=android" },
+    ],
+    snapchat: [
+      { extractorArgs: "generic" },
+      { extractorArgs: "snapchat:api=web" },
+      { extractorArgs: "snapchat:api=android" },
+    ],
     reddit: [
       { extractorArgs: "reddit:api=web" },
       { extractorArgs: "reddit:api=android" },
@@ -604,25 +701,38 @@ function getPlatformStrategies(platform) {
     soundcloud: [
       { extractorArgs: "soundcloud:api=web" },
       { extractorArgs: "soundcloud:api=android" },
+      { extractorArgs: "soundcloud:api=ios" },
     ],
     spotify: [
       { extractorArgs: "spotify:api=web" },
       { extractorArgs: "spotify:api=android" },
+      { extractorArgs: "spotify:api=ios" },
     ],
     vimeo: [
       { extractorArgs: "vimeo:api=web" },
       { extractorArgs: "vimeo:api=android" },
+      { extractorArgs: "vimeo:api=ios" },
     ],
     dailymotion: [
       { extractorArgs: "dailymotion:api=web" },
       { extractorArgs: "dailymotion:api=android" },
+      { extractorArgs: "dailymotion:api=ios" },
     ],
     twitch: [
       { extractorArgs: "twitch:api=web" },
       { extractorArgs: "twitch:api=android" },
+      { extractorArgs: "twitch:api=ios" },
     ],
-    imgur: [{ extractorArgs: "generic" }],
-    giphy: [{ extractorArgs: "generic" }],
+    imgur: [
+      { extractorArgs: "generic" },
+      { extractorArgs: "imgur:api=web" },
+      { extractorArgs: "generic;force_generic_extractor=true" },
+    ],
+    giphy: [
+      { extractorArgs: "generic" },
+      { extractorArgs: "giphy:api=web" },
+      { extractorArgs: "generic;force_generic_extractor=true" },
+    ],
   };
 
   return strategies[platform] || [{ extractorArgs: "generic" }];
@@ -652,7 +762,7 @@ async function resolveWithStrategies(url, platform, isUsable) {
   const strategies = [];
   const platformStrategies = getPlatformStrategies(platform);
 
-  for (let i = 0; i < Math.min(3, platformStrategies.length); i++) {
+  for (let i = 0; i < Math.min(5, platformStrategies.length); i++) {
     const ua = USER_AGENTS[i % USER_AGENTS.length];
     const strategy = {
       dumpSingleJson: true,
@@ -662,6 +772,7 @@ async function resolveWithStrategies(url, platform, isUsable) {
     };
     Object.assign(strategy, platformStrategies[i]);
     if (i % 2 === 0) strategy.cookies = cookiesFor(platform) || undefined;
+    if (i % 3 === 0) delete strategy.cookies;
     strategies.push(strategy);
   }
 
@@ -692,7 +803,7 @@ async function resolveWithStrategies(url, platform, isUsable) {
 // ============================================================
 // YT-DLP WITH PROGRESS
 // ============================================================
-function runYtDlpWithProgress(url, options, jobId, timeoutMs = 60000) {
+function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let child;
@@ -709,7 +820,7 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 60000) {
       try {
         child.kill("SIGKILL");
       } catch {}
-      reject(new Error("Download timed out."));
+      reject(new Error("Download timed out. Please try again."));
     }, timeoutMs);
 
     const parseProgress = (chunk) => {
@@ -742,7 +853,7 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 60000) {
 }
 
 // ============================================================
-// DOWNLOAD FILE HELPER
+// DOWNLOAD FILE HELPER - FIXED
 // ============================================================
 function downloadFile(url, filePath, redirects = 0) {
   return new Promise((resolve, reject) => {
@@ -751,7 +862,7 @@ function downloadFile(url, filePath, redirects = 0) {
       return;
     }
 
-    // CRITICAL: Clean the URL before downloading
+    // Clean the URL
     let cleanUrlStr = cleanUrl(url);
 
     const protocol = cleanUrlStr.startsWith("https") ? https : http;
@@ -797,7 +908,7 @@ function downloadFile(url, filePath, redirects = 0) {
       reject(err);
     });
 
-    request.setTimeout(30000, () => {
+    request.setTimeout(60000, () => {
       request.destroy();
       fs.unlink(filePath, () => {});
       reject(new Error("Download timeout"));
@@ -957,26 +1068,48 @@ function sanitizeFilename(name) {
 function friendlyError(stderr = "") {
   const s = stderr.toLowerCase();
 
-  if (s.includes("private") || s.includes("protected"))
-    return "This content is private.";
-  if (s.includes("not found") || s.includes("404")) return "Content not found.";
+  if (
+    s.includes("private") ||
+    s.includes("protected") ||
+    s.includes("login required")
+  ) {
+    return "This content is private. Try using cookies or a different method.";
+  }
+  if (s.includes("not found") || s.includes("404"))
+    return "Content not found. Please check the URL.";
   if (s.includes("rate limit") || s.includes("429"))
-    return "Rate limited. Please wait.";
+    return "Rate limited. Please wait a few minutes.";
   if (s.includes("blocked") || s.includes("403"))
-    return "Access blocked. Trying alternatives...";
+    return "Access blocked. Trying alternative methods...";
   if (s.includes("timeout") || s.includes("timed out") || s.includes("aborted"))
     return "Request timed out. Retrying...";
   if (s.includes("empty") || s.includes("no items")) return "No posts found.";
-  if (s.includes("login") || s.includes("auth")) return "Login required.";
   if (s.includes("geo") || s.includes("country"))
     return "Content is region-locked.";
+  if (s.includes("getaddrinfo") || s.includes("enotfound"))
+    return "Could not reach the server. The URL may be invalid.";
   if (s.includes("ssl") || s.includes("certificate"))
     return "SSL error. Trying with relaxed security...";
-  if (s.includes("getaddrinfo") || s.includes("enotfound"))
-    return "Could not reach the server. The URL may be invalid or the platform is blocking requests.";
 
   return "Couldn't resolve this link. It may be blocked, deleted, or private.";
 }
+
+// ============================================================
+// UPDATE YT-DLP
+// ============================================================
+function updateYtDlpBinary() {
+  execFile(YT_DLP_BIN, ["-U"], { timeout: 30000 }, (err, stdout, stderr) => {
+    if (err) {
+      console.log("[seize] yt-dlp self-update skipped:", err.message);
+      return;
+    }
+    const out = (stdout || stderr || "").trim();
+    if (out) console.log("[seize] yt-dlp update check:", out.split("\n").pop());
+  });
+}
+
+setTimeout(updateYtDlpBinary, 5000);
+setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
 // ============================================================
 // ROUTE: GET PLATFORMS
@@ -989,7 +1122,7 @@ router.get("/platforms", (req, res) => {
 });
 
 // ============================================================
-// ROUTE: RESOLVE - FULLY FIXED
+// ROUTE: RESOLVE - MAIN
 // ============================================================
 router.post("/resolve", async (req, res) => {
   let { url } = req.body;
@@ -1017,7 +1150,7 @@ router.post("/resolve", async (req, res) => {
     }
   }
 
-  // Clean the URL (fix u002f encoding)
+  // Clean the URL
   url = cleanUrl(url);
 
   const platform = detectPlatform(url);
@@ -1133,7 +1266,7 @@ router.post("/resolve", async (req, res) => {
 });
 
 // ============================================================
-// ROUTE: FETCH
+// ROUTE: FETCH - DOWNLOAD
 // ============================================================
 router.post("/fetch", async (req, res) => {
   let { url, mode = "video", quality = "best" } = req.body;
@@ -1207,7 +1340,7 @@ router.post("/fetch", async (req, res) => {
     const strategies = [];
     const platformStrategies = getPlatformStrategies(platform);
 
-    for (let i = 0; i < Math.min(4, platformStrategies.length); i++) {
+    for (let i = 0; i < Math.min(5, platformStrategies.length); i++) {
       const ua = USER_AGENTS[i % USER_AGENTS.length];
       const strategy = {
         output: outputPath,
@@ -1236,7 +1369,7 @@ router.post("/fetch", async (req, res) => {
       for (const formatStr of chain) {
         const options = { ...strategy, format: formatStr };
         try {
-          await runYtDlpWithProgress(url, options, jobId, 60000);
+          await runYtDlpWithProgress(url, options, jobId, 120000);
           succeeded = true;
           break outer;
         } catch (err) {
@@ -1639,7 +1772,7 @@ router.post("/profile/batch", async (req, res) => {
                 );
               }
 
-              await runYtDlpWithProgress(url, opts, itemJobId, 60000);
+              await runYtDlpWithProgress(url, opts, itemJobId, 120000);
 
               let finalPath = outputPath;
               if (!fs.existsSync(finalPath)) {
@@ -1721,23 +1854,6 @@ router.get("/batch/:batchId/:index", (req, res) => {
     }
   });
 });
-
-// ============================================================
-// YT-DLP UPDATE
-// ============================================================
-function updateYtDlpBinary() {
-  execFile(YT_DLP_BIN, ["-U"], { timeout: 30000 }, (err, stdout, stderr) => {
-    if (err) {
-      console.log("[seize] yt-dlp self-update skipped:", err.message);
-      return;
-    }
-    const out = (stdout || stderr || "").trim();
-    if (out) console.log("[seize] yt-dlp update check:", out.split("\n").pop());
-  });
-}
-
-setTimeout(updateYtDlpBinary, 5000);
-setInterval(updateYtDlpBinary, 6 * 60 * 60 * 1000).unref();
 
 // ============================================================
 // CLEANUP

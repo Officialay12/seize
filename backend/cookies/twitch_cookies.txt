@@ -1,0 +1,14 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.twitch.tv	TRUE	/	TRUE	1821097949	unique_id	6af3ba0e20874d1d8d723b43ee3552f5
+.twitch.tv	TRUE	/	TRUE	1821097949	unique_id_durable	6af3ba0e20874d1d8d723b43ee3552f5
+.twitch.tv	TRUE	/	FALSE	1820579554	twitch.lohp.countryCode	NG
+.twitch.tv	TRUE	/	TRUE	1821097833	experiment_overrides	{%22experiments%22:{}%2C%22disabled%22:[]}
+.twitch.tv	TRUE	/	TRUE	1821097833	api_token	twilight.b6b2c486e85441e59d804eb30d6a15eb
+.twitch.tv	TRUE	/	TRUE	1786887042	sa_sid	5f3888a4-3d6f-4b3d-b782-d839fdba7c53
+.twitch.tv	TRUE	/	TRUE	1786885277	referrer_url	https://accounts.google.com/
+.twitch.tv	TRUE	/	TRUE	1821097956	twilight-user	{%22authToken%22:%2237as3v1rhr0ukbz88unmav83lo0z4k%22%2C%22displayName%22:%22an0nym0us01111111111%22%2C%22id%22:%221529439795%22%2C%22login%22:%22an0nym0us01111111111%22%2C%22roles%22:{%22isStaff%22:false}%2C%22version%22:2}
+.twitch.tv	TRUE	/	TRUE	1821097956	auth-token	37as3v1rhr0ukbz88unmav83lo0z4k
+.twitch.tv	TRUE	/	TRUE	0	server_session_id	b5c394f2fc6442d5860aa181ad0924e6

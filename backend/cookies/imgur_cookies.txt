@@ -1,0 +1,23 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+imgur.com	FALSE	/	FALSE	1818418453	m_section	hot
+imgur.com	FALSE	/	FALSE	1818418453	m_sort	time
+.imgur.com	TRUE	/	TRUE	1801157730	accesstoken	e7672e790c9ea78a640a99476455d8278052f62e
+.imgur.com	TRUE	/	TRUE	1801157730	is_authed	1
+.imgur.com	TRUE	/	FALSE	1801157731	postpagebetalogged	1
+.imgur.com	TRUE	/	FALSE	1801157748	_ga_VNW0JK8TLK	GS2.1.s1766597735$o1$g1$t1766597748$j47$l0$h0
+.imgur.com	TRUE	/	FALSE	1821442427	frontpagebetav2	1
+.imgur.com	TRUE	/	FALSE	1786968829	_gid	GA1.2.1783499675.1786882430
+.imgur.com	TRUE	/	TRUE	1821010441	_awl	2.1786882440.5-a3dc6cf5b837c62520fc032539563a27-6763652d6575726f70652d7765737431-3
+.imgur.com	TRUE	/	FALSE	1786968844	ana_id	0
+.imgur.com	TRUE	/	FALSE	1786882504	_gat	1
+.imgur.com	TRUE	/	TRUE	1787487245	is_emerald	0
+.imgur.com	TRUE	/	FALSE	1821442451	_ga_N9VZ79TB1D	GS2.2.s1786882450$o7$g0$t1786882450$j60$l0$h0
+.imgur.com	TRUE	/	FALSE	1818418451	mp_d7e83c929082d17b884d6c71de740244_mixpanel	%7B%22distinct_id%22%3A195696735%2C%22%24device_id%22%3A%22ae54080b-411d-4e45-9f94-4d5867f2e994%22%2C%22signed_in%22%3Atrue%2C%22%24initial_referrer%22%3A%22%24direct%22%2C%22%24initial_referring_domain%22%3A%22%24direct%22%2C%22__mps%22%3A%7B%7D%2C%22__mpso%22%3A%7B%7D%2C%22__mpus%22%3A%7B%7D%2C%22__mpa%22%3A%7B%7D%2C%22__mpu%22%3A%7B%7D%2C%22__mpr%22%3A%5B%5D%2C%22__mpap%22%3A%5B%5D%2C%22imgur_platform%22%3A%22desktop%20web%22%2C%22user%20agent%22%3A%22Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F151.0.0.0%20Safari%2F537.36%22%2C%22legacy%22%3Afalse%2C%22%24user_id%22%3A195696735%2C%22version_name%22%3A%22e0ab08c%22%2C%22assembly_uid%22%3A0%7D
+.imgur.com	TRUE	/	TRUE	1787487251	user_id	195696735
+imgur.com	FALSE	/	FALSE	1787487251	ml_em	ayomide0001111@gmail.com
+.imgur.com	TRUE	/	FALSE	1794658452	_gcl_au	1.1.934125263.1786882453
+.imgur.com	TRUE	/	FALSE	1821442453	_ga_3NBR34N2EB	GS2.1.s1786882452$o2$g0$t1786882452$j60$l0$h0
+.imgur.com	TRUE	/	FALSE	1821442453	_ga	GA1.1.2136888460.1746178987

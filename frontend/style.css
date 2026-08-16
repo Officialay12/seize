@@ -101,9 +101,6 @@ a {
   pointer-events: none;
 }
 
-/* faint scanning beam sweeping top to bottom behind everything — the
-   oscilloscope material the rest of the brand is built on, not just a
-   generic spinner screen */
 .scope-sweep {
   position: absolute;
   inset: -20% 0 auto 0;
@@ -122,7 +119,6 @@ a {
   0% {
     transform: translateY(-30%);
   }
-
   100% {
     transform: translateY(30%);
   }
@@ -139,7 +135,6 @@ a {
     opacity: 0;
     transform: translateY(6px) scale(0.97);
   }
-
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -170,12 +165,10 @@ a {
 }
 
 @keyframes logoGlow {
-
   0%,
   100% {
     filter: drop-shadow(0 0 4px rgba(127, 255, 176, 0.5));
   }
-
   50% {
     filter: drop-shadow(0 0 14px rgba(127, 255, 176, 0.9));
   }
@@ -194,17 +187,14 @@ a {
 }
 
 @keyframes brandFlicker {
-
   0%,
   92%,
   100% {
     opacity: 1;
   }
-
   94% {
     opacity: 0.85;
   }
-
   96% {
     opacity: 1;
   }
@@ -254,7 +244,6 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   .scope-sweep,
   .preloader-logo-path,
   .preloader-brand,
@@ -262,7 +251,6 @@ a {
   .preloader-spinner::after {
     animation: none;
   }
-
   .preloader-logo-path {
     stroke-dashoffset: 0;
   }
@@ -459,6 +447,28 @@ a {
   display: none;
 }
 
+#install-btn {
+  background: transparent;
+  border: 1px solid var(--phosphor-dim);
+  color: var(--phosphor);
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+#install-btn:hover {
+  background: rgba(127, 255, 176, 0.08);
+  border-color: var(--phosphor);
+}
+
+#install-btn.hidden {
+  display: none;
+}
+
 .rec-dot {
   width: 7px;
   height: 7px;
@@ -469,12 +479,10 @@ a {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 1;
   }
-
   50% {
     opacity: 0.3;
   }
@@ -660,13 +668,11 @@ main {
 }
 
 @keyframes cta-glow {
-
   0%,
   100% {
     box-shadow: 0 0 0 0 rgba(127, 255, 176, 0);
     border-color: var(--line);
   }
-
   50% {
     box-shadow: 0 0 16px 1px rgba(127, 255, 176, 0.25);
     border-color: var(--phosphor-dim);
@@ -744,7 +750,7 @@ main {
 
 .platform-chips {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin-top: 14px;
   flex-wrap: wrap;
 }
@@ -752,8 +758,9 @@ main {
 .chip {
   border: 1px solid var(--line);
   color: var(--muted);
-  padding: 5px 10px;
+  padding: 4px 10px;
   border-radius: 999px;
+  font-size: 0.68rem;
   transition: border-color 0.2s, color 0.2s;
 }
 
@@ -1147,40 +1154,36 @@ main {
     font-size: 0.92rem;
     gap: 6px;
   }
-
   .mode-index {
     display: none;
   }
-
   .input-row {
     flex-wrap: wrap;
   }
-
   .input-row .text-input {
     flex-basis: 100%;
   }
-
   .input-row .btn-primary {
     flex: 1;
   }
-
   .capture-result {
     flex-direction: column;
     align-items: flex-start;
   }
-
   .result-thumb {
     width: 100%;
     height: 180px;
   }
-
   .history-item {
     flex-wrap: wrap;
   }
-
   .history-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+  .platform-chips .chip {
+    font-size: 0.6rem;
+    padding: 2px 8px;
   }
 }
 
@@ -1273,7 +1276,6 @@ main {
     transform: translateY(12px);
     opacity: 0;
   }
-
   to {
     transform: translateY(0);
     opacity: 1;
@@ -1829,34 +1831,27 @@ main {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 10px;
   }
-
   .archive-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
-
   .archive-toolbar-right {
     justify-content: stretch;
     flex-wrap: wrap;
   }
-
   .archive-toolbar-right button {
     flex: 1;
     min-width: 120px;
   }
-
   .archive-controls .input-row {
     flex-direction: column;
   }
-
   .archive-controls .input-row .text-input {
     min-width: 100%;
   }
-
   .archive-controls .input-row .select-input {
     min-width: 100%;
   }
-
   .collection-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
@@ -1872,7 +1867,6 @@ main {
     opacity: 0;
     transform: scale(0.95);
   }
-
   to {
     opacity: 1;
     transform: scale(1);
@@ -1897,7 +1891,6 @@ main {
     transform: translateY(20px);
     opacity: 0;
   }
-
   to {
     transform: translateY(0);
     opacity: 1;

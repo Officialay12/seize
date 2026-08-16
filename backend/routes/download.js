@@ -60,9 +60,6 @@ class FastCache {
 const mediaCache = new FastCache(500, 1800000);
 const profileCache = new FastCache(100, 3600000);
 const shortLinkCache = new FastCache(200, 600000);
-// Short cooldown for URLs that just failed extraction, so an immediate retry
-// (or a duplicate call in the same request) doesn't repeat the same slow,
-// doomed work. Deliberately much shorter-lived than the success caches above.
 const negativeCache = new FastCache(1000, 90000);
 
 // ============================================================
@@ -142,7 +139,7 @@ function getAllPlatforms() {
 }
 
 // ============================================================
-// USER AGENTS
+// USER AGENTS - MULTIPLE BYPASS VECTORS
 // ============================================================
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
@@ -152,6 +149,14 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:129.0) Gecko/20100101 Firefox/129.0",
   "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/126.0.0.0",
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 TikTok/36.0.0",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram/330.0.0",
+  // Bot user agents for bypass
+  "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+  "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+  "Twitterbot/1.0",
 ];
 
 function getRandomUserAgent() {
@@ -159,8 +164,7 @@ function getRandomUserAgent() {
 }
 
 // ============================================================
-// CLEAN URL - IDEMPOTENT, HANDLES ARBITRARILY MANGLED/DUPLICATED
-// PROTOCOLS ("https:/x", "https://https:/x", "u002fu002fx", "//x", etc.)
+// CLEAN URL - HANDLES ALL ENCODING ISSUES
 // ============================================================
 function cleanUrl(url) {
   if (!url) return url;
@@ -168,12 +172,13 @@ function cleanUrl(url) {
 
   let u = url.trim();
 
-  // Decode escaped/encoded slash sequences up front
-  u = u.replace(/u002f/gi, "/").replace(/\\/g, "").replace(/%2f/gi, "/");
+  // Decode all encoded slash sequences
+  u = u.replace(/u002f/gi, "/");
+  u = u.replace(/\\/g, "");
+  u = u.replace(/%2f/gi, "/");
+  u = u.replace(/%2F/gi, "/");
 
-  // Strip ANY number of leading protocol fragments, however mangled or
-  // duplicated ("https:/", "https://", "https:///", repeated, etc.),
-  // remembering the last scheme we saw.
+  // Strip multiple protocol fragments
   let scheme = null;
   let stripped = true;
   while (stripped) {
@@ -187,11 +192,10 @@ function cleanUrl(url) {
   }
   if (!scheme) scheme = "https";
 
-  // Strip any leftover leading slashes (covers protocol-relative "//host/..." input)
+  // Remove leading slashes
   u = u.replace(/^\/+/, "");
 
-  // Collapse duplicate slashes ONLY in the path portion — never touch the
-  // query string, since query values can legitimately contain "http://..."
+  // Collapse duplicate slashes in path only
   const qIndex = u.search(/[?#]/);
   let pathPart = qIndex === -1 ? u : u.slice(0, qIndex);
   const tailPart = qIndex === -1 ? "" : u.slice(qIndex);
@@ -201,14 +205,11 @@ function cleanUrl(url) {
 }
 
 // ============================================================
-// NORMALIZE URL - VALIDATES AND FIXES URLS (built on cleanUrl, so it's
-// just as robust against mangled/duplicated protocols)
+// NORMALIZE URL
 // ============================================================
 function normalizeUrl(url) {
   if (!url) return null;
-
   const cleaned = cleanUrl(url);
-
   try {
     new URL(cleaned);
     return cleaned;
@@ -218,7 +219,7 @@ function normalizeUrl(url) {
 }
 
 // ============================================================
-// RESOLVE TIKTOK/PINTEREST/FB SHORT LINKS
+// RESOLVE SHORT LINKS - MULTIPLE METHODS
 // ============================================================
 async function resolveShortLink(url) {
   const cached = shortLinkCache.get(url);
@@ -226,7 +227,6 @@ async function resolveShortLink(url) {
 
   console.log(`[seize] Resolving short link: ${url}`);
 
-  // Normalize the URL first
   const validUrl = normalizeUrl(url);
   if (!validUrl) {
     console.log(`[seize] Invalid URL format: ${url}`);
@@ -238,14 +238,15 @@ async function resolveShortLink(url) {
     !validUrl.includes("vt.tiktok.com") &&
     !validUrl.includes("vm.tiktok.com") &&
     !validUrl.includes("pin.it") &&
-    !validUrl.includes("fb.watch")
+    !validUrl.includes("fb.watch") &&
+    !validUrl.includes("youtu.be")
   ) {
     const cleaned = cleanUrl(validUrl);
     shortLinkCache.set(url, cleaned);
     return cleaned;
   }
 
-  // METHOD 1: yt-dlp (most reliable) - no unsupported "timeout" flag
+  // METHOD 1: yt-dlp
   try {
     console.log("[seize] Method 1: yt-dlp...");
     const result = await ytDlp(validUrl, {
@@ -321,6 +322,34 @@ async function resolveShortLink(url) {
     console.log(`[seize] Mobile failed: ${err.message}`);
   }
 
+  // METHOD 4: HEAD request
+  try {
+    console.log("[seize] Method 4: HEAD request...");
+    const response = await fetch(validUrl, {
+      method: "HEAD",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(10000),
+    });
+    const finalUrl = response.url;
+    if (
+      finalUrl &&
+      !finalUrl.includes("vt.tiktok.com") &&
+      !finalUrl.includes("vm.tiktok.com")
+    ) {
+      const cleaned = cleanUrl(finalUrl);
+      console.log(`[seize] HEAD resolved: ${cleaned}`);
+      shortLinkCache.set(url, cleaned);
+      return cleaned;
+    }
+  } catch (err) {
+    console.log(`[seize] HEAD failed: ${err.message}`);
+  }
+
   console.log("[seize] All methods failed, returning original");
   return cleanUrl(validUrl);
 }
@@ -381,35 +410,40 @@ function sanitizeUrl(input) {
   url = url.replace(/\?si=[^&]*&?/g, "?").replace(/\?$/, "");
   url = url.replace(/&si=[^&]*/g, "");
 
-  // cleanUrl() handles protocol detection/repair robustly (including
-  // missing, mangled, or duplicated protocols), so no manual prepend here.
   return cleanUrl(url);
 }
 
 // ============================================================
-// HEADER GENERATION
+// HEADER GENERATION - MULTIPLE BYPASS VECTORS
 // ============================================================
 function generateHeaders(platform, ua = null) {
   const userAgent = ua || getRandomUserAgent();
+  const isMobile =
+    userAgent.includes("Mobile") ||
+    userAgent.includes("Android") ||
+    userAgent.includes("iPhone");
+
   const headers = {
     "User-Agent": userAgent,
     Accept:
-      "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,es;q=0.8,fr;q=0.7,de;q=0.6",
     "Accept-Encoding": "gzip, deflate, br",
     "Cache-Control": "no-cache, no-store, must-revalidate",
     Pragma: "no-cache",
     Expires: "0",
     Connection: "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    DNT: "1",
     "Sec-Fetch-Dest": "document",
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1",
-    DNT: "1",
+    "Sec-GPC": "1",
   };
 
-  const platformSpecific = {
+  // Platform-specific headers
+  const platformHeaders = {
     tiktok: {
       Accept: "application/json, text/plain, */*",
       Referer: "https://www.tiktok.com/",
@@ -465,10 +499,15 @@ function generateHeaders(platform, ua = null) {
       Referer: "https://www.facebook.com/",
       Accept: "application/json, text/plain, */*",
     },
+    pinterest: {
+      "X-Requested-With": "XMLHttpRequest",
+      Referer: "https://www.pinterest.com/",
+      Accept: "application/json, text/plain, */*",
+    },
   };
 
-  if (platformSpecific[platform]) {
-    Object.assign(headers, platformSpecific[platform]);
+  if (platformHeaders[platform]) {
+    Object.assign(headers, platformHeaders[platform]);
   }
 
   return headers;
@@ -479,20 +518,19 @@ function generateHeaders(platform, ua = null) {
 // ============================================================
 async function universalDirectExtractor(url, platform) {
   const cleanUrlStr = cleanUrl(url);
-  // Cache key is built from the CLEANED url so functionally-identical inputs
-  // (trailing slash, mixed encoding, etc.) always hit the same cache entry.
   const cacheKey = `direct_${platform}_${cleanUrlStr}`;
 
   const cached = mediaCache.get(cacheKey);
   if (cached) return cached;
   if (negativeCache.get(cacheKey)) return null;
 
-  // Try multiple user agents
   const userAgents = [
     getRandomUserAgent(),
     USER_AGENTS[0],
     USER_AGENTS[3],
     USER_AGENTS[5],
+    USER_AGENTS[8],
+    USER_AGENTS[10],
   ];
 
   for (const ua of userAgents) {
@@ -543,7 +581,7 @@ function extractMediaFromHtml(html, platform, url) {
   if (!thumbnail && twitterImageMatch)
     thumbnail = cleanUrl(twitterImageMatch[1]);
 
-  // Video patterns
+  // Video patterns - comprehensive
   const videoPatterns = [
     /https:\/\/[^\s"']+\.(mp4|mov|webm|m3u8)[^\s"']*/gi,
     /"videoUrl":"([^"]+)"/gi,
@@ -558,9 +596,14 @@ function extractMediaFromHtml(html, platform, url) {
     /"playlist":"([^"]+)"/gi,
     /"source":"([^"]+\.(mp4|mov|webm))"/gi,
     /"src":"([^"]+\.(mp4|mov|webm))"/gi,
+    /"data-video":"([^"]+)"/gi,
+    /"data-source":"([^"]+)"/gi,
+    /"mediaUrl":"([^"]+)"/gi,
+    /"media_url":"([^"]+)"/gi,
+    /"content":"([^"]+\.(mp4|mov|webm))"/gi,
   ];
 
-  // Image patterns
+  // Image patterns - comprehensive
   const imagePatterns = [
     /https:\/\/[^\s"']+\.(jpg|jpeg|png|webp|gif)[^\s"']*/gi,
     /"displayUrl":"([^"]+)"/gi,
@@ -574,6 +617,7 @@ function extractMediaFromHtml(html, platform, url) {
     /"poster":"([^"]+)"/gi,
     /"data-src":"([^"]+\.(jpg|jpeg|png|webp|gif))"/gi,
     /"data-image":"([^"]+)"/gi,
+    /"data-media":"([^"]+)"/gi,
   ];
 
   for (const pattern of videoPatterns) {
@@ -711,7 +755,7 @@ function extractUrlsFromJson(obj, type) {
 }
 
 // ============================================================
-// YT-DLP STRATEGIES - ULTIMATE BYPASS
+// YT-DLP STRATEGIES - MULTIPLE BYPASS VECTORS
 // ============================================================
 function baseOptions(platform) {
   const opts = {
@@ -842,11 +886,6 @@ async function resolveWithStrategies(
   const cached = mediaCache.get(cacheKey);
   if (cached) return { info: cached, strategyIndex: -1, directExtract: true };
 
-  // The caller (e.g. the /resolve route) has typically already run direct
-  // extraction once before falling back here. Re-running it internally used
-  // to duplicate the entire 4-user-agent HTML scrape on every fallback —
-  // so we accept its result instead of repeating the work. Pass `undefined`
-  // (the default) if direct extraction genuinely hasn't been tried yet.
   const directResult =
     preFetchedDirectResult !== undefined
       ? preFetchedDirectResult
@@ -972,7 +1011,6 @@ function downloadFile(url, filePath, redirects = 0) {
       return;
     }
 
-    // Clean the URL
     let cleanUrlStr = cleanUrl(url);
 
     let parsed;
@@ -1332,8 +1370,7 @@ router.post("/resolve", async (req, res) => {
       });
     }
 
-    // Fallback to yt-dlp — reuse the directResult we already fetched above
-    // (even though it was empty/null) instead of re-fetching it internally.
+    // Fallback to yt-dlp
     const { info } = await resolveWithStrategies(
       url,
       platform,

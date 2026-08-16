@@ -155,63 +155,66 @@ function getRandomUserAgent() {
 }
 
 // ============================================================
-// CLEAN URL - FIXES ALL ENCODING ISSUES - MOVED TO TOP
+// CLEAN URL - IDEMPOTENT, HANDLES ARBITRARILY MANGLED/DUPLICATED
+// PROTOCOLS ("https:/x", "https://https:/x", "u002fu002fx", "//x", etc.)
 // ============================================================
 function cleanUrl(url) {
   if (!url) return url;
+  if (typeof url !== "string") return url;
 
-  // Fix u002f encoding (Unicode for /)
-  url = url.replace(/u002f/g, "/");
-  url = url.replace(/\\/g, "");
-  url = url.replace(/\%2F/g, "/");
-  url = url.replace(/\%2f/g, "/");
+  let u = url.trim();
 
-  // Fix missing slash after protocol (e.g., "https:/" -> "https://")
-  url = url.replace(/^(https?:)\/([^\/])/, "$1//$2");
+  // Decode escaped/encoded slash sequences up front
+  u = u.replace(/u002f/gi, "/").replace(/\\/g, "").replace(/%2f/gi, "/");
 
-  // Fix double slashes
-  url = url.replace(/https:\/\/\/+/g, "https://");
-  url = url.replace(/http:\/\/\/+/g, "http://");
-  url = url.replace(/\/\/+/g, "/");
-
-  // Ensure protocol exists
-  if (url && !/^https?:\/\//i.test(url)) {
-    url = "https://" + url;
+  // Strip ANY number of leading protocol fragments, however mangled or
+  // duplicated ("https:/", "https://", "https:///", repeated, etc.),
+  // remembering the last scheme we saw.
+  let scheme = null;
+  let stripped = true;
+  while (stripped) {
+    stripped = false;
+    const m = u.match(/^(https?):\/{0,3}/i);
+    if (m) {
+      scheme = m[1].toLowerCase();
+      u = u.slice(m[0].length);
+      stripped = true;
+    }
   }
+  if (!scheme) scheme = "https";
 
-  return url;
+  // Strip any leftover leading slashes (covers protocol-relative "//host/..." input)
+  u = u.replace(/^\/+/, "");
+
+  // Collapse duplicate slashes ONLY in the path portion — never touch the
+  // query string, since query values can legitimately contain "http://..."
+  const qIndex = u.search(/[?#]/);
+  let pathPart = qIndex === -1 ? u : u.slice(0, qIndex);
+  const tailPart = qIndex === -1 ? "" : u.slice(qIndex);
+  pathPart = pathPart.replace(/\/{2,}/g, "/");
+
+  return `${scheme}://${pathPart}${tailPart}`;
 }
 
 // ============================================================
-// NORMALIZE URL - VALIDATES AND FIXES URLS
+// NORMALIZE URL - VALIDATES AND FIXES URLS (built on cleanUrl, so it's
+// just as robust against mangled/duplicated protocols)
 // ============================================================
 function normalizeUrl(url) {
   if (!url) return null;
 
-  let normalized = url.trim();
-
-  // Fix missing slash after protocol
-  normalized = normalized.replace(/^(https?:)\/([^\/])/, "$1//$2");
-
-  // Remove escaped characters
-  normalized = normalized.replace(/u002f/gi, "/");
-  normalized = normalized.replace(/\\/g, "");
-
-  // Ensure protocol exists
-  if (!/^https?:\/\//i.test(normalized)) {
-    normalized = "https://" + normalized;
-  }
+  const cleaned = cleanUrl(url);
 
   try {
-    new URL(normalized);
-    return normalized;
+    new URL(cleaned);
+    return cleaned;
   } catch {
     return null;
   }
 }
 
 // ============================================================
-// RESOLVE TIKTOK SHORT LINKS - ULTIMATE FIX
+// RESOLVE TIKTOK/PINTEREST/FB SHORT LINKS
 // ============================================================
 async function resolveShortLink(url) {
   const cached = shortLinkCache.get(url);
@@ -238,7 +241,7 @@ async function resolveShortLink(url) {
     return cleaned;
   }
 
-  // METHOD 1: yt-dlp (most reliable) - REMOVED TIMEOUT OPTION
+  // METHOD 1: yt-dlp (most reliable) - no unsupported "timeout" flag
   try {
     console.log("[seize] Method 1: yt-dlp...");
     const result = await ytDlp(validUrl, {
@@ -246,7 +249,6 @@ async function resolveShortLink(url) {
       noWarnings: true,
       noCheckCertificates: true,
       retries: 5,
-      // timeout: 30,  // REMOVED - causes error
     });
     if (result && result.webpage_url) {
       const resolved = cleanUrl(result.webpage_url);
@@ -315,8 +317,8 @@ async function resolveShortLink(url) {
     console.log(`[seize] Mobile failed: ${err.message}`);
   }
 
-  console.log(`[seize] All methods failed, returning original`);
-  return validUrl;
+  console.log("[seize] All methods failed, returning original");
+  return cleanUrl(validUrl);
 }
 
 // ============================================================
@@ -375,10 +377,8 @@ function sanitizeUrl(input) {
   url = url.replace(/\?si=[^&]*&?/g, "?").replace(/\?$/, "");
   url = url.replace(/&si=[^&]*/g, "");
 
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    url = "https://" + url;
-  }
-
+  // cleanUrl() handles protocol detection/repair robustly (including
+  // missing, mangled, or duplicated protocols), so no manual prepend here.
   return cleanUrl(url);
 }
 
@@ -527,12 +527,13 @@ function extractMediaFromHtml(html, platform, url) {
   const ogImageMatch = html.match(
     /<meta property="og:image" content="([^"]+)"/,
   );
-  if (ogImageMatch) thumbnail = ogImageMatch[1];
+  if (ogImageMatch) thumbnail = cleanUrl(ogImageMatch[1]);
 
   const twitterImageMatch = html.match(
     /<meta name="twitter:image" content="([^"]+)"/,
   );
-  if (!thumbnail && twitterImageMatch) thumbnail = twitterImageMatch[1];
+  if (!thumbnail && twitterImageMatch)
+    thumbnail = cleanUrl(twitterImageMatch[1]);
 
   // Video patterns
   const videoPatterns = [
@@ -933,7 +934,7 @@ function runYtDlpWithProgress(url, options, jobId, timeoutMs = 120000) {
 }
 
 // ============================================================
-// DOWNLOAD FILE HELPER - FIXED
+// DOWNLOAD FILE HELPER
 // ============================================================
 function downloadFile(url, filePath, redirects = 0) {
   return new Promise((resolve, reject) => {
@@ -945,7 +946,15 @@ function downloadFile(url, filePath, redirects = 0) {
     // Clean the URL
     let cleanUrlStr = cleanUrl(url);
 
-    const protocol = cleanUrlStr.startsWith("https") ? https : http;
+    let parsed;
+    try {
+      parsed = new URL(cleanUrlStr);
+    } catch (err) {
+      reject(new Error(`Invalid URL: ${cleanUrlStr}`));
+      return;
+    }
+
+    const protocol = parsed.protocol === "https:" ? https : http;
     const file = fs.createWriteStream(filePath);
 
     const headers = {
@@ -963,7 +972,11 @@ function downloadFile(url, filePath, redirects = 0) {
       ) {
         file.close();
         fs.unlink(filePath, () => {});
-        downloadFile(response.headers.location, filePath, redirects + 1)
+        downloadFile(
+          cleanUrl(response.headers.location),
+          filePath,
+          redirects + 1,
+        )
           .then(resolve)
           .catch(reject);
         return;
@@ -1002,10 +1015,10 @@ function downloadFile(url, filePath, redirects = 0) {
 function extractMediaUrls(info) {
   if (info.directExtract) {
     return {
-      images: info.images || [],
-      videos: info.videos || [],
-      audio: info.audio || [],
-      thumbnail: info.thumbnail || null,
+      images: (info.images || []).map((i) => ({ ...i, url: cleanUrl(i.url) })),
+      videos: (info.videos || []).map((v) => ({ ...v, url: cleanUrl(v.url) })),
+      audio: (info.audio || []).map((a) => ({ ...a, url: cleanUrl(a.url) })),
+      thumbnail: info.thumbnail ? cleanUrl(info.thumbnail) : null,
       hasVideo: info.hasVideo || false,
       hasImage: info.hasImage || false,
       isGif: false,
@@ -1028,18 +1041,20 @@ function extractMediaUrls(info) {
 
   for (const node of nodes) {
     if (!media.thumbnail) {
-      if (node.thumbnail) media.thumbnail = node.thumbnail;
-      else if (Array.isArray(node.thumbnails) && node.thumbnails.length) {
+      if (node.thumbnail) {
+        media.thumbnail = cleanUrl(node.thumbnail);
+      } else if (Array.isArray(node.thumbnails) && node.thumbnails.length) {
         const largest = [...node.thumbnails].sort(
           (a, b) => (b.width || 0) - (a.width || 0),
         )[0];
-        media.thumbnail = largest?.url || null;
+        media.thumbnail = largest?.url ? cleanUrl(largest.url) : null;
       }
     }
 
     if (Array.isArray(node.formats)) {
       for (const format of node.formats) {
         if (!format.url) continue;
+        const safeUrl = cleanUrl(format.url);
         const isVideo = format.vcodec && format.vcodec !== "none";
         const isAudio = format.acodec && format.acodec !== "none" && !isVideo;
         const isImage =
@@ -1050,7 +1065,7 @@ function extractMediaUrls(info) {
 
         if (isVideo) {
           media.videos.push({
-            url: format.url,
+            url: safeUrl,
             format: format.ext || "mp4",
             quality: format.format_note || format.quality || "Unknown",
             width: format.width || null,
@@ -1060,7 +1075,7 @@ function extractMediaUrls(info) {
           media.hasVideo = true;
         } else if (isImage) {
           media.images.push({
-            url: format.url,
+            url: safeUrl,
             format: format.ext || "jpg",
             width: format.width || null,
             height: format.height || null,
@@ -1068,7 +1083,7 @@ function extractMediaUrls(info) {
           media.hasImage = true;
         } else if (isAudio) {
           media.audio.push({
-            url: format.url,
+            url: safeUrl,
             format: format.ext || "mp3",
             bitrate: format.abr || null,
           });
@@ -1078,11 +1093,12 @@ function extractMediaUrls(info) {
 
     if (node.url && node.ext) {
       const ext = node.ext.toLowerCase();
+      const safeUrl = cleanUrl(node.url);
       if (["mp4", "mov", "webm", "mkv"].includes(ext)) {
-        media.videos.push({ url: node.url, format: ext, quality: "Unknown" });
+        media.videos.push({ url: safeUrl, format: ext, quality: "Unknown" });
         media.hasVideo = true;
       } else if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
-        media.images.push({ url: node.url, format: ext });
+        media.images.push({ url: safeUrl, format: ext });
         media.hasImage = true;
       }
     }
@@ -1256,7 +1272,9 @@ router.post("/resolve", async (req, res) => {
       return res.json({
         platform,
         title: directResult.title || `${platform} Post`,
-        thumbnail: directResult.thumbnail || null,
+        thumbnail: directResult.thumbnail
+          ? cleanUrl(directResult.thumbnail)
+          : null,
         uploader: directResult.uploader || "Unknown",
         contentType: directResult.hasVideo
           ? "video"
@@ -1267,8 +1285,14 @@ router.post("/resolve", async (req, res) => {
         hasImage: directResult.hasImage,
         isGif: false,
         media: {
-          videos: directResult.videos || [],
-          images: directResult.images || [],
+          videos: (directResult.videos || []).map((v) => ({
+            ...v,
+            url: cleanUrl(v.url),
+          })),
+          images: (directResult.images || []).map((i) => ({
+            ...i,
+            url: cleanUrl(i.url),
+          })),
           audio: directResult.audio || [],
         },
         formatsAvailable: directResult.hasVideo ? ["mp4"] : ["jpg"],
@@ -1397,7 +1421,7 @@ router.post("/fetch", async (req, res) => {
         const mediaArray =
           mode === "video" ? directResult.videos : directResult.images;
         if (mediaArray && mediaArray.length > 0) {
-          await downloadFile(mediaArray[0].url, outputPath);
+          await downloadFile(cleanUrl(mediaArray[0].url), outputPath);
           jobs.set(jobId, {
             status: "done",
             progress: 100,
@@ -1572,8 +1596,10 @@ router.post("/profile", async (req, res) => {
             items.push({
               id: `direct-${Date.now()}-${items.length}`,
               title: directResult.title || "Media",
-              url: video.url,
-              thumbnail: directResult.thumbnail || null,
+              url: cleanUrl(video.url),
+              thumbnail: directResult.thumbnail
+                ? cleanUrl(directResult.thumbnail)
+                : null,
               duration: null,
               hasVideo: true,
               hasImage: false,
@@ -1585,8 +1611,8 @@ router.post("/profile", async (req, res) => {
             items.push({
               id: `direct-${Date.now()}-${items.length}`,
               title: directResult.title || "Image",
-              url: image.url,
-              thumbnail: image.url,
+              url: cleanUrl(image.url),
+              thumbnail: cleanUrl(image.url),
               duration: null,
               hasVideo: false,
               hasImage: true,
@@ -1642,7 +1668,11 @@ router.post("/profile", async (req, res) => {
           for (const entry of entries) {
             if (!entry || items.length >= maxItems) continue;
 
-            const entryUrl = entry.webpage_url || entry.url;
+            const entryUrl = entry.webpage_url
+              ? cleanUrl(entry.webpage_url)
+              : entry.url
+                ? cleanUrl(entry.url)
+                : null;
             if (entryUrl && seenUrls.has(entryUrl)) continue;
             if (entryUrl) seenUrls.add(entryUrl);
 
@@ -1660,12 +1690,12 @@ router.post("/profile", async (req, res) => {
               entry.ext === "png" ||
               entry.ext === "webp";
 
-            let thumbnail = entry.thumbnail || null;
+            let thumbnail = entry.thumbnail ? cleanUrl(entry.thumbnail) : null;
             if (!thumbnail && entry.thumbnails && entry.thumbnails.length) {
               const largest = [...entry.thumbnails].sort(
                 (a, b) => (b.width || 0) - (a.width || 0),
               )[0];
-              thumbnail = largest?.url || null;
+              thumbnail = largest?.url ? cleanUrl(largest.url) : null;
             }
 
             const item = {
@@ -1808,7 +1838,7 @@ router.post("/profile/batch", async (req, res) => {
                 ? directResult.videos
                 : directResult.images;
               if (mediaArray && mediaArray.length > 0) {
-                mediaUrl = mediaArray[0].url;
+                mediaUrl = cleanUrl(mediaArray[0].url);
               }
             }
 

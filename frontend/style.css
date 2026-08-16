@@ -769,6 +769,23 @@ main {
   color: var(--phosphor);
 }
 
+/* ---------- Platform-specific chip colors ---------- */
+.chip[data-platform="tiktok"].match { border-color: #000000; color: #000000; }
+.chip[data-platform="instagram"].match { border-color: #E4405F; color: #E4405F; }
+.chip[data-platform="twitter"].match { border-color: #1DA1F2; color: #1DA1F2; }
+.chip[data-platform="youtube"].match { border-color: #FF0000; color: #FF0000; }
+.chip[data-platform="spotify"].match { border-color: #1DB954; color: #1DB954; }
+.chip[data-platform="soundcloud"].match { border-color: #FF5500; color: #FF5500; }
+.chip[data-platform="reddit"].match { border-color: #FF4500; color: #FF4500; }
+.chip[data-platform="twitch"].match { border-color: #9146FF; color: #9146FF; }
+.chip[data-platform="vimeo"].match { border-color: #1AB7EA; color: #1AB7EA; }
+.chip[data-platform="pinterest"].match { border-color: #E60023; color: #E60023; }
+.chip[data-platform="snapchat"].match { border-color: #FFFC00; color: #FFFC00; }
+.chip[data-platform="facebook"].match { border-color: #1877F2; color: #1877F2; }
+.chip[data-platform="imgur"].match { border-color: #1BB76E; color: #1BB76E; }
+.chip[data-platform="giphy"].match { border-color: #00BFFF; color: #00BFFF; }
+.chip[data-platform="dailymotion"].match { border-color: #0066DC; color: #0066DC; }
+
 /* ---------- Capture Result ---------- */
 .capture-result {
   display: flex;
@@ -807,6 +824,41 @@ main {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* ---------- Track Info (Spotify/SoundCloud) ---------- */
+.track-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  background: rgba(127, 255, 176, 0.06);
+  border: 1px solid var(--phosphor-dim);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  margin-top: 14px;
+  line-height: 1.5;
+}
+
+.track-info strong {
+  color: var(--phosphor);
+  font-weight: 600;
+}
+
+.track-info-artist {
+  color: var(--muted);
+}
+
+.track-info-album {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.track-info-duration {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
 }
 
 /* ---------- Convert ---------- */

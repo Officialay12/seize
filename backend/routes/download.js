@@ -57,10 +57,27 @@ class FastCache {
   }
 }
 
-const mediaCache = new FastCache(500, 1800000);
+// FIX #1: Media caches now use a short TTL. The URLs stored inside these
+// cache entries (TikTok playAddr/downloadAddr, IG CDN links, etc.) are
+// signed and typically expire within a few minutes of being issued by the
+// platform. The old 30-minute TTL meant a "successful" cached /resolve
+// could hand back a media URL that had already expired, so /fetch or the
+// browser's own download would fail even though resolve looked fine.
+// 4 minutes keeps the speed benefit for rapid repeat requests (e.g. a user
+// clicking video/audio/image buttons back-to-back after one resolve) while
+// staying well inside the window these signed URLs are normally valid for.
+const MEDIA_TTL = 240000; // 4 minutes
+const mediaCache = new FastCache(500, MEDIA_TTL);
 const profileCache = new FastCache(100, 3600000);
 const shortLinkCache = new FastCache(200, 600000);
-const negativeCache = new FastCache(1000, 90000);
+// FIX #3: Negative-cache cooldown shortened from 90s to 20s. 90s was long
+// enough that a person testing a link, seeing it fail once (e.g. a one-off
+// network blip or transient rate limit), and immediately retrying would
+// get an instant cached failure instead of an actual retry. 20s still
+// prevents hammering a genuinely broken link but recovers much faster from
+// transient issues.
+const NEGATIVE_TTL = 20000; // 20 seconds
+const negativeCache = new FastCache(1000, NEGATIVE_TTL);
 
 // ============================================================
 // COOKIE MANAGEMENT
@@ -89,6 +106,13 @@ const COOKIE_SOURCE_FILES = {
   spotify: process.env.SPOTIFY_COOKIES_FILE || "./cookies/spotify_cookies.txt",
 };
 
+// FIX #5: Cookie loading now logs explicitly when a configured cookie file
+// is MISSING, not just when one is found. Previously this was a silent
+// try/catch with no failure log, so on Render's ephemeral filesystem a
+// cookie file that didn't survive a redeploy would vanish with zero trace
+// in the logs — the only symptom was platforms suddenly failing with
+// "private/login required" errors days later, with nothing pointing back
+// to the actual cause.
 const COOKIE_FILES = {};
 for (const [platform, sourcePath] of Object.entries(COOKIE_SOURCE_FILES)) {
   if (!sourcePath) continue;
@@ -98,9 +122,17 @@ for (const [platform, sourcePath] of Object.entries(COOKIE_SOURCE_FILES)) {
       const writablePath = path.join(TMP_DIR, `${platform}-cookies.txt`);
       fs.copyFileSync(resolvedPath, writablePath);
       COOKIE_FILES[platform] = writablePath;
-      console.log(`[seize] ${platform} cookies loaded`);
+      console.log(`[seize] ${platform} cookies loaded from ${resolvedPath}`);
+    } else {
+      console.warn(
+        `[seize] ${platform} cookies NOT FOUND at ${resolvedPath} — ` +
+          `requests to ${platform} will run unauthenticated and may fail ` +
+          `with "private" or "login required" errors.`,
+      );
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error(`[seize] ${platform} cookie load FAILED:`, e.message);
+  }
 }
 
 function cookiesFor(platform) {
@@ -136,6 +168,58 @@ function detectPlatform(url) {
 
 function getAllPlatforms() {
   return PLATFORMS.map((p) => p.name);
+}
+
+// ============================================================
+// FIX #2: KNOWN MEDIA-CDN HOST ALLOWLISTS PER PLATFORM
+// ============================================================
+// The raw regex extractor used to accept ANY .mp4/.jpg-looking URL found
+// anywhere in a page's HTML — ad-network preview clips, tracking pixels,
+// or unrelated embeds elsewhere on the page could get matched instead of
+// the actual post's media. This is especially bad on pages with ads
+// (Reddit, Pinterest, Facebook), where the extractor could "succeed" while
+// returning the WRONG media with no error at all.
+//
+// These are the actual CDN hostnames each platform serves real media from.
+// When a platform has a known list, extracted URLs are filtered against it
+// before being accepted; unknown-host matches are dropped rather than
+// silently accepted. Platforms without a well-known fixed CDN (many small
+// ones use arbitrary/rotating hosts) fall back to accepting any https media
+// URL, same as before.
+const MEDIA_HOST_ALLOWLIST = {
+  tiktok: [
+    "tiktokcdn.com",
+    "tiktokcdn-us.com",
+    "tiktokv.com",
+    "muscdn.com",
+    "bytecdn.com",
+    "byteoversea.com",
+  ],
+  instagram: ["cdninstagram.com", "fbcdn.net"],
+  twitter: ["twimg.com", "video.twimg.com"],
+  facebook: ["fbcdn.net", "fbsbx.com"],
+  reddit: ["redd.it", "redditmedia.com", "redditstatic.com"],
+  pinterest: ["pinimg.com"],
+  giphy: ["giphy.com", "media.giphy.com"],
+  imgur: ["imgur.com"],
+  soundcloud: ["sndcdn.com"],
+  spotify: ["scdn.co"],
+  vimeo: ["vimeocdn.com"],
+  dailymotion: ["dmcdn.net"],
+  twitch: ["ttvnw.net", "jtvnw.net"],
+};
+
+function isAllowedMediaHost(url, platform) {
+  const allowlist = MEDIA_HOST_ALLOWLIST[platform];
+  if (!allowlist) return true; // no known list for this platform — allow (unchanged behavior)
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return allowlist.some(
+      (domain) => host === domain || host.endsWith(`.${domain}`),
+    );
+  } catch {
+    return false;
+  }
 }
 
 // ============================================================
@@ -620,6 +704,12 @@ function extractMediaFromHtml(html, platform, url) {
     /"data-media":"([^"]+)"/gi,
   ];
 
+  // FIX #2: Collect raw matches first, then filter against the platform's
+  // known media-CDN hosts (when we have a list for that platform) before
+  // accepting them. Previously any URL matching the pattern was accepted
+  // outright — ad-network preview clips, tracking pixels, or embeds
+  // elsewhere on the page could be picked up as if they were the post's
+  // real media, especially on ad-heavy pages (Reddit, Pinterest, Facebook).
   for (const pattern of videoPatterns) {
     const matches = [...html.matchAll(pattern)];
     for (const match of matches) {
@@ -629,7 +719,8 @@ function extractMediaFromHtml(html, platform, url) {
         if (
           !cleanUrlStr.includes("placeholder") &&
           !cleanUrlStr.includes("default") &&
-          !cleanUrlStr.includes("data:image")
+          !cleanUrlStr.includes("data:image") &&
+          isAllowedMediaHost(cleanUrlStr, platform)
         ) {
           videos.push({ url: cleanUrlStr, format: "mp4", quality: "HD" });
         }
@@ -646,7 +737,8 @@ function extractMediaFromHtml(html, platform, url) {
         if (
           !cleanUrlStr.includes("placeholder") &&
           !cleanUrlStr.includes("default") &&
-          !cleanUrlStr.includes("data:image")
+          !cleanUrlStr.includes("data:image") &&
+          isAllowedMediaHost(cleanUrlStr, platform)
         ) {
           images.push({ url: cleanUrlStr, format: "jpg" });
         }
@@ -671,13 +763,19 @@ function extractMediaFromHtml(html, platform, url) {
         const imageUrls = extractUrlsFromJson(json, "image");
         for (const v of videoUrls) {
           const cleanV = cleanUrl(v);
-          if (!cleanV.includes("placeholder")) {
+          if (
+            !cleanV.includes("placeholder") &&
+            isAllowedMediaHost(cleanV, platform)
+          ) {
             videos.push({ url: cleanV, format: "mp4", quality: "HD" });
           }
         }
         for (const i of imageUrls) {
           const cleanI = cleanUrl(i);
-          if (!cleanI.includes("placeholder")) {
+          if (
+            !cleanI.includes("placeholder") &&
+            isAllowedMediaHost(cleanI, platform)
+          ) {
             images.push({ url: cleanI, format: "jpg" });
           }
         }
@@ -909,6 +1007,18 @@ async function resolveWithStrategies(
   const base = baseOptions(platform);
   const strategies = [];
   const platformStrategies = getPlatformStrategies(platform);
+  // FIX #4: Cookie inclusion per strategy. The old logic was
+  // self-cancelling at i=0 (0 % 2 === 0 sets cookies, then 0 % 3 === 0
+  // immediately deletes them in the same pass), so the FIRST strategy
+  // attempted for every single platform never carried cookies — even when
+  // valid cookies were loaded and available. For platforms that
+  // increasingly require an authenticated session just to see anything at
+  // all (Instagram, X/Twitter, some Reddit content), that first attempt
+  // was close to guaranteed to fail before ever trying an authenticated
+  // request. Cookies are now included on the first two strategies (when
+  // available) and alternate afterward, so an authenticated attempt is
+  // always tried early rather than only as a fallback.
+  const availableCookies = cookiesFor(platform);
 
   for (let i = 0; i < Math.min(5, platformStrategies.length); i++) {
     const ua = USER_AGENTS[i % USER_AGENTS.length];
@@ -919,8 +1029,18 @@ async function resolveWithStrategies(
       addHeaders: generateHeaders(platform, ua),
     };
     Object.assign(strategy, platformStrategies[i]);
-    if (i % 2 === 0) strategy.cookies = cookiesFor(platform) || undefined;
-    if (i % 3 === 0) delete strategy.cookies;
+
+    if (availableCookies) {
+      // First two strategies always try with cookies; after that, alternate.
+      if (i < 2 || i % 2 === 0) {
+        strategy.cookies = availableCookies;
+      } else {
+        delete strategy.cookies;
+      }
+    } else {
+      delete strategy.cookies;
+    }
+
     strategies.push(strategy);
   }
 
@@ -1138,6 +1258,12 @@ function extractMediaUrls(info) {
             width: format.width || null,
             height: format.height || null,
             isGif: format.format_note && /gif/i.test(format.format_note),
+            // FIX #2 (Reddit note): v.redd.it style platforms often serve
+            // video-only (no audio) and audio-only DASH streams as
+            // SEPARATE formats. Flag whether this particular format has an
+            // audio track so downstream code (the /fetch route's ffmpeg
+            // merge step) knows this entry alone may be silent.
+            hasAudioTrack: !!(format.acodec && format.acodec !== "none"),
           });
           media.hasVideo = true;
         } else if (isImage) {
@@ -1264,10 +1390,21 @@ function friendlyError(stderr = "") {
 // ============================================================
 // UPDATE YT-DLP
 // ============================================================
+// FIX #7: yt-dlp self-update failures now escalate to console.error (with
+// full stderr) instead of a soft console.log "skipped" message, and a
+// success log now includes the resolved version string when available.
+// Previously a blocked/failed update check on Render (e.g. egress network
+// restrictions) looked identical in the logs to "already up to date", so
+// yt-dlp could silently drift out of date against platforms that change
+// their internals frequently, with nothing calling that out as an issue.
 function updateYtDlpBinary() {
   execFile(YT_DLP_BIN, ["-U"], { timeout: 30000 }, (err, stdout, stderr) => {
     if (err) {
-      console.log("[seize] yt-dlp self-update skipped:", err.message);
+      console.error(
+        "[seize] yt-dlp self-update FAILED (this can mean yt-dlp is running an outdated version against platforms that change frequently):",
+        err.message,
+        stderr ? `\nstderr: ${stderr}` : "",
+      );
       return;
     }
     const out = (stdout || stderr || "").trim();
@@ -1536,6 +1673,10 @@ router.post("/fetch", async (req, res) => {
       } else if (mode === "image") {
         strategy.ignoreErrors = true;
       } else {
+        // mode === "video": force ffmpeg to merge separate video+audio
+        // streams into one file with sound (relevant for platforms like
+        // Reddit that serve DASH video-only + audio-only streams
+        // separately — see FIX #2 note on hasAudioTrack).
         strategy.mergeOutputFormat = "mp4";
       }
       Object.assign(strategy, platformStrategies[i] || {});

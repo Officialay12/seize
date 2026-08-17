@@ -213,11 +213,7 @@ async function processOfflineQueue() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "fetch retry failed");
 
-        await pollJob(
-          `${API_BASE}/download/status/${data.jobId}`,
-          { style: {} },
-          { textContent: "" },
-        );
+        await pollJob(`${API_BASE}/download/status/${data.jobId}`, null, null);
         const ext =
           item.mode === "audio" ? "mp3" : item.mode === "image" ? "jpg" : "mp4";
         const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
@@ -243,11 +239,7 @@ async function processOfflineQueue() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "convert retry failed");
 
-        await pollJob(
-          `${API_BASE}/convert/status/${data.jobId}`,
-          { style: {} },
-          { textContent: "" },
-        );
+        await pollJob(`${API_BASE}/convert/status/${data.jobId}`, null, null);
         const ext = item.target === "v2a" ? item.format || "mp3" : "mp4";
         const fileUrl = `${API_BASE}/convert/download/${data.jobId}`;
         await saveMediaToDevice(
@@ -288,6 +280,54 @@ async function updateOfflineBanner() {
   }
 }
 
+// ============================================================
+// POLL JOB - FIXED: handles null progress elements
+// ============================================================
+function pollJob(url, progressFill, progressLabel) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const maxAttempts = 60;
+
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.status === "done") {
+          clearInterval(interval);
+          if (progressFill) progressFill.style.width = "100%";
+          if (progressLabel) progressLabel.textContent = "✅ Done!";
+          resolve(data);
+          return;
+        } else if (data.status === "error") {
+          clearInterval(interval);
+          reject(new Error(data.error || "Processing failed."));
+          return;
+        } else {
+          if (progressFill) {
+            progressFill.style.width = `${data.progress || 10}%`;
+          }
+          if (progressLabel) {
+            progressLabel.textContent = `Processing... ${data.progress || 0}%`;
+          }
+        }
+
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          reject(new Error("Download timed out. Please try again."));
+        }
+      } catch (e) {
+        clearInterval(interval);
+        reject(e);
+      }
+    }, 1000);
+  });
+}
+
+// ============================================================
+// EXTRACT PLATFORM URL
+// ============================================================
 function extractPlatformUrl(text) {
   if (!text) return null;
   const patterns = [
@@ -324,6 +364,9 @@ function extractPlatformUrl(text) {
   return fallback && fallback.length > 0 ? fallback[0] : null;
 }
 
+// ============================================================
+// PROCESS SHARED URL
+// ============================================================
 function processSharedUrl(url, mode) {
   console.log("[seize] Processing shared URL:", url);
   document.querySelector('[data-mode="capture"]')?.click();
@@ -455,7 +498,6 @@ async function saveMediaToDevice(url, fallbackName) {
   let response, blob;
 
   try {
-    // Fetch with timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -472,7 +514,6 @@ async function saveMediaToDevice(url, fallbackName) {
     blob = await response.blob();
   } catch (err) {
     console.error("[seize] fetch failed:", err);
-    // Fallback: open in new tab
     window.open(url, "_blank");
     showToast("⚠️ Opening in new tab - please save manually", "warning");
     return;
@@ -512,7 +553,6 @@ async function saveMediaToDevice(url, fallbackName) {
   // ============================================================
   if (isIOS) {
     try {
-      // Try native share first
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({ files: [file] });
@@ -524,7 +564,6 @@ async function saveMediaToDevice(url, fallbackName) {
         }
       }
 
-      // Fallback: open in new window with download
       const urlObj = URL.createObjectURL(blob);
       if (mimeType.startsWith("image/")) {
         const win = window.open("", "_blank");
@@ -973,7 +1012,6 @@ let lastResolvedItem = null;
 // PLATFORM CONFIGURATION - AUDIO-ONLY FIXED
 // ============================================================
 const PLATFORM_CONFIG = {
-  // Video + Audio + Image platforms
   tiktok: {
     hasVideo: true,
     hasAudio: true,
@@ -1022,8 +1060,6 @@ const PLATFORM_CONFIG = {
     hasImage: false,
     defaultMode: "video",
   },
-
-  // Image only platforms
   pinterest: {
     hasVideo: false,
     hasAudio: false,
@@ -1048,8 +1084,6 @@ const PLATFORM_CONFIG = {
     hasImage: true,
     defaultMode: "image",
   },
-
-  // AUDIO-ONLY platforms - FIXED: NO IMAGE, NO VIDEO
   soundcloud: {
     hasVideo: false,
     hasAudio: true,
@@ -1097,10 +1131,8 @@ function updateResultButtons(data) {
   const platform = data.platform || "unknown";
   const config = getPlatformConfig(platform);
 
-  // FORCE: Spotify and SoundCloud are AUDIO-ONLY
   const audioOnly = isAudioOnlyPlatform(platform);
 
-  // Determine what this platform supports
   const supportsVideo = !audioOnly && (config.hasVideo || data.hasVideo);
   const supportsAudio =
     config.hasAudio ||
@@ -1111,7 +1143,7 @@ function updateResultButtons(data) {
     !audioOnly &&
     (config.hasImage || data.hasImage || data.contentType === "image");
 
-  // VIDEO BUTTON - HIDE for audio-only
+  // VIDEO BUTTON
   if (supportsVideo) {
     fetchVideoBtn.style.display = "inline-flex";
     fetchVideoBtn.textContent = "🎬 Download video";
@@ -1138,7 +1170,7 @@ function updateResultButtons(data) {
     qualityRow.classList.add("hidden");
   }
 
-  // IMAGE BUTTON - ALWAYS HIDDEN for audio-only
+  // IMAGE BUTTON
   if (supportsImage) {
     fetchImageBtn.style.display = "inline-flex";
     fetchImageBtn.textContent = "🖼️ Download image";
@@ -1146,7 +1178,7 @@ function updateResultButtons(data) {
     fetchImageBtn.style.display = "none";
   }
 
-  // AUDIO BUTTON - ALWAYS SHOWN for audio-only or if audio available
+  // AUDIO BUTTON
   if (supportsAudio) {
     fetchAudioBtn.style.display = "inline-flex";
     if (audioOnly) {
@@ -1160,7 +1192,7 @@ function updateResultButtons(data) {
     fetchAudioBtn.style.display = "none";
   }
 
-  // Show track info for SoundCloud/Spotify
+  // Track info for SoundCloud/Spotify
   const metaDiv = document.querySelector(".result-meta");
   const existingTrackInfo = metaDiv.querySelector(".track-info");
   if (existingTrackInfo) existingTrackInfo.remove();
@@ -1189,52 +1221,12 @@ function clearCaptureError() {
 }
 
 // ============================================================
-// OPTIMIZED FAST POLL JOB - Checks less frequently
-// ============================================================
-function pollJob(url, progressFill, progressLabel) {
-  return new Promise((resolve, reject) => {
-    let attempts = 0;
-    const maxAttempts = 60; // 60 seconds max
-
-    const interval = setInterval(async () => {
-      attempts++;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.status === "done") {
-          clearInterval(interval);
-          progressFill.style.width = "100%";
-          resolve(data);
-          return;
-        } else if (data.status === "error") {
-          clearInterval(interval);
-          reject(new Error(data.error || "Processing failed."));
-          return;
-        } else {
-          progressFill.style.width = `${data.progress || 10}%`;
-        }
-
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          reject(new Error("Download timed out. Please try again."));
-        }
-      } catch (e) {
-        clearInterval(interval);
-        reject(e);
-      }
-    }, 1000); // Check every second
-  });
-}
-
-// ============================================================
 // OPTIMIZED RUN CAPTURE FETCH - Faster downloads
 // ============================================================
 async function runCaptureFetch(mode) {
   clearCaptureError();
   captureProgress.classList.remove("hidden");
 
-  // FORCE: SoundCloud/Spotify = ALWAYS audio mode
   const audioOnly =
     lastResolvedItem && isAudioOnlyPlatform(lastResolvedItem.platform);
 
@@ -1242,7 +1234,6 @@ async function runCaptureFetch(mode) {
     mode = "audio";
   }
 
-  // Auto-detect best mode if not specified
   if (!mode || mode === "auto") {
     if (lastResolvedItem) {
       const config = getPlatformConfig(lastResolvedItem.platform);
@@ -1284,7 +1275,6 @@ async function runCaptureFetch(mode) {
   }
 
   try {
-    // Start the fetch with faster timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 45000);
 
@@ -1299,7 +1289,6 @@ async function runCaptureFetch(mode) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Fetch failed.");
 
-    // Poll for status - but this should be fast
     await pollJob(
       `${API_BASE}/download/status/${data.jobId}`,
       captureProgressFill,
@@ -1314,7 +1303,6 @@ async function runCaptureFetch(mode) {
     const platform = lastResolvedItem?.platform || "media";
     const filename = `seize-${platform}-${mode}-${Date.now()}.${ext}`;
 
-    // Download immediately
     await saveMediaToDevice(fileUrl, filename);
 
     addHistoryEntry({
@@ -1395,9 +1383,6 @@ captureForm.addEventListener("submit", async (e) => {
 
   try {
     const controller = new AbortController();
-    // 60s (not 30s): the backend can legitimately take longer than 30s when
-    // it falls back through multiple yt-dlp strategies, so a short client
-    // timeout was aborting the UI while the server was still succeeding.
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     const res = await fetch(`${API_BASE}/download/resolve`, {
@@ -1411,7 +1396,6 @@ captureForm.addEventListener("submit", async (e) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not resolve.");
 
-    // Store resolved data
     lastResolvedItem = {
       sourceUrl: url,
       platform: data.platform || null,
@@ -1423,24 +1407,18 @@ captureForm.addEventListener("submit", async (e) => {
       media: data.media || { videos: [], images: [], audio: [] },
     };
 
-    // ============================================================
-    // FIX: SoundCloud/Spotify - Hide image/video buttons
-    // ============================================================
     const audioOnly = isAudioOnlyPlatform(data.platform);
 
     if (audioOnly) {
-      // Force hide image and video buttons
       fetchImageBtn.style.display = "none";
       fetchVideoBtn.style.display = "none";
       fetchAudioBtn.style.display = "inline-flex";
       fetchAudioBtn.textContent = "🎵 Download audio";
       document.getElementById("quality-row").classList.add("hidden");
 
-      // Set proper title for SoundCloud/Spotify
       resultTitle.textContent = data.title || `${data.platform} Track`;
       resultUploader.textContent = `${data.platform.toUpperCase()} · ${data.uploader || "Unknown Artist"}`;
 
-      // Add track info
       const metaDiv = document.querySelector(".result-meta");
       const existingTrackInfo = metaDiv.querySelector(".track-info");
       if (existingTrackInfo) existingTrackInfo.remove();
@@ -1455,20 +1433,17 @@ captureForm.addEventListener("submit", async (e) => {
       `;
       metaDiv.appendChild(trackInfo);
 
-      // Hide thumbnail if no image
       if (!data.thumbnail) {
         resultThumb.style.display = "none";
       }
     }
 
-    // Display thumbnail (for non-audio-only platforms)
     if (data.thumbnail && !audioOnly) {
       loadThumbnail(data.thumbnail, resultThumb);
     } else if (!audioOnly) {
       resultThumb.style.display = "none";
     }
 
-    // Set title (for non-audio-only)
     if (!audioOnly) {
       resultTitle.textContent = data.title || "Untitled";
       let uploader = data.uploader || "unknown uploader";
@@ -1478,7 +1453,6 @@ captureForm.addEventListener("submit", async (e) => {
       resultUploader.textContent = uploader;
     }
 
-    // Update buttons based on platform capabilities
     updateResultButtons(data);
     captureResult.classList.remove("hidden");
     setScopeState("done");
@@ -1823,16 +1797,13 @@ async function processQueueItem(item) {
     if (!resolveRes.ok)
       throw new Error(resolveData.error || "Could not resolve.");
 
-    // Determine best mode based on platform
     const config = getPlatformConfig(resolveData.platform);
     let mode = config.defaultMode || "video";
 
-    // If audio-only, force audio mode
     if (isAudioOnlyPlatform(resolveData.platform)) {
       mode = "audio";
     }
 
-    // If no media available in default mode, try fallback
     if (mode === "video" && !resolveData.hasVideo) {
       mode = resolveData.hasImage ? "image" : "audio";
     } else if (mode === "image" && !resolveData.hasImage) {
@@ -1847,11 +1818,7 @@ async function processQueueItem(item) {
     const fetchData = await fetchRes.json();
     if (!fetchRes.ok) throw new Error(fetchData.error || "Fetch failed.");
 
-    await pollJob(
-      `${API_BASE}/download/status/${fetchData.jobId}`,
-      { style: {} },
-      { textContent: "" },
-    );
+    await pollJob(`${API_BASE}/download/status/${fetchData.jobId}`, null, null);
     item.status = "done";
 
     const ext = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
@@ -1943,7 +1910,6 @@ const dropzoneLabel = document.getElementById("dropzone-label");
 const dropzoneHint = document.getElementById("dropzone-hint");
 const fileInput = document.getElementById("file-input");
 const formatRow = document.getElementById("format-row");
-const convertForm = document.getElementById("convert-form");
 const convertBtn = document.getElementById("convert-btn");
 const convertProgress = document.getElementById("convert-progress");
 const convertProgressFill = document.getElementById("convert-progress-fill");
@@ -2258,13 +2224,7 @@ convertBtn.addEventListener("click", async () => {
 
 // ============================================================
 // SHARED FILE HANDLER
-// (URL-based share handling lives ONLY in the single "SHARED URL
-// HANDLER" block near the top of this file. This section is just for
-// native file shares / the File Handling API — a genuinely different
-// feature — so it doesn't duplicate that logic or fire a second/third
-// resolve for the same shared link.)
 // ============================================================
-
 async function handleSharedFile(file) {
   const isVideo = file.type.startsWith("video/");
   const isAudio = file.type.startsWith("audio/");

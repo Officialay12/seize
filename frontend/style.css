@@ -119,6 +119,7 @@ a {
   0% {
     transform: translateY(-30%);
   }
+
   100% {
     transform: translateY(30%);
   }
@@ -135,6 +136,7 @@ a {
     opacity: 0;
     transform: translateY(6px) scale(0.97);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -165,10 +167,12 @@ a {
 }
 
 @keyframes logoGlow {
+
   0%,
   100% {
     filter: drop-shadow(0 0 4px rgba(127, 255, 176, 0.5));
   }
+
   50% {
     filter: drop-shadow(0 0 14px rgba(127, 255, 176, 0.9));
   }
@@ -187,14 +191,17 @@ a {
 }
 
 @keyframes brandFlicker {
+
   0%,
   92%,
   100% {
     opacity: 1;
   }
+
   94% {
     opacity: 0.85;
   }
+
   96% {
     opacity: 1;
   }
@@ -244,6 +251,7 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .scope-sweep,
   .preloader-logo-path,
   .preloader-brand,
@@ -251,6 +259,7 @@ a {
   .preloader-spinner::after {
     animation: none;
   }
+
   .preloader-logo-path {
     stroke-dashoffset: 0;
   }
@@ -479,10 +488,12 @@ a {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.3;
   }
@@ -668,11 +679,13 @@ main {
 }
 
 @keyframes cta-glow {
+
   0%,
   100% {
     box-shadow: 0 0 0 0 rgba(127, 255, 176, 0);
     border-color: var(--line);
   }
+
   50% {
     box-shadow: 0 0 16px 1px rgba(127, 255, 176, 0.25);
     border-color: var(--phosphor-dim);
@@ -770,21 +783,80 @@ main {
 }
 
 /* ---------- Platform-specific chip colors ---------- */
-.chip[data-platform="tiktok"].match { border-color: #000000; color: #000000; }
-.chip[data-platform="instagram"].match { border-color: #E4405F; color: #E4405F; }
-.chip[data-platform="twitter"].match { border-color: #1DA1F2; color: #1DA1F2; }
-.chip[data-platform="youtube"].match { border-color: #FF0000; color: #FF0000; }
-.chip[data-platform="spotify"].match { border-color: #1DB954; color: #1DB954; }
-.chip[data-platform="soundcloud"].match { border-color: #FF5500; color: #FF5500; }
-.chip[data-platform="reddit"].match { border-color: #FF4500; color: #FF4500; }
-.chip[data-platform="twitch"].match { border-color: #9146FF; color: #9146FF; }
-.chip[data-platform="vimeo"].match { border-color: #1AB7EA; color: #1AB7EA; }
-.chip[data-platform="pinterest"].match { border-color: #E60023; color: #E60023; }
-.chip[data-platform="snapchat"].match { border-color: #FFFC00; color: #FFFC00; }
-.chip[data-platform="facebook"].match { border-color: #1877F2; color: #1877F2; }
-.chip[data-platform="imgur"].match { border-color: #1BB76E; color: #1BB76E; }
-.chip[data-platform="giphy"].match { border-color: #00BFFF; color: #00BFFF; }
-.chip[data-platform="dailymotion"].match { border-color: #0066DC; color: #0066DC; }
+.chip[data-platform="tiktok"].match {
+  border-color: #000000;
+  color: #000000;
+}
+
+.chip[data-platform="instagram"].match {
+  border-color: #E4405F;
+  color: #E4405F;
+}
+
+.chip[data-platform="twitter"].match {
+  border-color: #1DA1F2;
+  color: #1DA1F2;
+}
+
+.chip[data-platform="youtube"].match {
+  border-color: #FF0000;
+  color: #FF0000;
+}
+
+.chip[data-platform="spotify"].match {
+  border-color: #1DB954;
+  color: #1DB954;
+}
+
+.chip[data-platform="soundcloud"].match {
+  border-color: #FF5500;
+  color: #FF5500;
+}
+
+.chip[data-platform="reddit"].match {
+  border-color: #FF4500;
+  color: #FF4500;
+}
+
+.chip[data-platform="twitch"].match {
+  border-color: #9146FF;
+  color: #9146FF;
+}
+
+.chip[data-platform="vimeo"].match {
+  border-color: #1AB7EA;
+  color: #1AB7EA;
+}
+
+.chip[data-platform="pinterest"].match {
+  border-color: #E60023;
+  color: #E60023;
+}
+
+.chip[data-platform="snapchat"].match {
+  border-color: #FFFC00;
+  color: #FFFC00;
+}
+
+.chip[data-platform="facebook"].match {
+  border-color: #1877F2;
+  color: #1877F2;
+}
+
+.chip[data-platform="imgur"].match {
+  border-color: #1BB76E;
+  color: #1BB76E;
+}
+
+.chip[data-platform="giphy"].match {
+  border-color: #00BFFF;
+  color: #00BFFF;
+}
+
+.chip[data-platform="dailymotion"].match {
+  border-color: #0066DC;
+  color: #0066DC;
+}
 
 /* ---------- Capture Result ---------- */
 .capture-result {
@@ -1206,33 +1278,42 @@ main {
     font-size: 0.92rem;
     gap: 6px;
   }
+
   .mode-index {
     display: none;
   }
+
   .input-row {
     flex-wrap: wrap;
   }
+
   .input-row .text-input {
     flex-basis: 100%;
   }
+
   .input-row .btn-primary {
     flex: 1;
   }
+
   .capture-result {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .result-thumb {
     width: 100%;
     height: 180px;
   }
+
   .history-item {
     flex-wrap: wrap;
   }
+
   .history-actions {
     width: 100%;
     justify-content: flex-end;
   }
+
   .platform-chips .chip {
     font-size: 0.6rem;
     padding: 2px 8px;
@@ -1328,6 +1409,7 @@ main {
     transform: translateY(12px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -1883,27 +1965,34 @@ main {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 10px;
   }
+
   .archive-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
+
   .archive-toolbar-right {
     justify-content: stretch;
     flex-wrap: wrap;
   }
+
   .archive-toolbar-right button {
     flex: 1;
     min-width: 120px;
   }
+
   .archive-controls .input-row {
     flex-direction: column;
   }
+
   .archive-controls .input-row .text-input {
     min-width: 100%;
   }
+
   .archive-controls .input-row .select-input {
     min-width: 100%;
   }
+
   .collection-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
@@ -1919,6 +2008,7 @@ main {
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -1943,8 +2033,80 @@ main {
     transform: translateY(20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* ---------- FIX: Responsive images ---------- */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---------- FIX: Prevent layout shift ---------- */
+html {
+  scrollbar-gutter: stable;
+}
+
+/* ---------- FIX: Better touch targets ---------- */
+button,
+a,
+input,
+select {
+  touch-action: manipulation;
+}
+
+/* ---------- FIX: Safe area insets ---------- */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+}
+
+/* ---------- FIX: Dark mode flash ---------- */
+body {
+  background: #0B0D0C;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ---------- FIX: Smooth scrolling ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ---------- FIX: Focus styles ---------- */
+:focus-visible {
+  outline: 2px solid #7FFFB0;
+  outline-offset: 2px;
+}
+
+/* ---------- FIX: Prevent text selection on buttons ---------- */
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---------- FIX: Scrollbar styling ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
 }

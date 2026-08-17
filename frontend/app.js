@@ -231,6 +231,10 @@ async function processOfflineQueue() {
         const endpoint =
           item.target === "v2a" ? "video-to-audio" : "audio-to-video";
         if (item.target === "v2a") form.append("format", item.format || "mp3");
+        // Carry a queued audio->video prompt through to the retry too, so
+        // offline-queued prompt videos still come out themed correctly.
+        if (item.target === "a2v" && item.prompt)
+          form.append("prompt", item.prompt);
 
         const res = await fetch(`${API_BASE}/convert/${endpoint}`, {
           method: "POST",
@@ -1919,6 +1923,11 @@ const convertRestoreBanner = document.getElementById("convert-restore-banner");
 
 let convertTarget = "v2a";
 let selectedFile = null;
+// Holds the user's description for the next Audio -> Video conversion,
+// collected via the prompt modal right before upload. Cleared after each
+// conversion attempt (success or failure) so a stale prompt never silently
+// reattaches itself to an unrelated later conversion.
+let pendingVideoPrompt = "";
 const LAST_FORMAT_KEY = "seize_last_format";
 
 function lastUsedFormat(format, set) {
@@ -2036,11 +2045,26 @@ fileInput.addEventListener("click", (e) => e.stopPropagation());
 dropzone.addEventListener("click", function (e) {
   e.preventDefault();
   e.stopPropagation();
+  // BUG FIX (file disappears after picker / app reload): mark that the
+  // native file picker is about to open *before* handing control to it,
+  // not after a file comes back. Mobile browsers can discard a
+  // backgrounded PWA tab under memory pressure while the OS picker is
+  // open, and reload this page fresh when the user returns — if that
+  // happens, no JS is running to catch it, so nothing gets saved. This
+  // flag lets the restore logic on load tell the user honestly what
+  // happened instead of the file just silently vanishing with no
+  // explanation.
+  try {
+    sessionStorage.setItem("seize_picker_open", "1");
+  } catch {}
   fileInput.click();
 });
 dropzone.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
+    try {
+      sessionStorage.setItem("seize_picker_open", "1");
+    } catch {}
     fileInput.click();
   }
 });
@@ -2064,6 +2088,11 @@ dropzone.addEventListener("drop", (e) => {
   }
 });
 fileInput.addEventListener("change", () => {
+  // The picker has resolved (file picked or cancelled) — clear the flag
+  // so a normal, successful pick never gets mistaken for a lost one.
+  try {
+    sessionStorage.removeItem("seize_picker_open");
+  } catch {}
   if (fileInput.files.length) {
     applySelectedFile(fileInput.files[0]);
   }
@@ -2083,6 +2112,7 @@ fileInput.addEventListener("change", () => {
     );
     try {
       sessionStorage.removeItem("seize_pending_flag");
+      sessionStorage.removeItem("seize_picker_open");
     } catch {}
     return;
   }
@@ -2104,6 +2134,21 @@ fileInput.addEventListener("change", () => {
     );
     try {
       sessionStorage.removeItem("seize_pending_flag");
+      sessionStorage.removeItem("seize_picker_open");
+    } catch {}
+  } else if (sessionStorage.getItem("seize_picker_open") === "1") {
+    // BUG FIX: the tab reloaded while the native file picker was open and
+    // nothing made it into IndexedDB in time to restore. This is a
+    // memory-saving behavior in mobile browsers (backgrounded tabs can be
+    // discarded), not a bug in seize itself — but the user should get a
+    // clear, honest explanation instead of the file just silently
+    // vanishing with no message at all.
+    document.querySelector('[data-mode="convert"]')?.click();
+    showRestoreBanner(
+      "⚠ The app reloaded while your file picker was open (a memory-saving behavior in some mobile browsers) — please select your file again.",
+    );
+    try {
+      sessionStorage.removeItem("seize_picker_open");
     } catch {}
   }
 })();
@@ -2116,9 +2161,78 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// ============================================================
+// AUDIO -> VIDEO PROMPT MODAL
+// ============================================================
+// Shown right before an Audio -> Video conversion starts. Lets the user
+// describe the video they want; the description is sent to the backend,
+// which uses it to theme a free, local, audio-reactive visualizer
+// (palette + on-screen caption) — no external AI, no cost, no rate limit.
+// Resolves to "" if the user skips or dismisses it, which falls back to
+// the plain branded-cover video exactly as before.
+function showVideoPromptModal() {
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "ios-install-modal";
+    modal.innerHTML = `
+      <div class="ios-modal-content" style="text-align:left;">
+        <h3>🎨 Describe your video</h3>
+        <p class="mono small" style="color:var(--muted); line-height:1.5; margin:0 0 14px;">
+          seize themes the generated visuals (colors, waveform, spectrum) around this.
+          Optional — leave blank for the default look.
+        </p>
+        <input
+          type="text"
+          id="video-prompt-input"
+          class="text-input"
+          placeholder="e.g. energetic neon party vibes"
+          maxlength="150"
+          style="width:100%; margin-bottom:16px;"
+        />
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="btn-secondary" id="video-prompt-skip" style="flex:1;">
+            Skip
+          </button>
+          <button type="button" class="btn-primary" id="video-prompt-go" style="flex:1;">
+            Generate
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const input = modal.querySelector("#video-prompt-input");
+    input.focus();
+
+    const done = (value) => {
+      modal.remove();
+      resolve(value);
+    };
+
+    modal
+      .querySelector("#video-prompt-skip")
+      .addEventListener("click", () => done(""));
+    modal
+      .querySelector("#video-prompt-go")
+      .addEventListener("click", () => done(input.value.trim()));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") done(input.value.trim());
+    });
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) done("");
+    });
+  });
+}
+
 convertBtn.addEventListener("click", async () => {
   clearConvertError();
   if (!selectedFile) return;
+
+  if (convertTarget === "a2v") {
+    pendingVideoPrompt = await showVideoPromptModal();
+  } else {
+    pendingVideoPrompt = "";
+  }
 
   if (!navigator.onLine) {
     queueOfflineRequest({
@@ -2127,6 +2241,7 @@ convertBtn.addEventListener("click", async () => {
       name: selectedFile.name,
       target: convertTarget,
       format: document.getElementById("format-select")?.value,
+      prompt: convertTarget === "a2v" ? pendingVideoPrompt : undefined,
     });
     showConvertError(
       "You're offline — this will convert automatically once you're back online.",
@@ -2146,6 +2261,8 @@ convertBtn.addEventListener("click", async () => {
     convertTarget === "v2a" ? "video-to-audio" : "audio-to-video";
   if (convertTarget === "v2a") {
     form.append("format", document.getElementById("format-select").value);
+  } else if (pendingVideoPrompt) {
+    form.append("prompt", pendingVideoPrompt);
   }
 
   try {
@@ -2219,6 +2336,7 @@ convertBtn.addEventListener("click", async () => {
     setScopeState("idle");
   } finally {
     convertBtn.disabled = false;
+    pendingVideoPrompt = "";
   }
 });
 

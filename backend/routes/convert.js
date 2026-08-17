@@ -7,6 +7,7 @@ const {
   isAvailable,
   videoToAudio,
   audioToVideo,
+  generatePromptVideo,
   generatePlainCoverFallback,
   embedAudioTags,
 } = require("../utils/ffmpeg");
@@ -140,7 +141,7 @@ function requireCapacity(req, res, next) {
 }
 
 // ============================================================
-// COVER IMAGE FOR AUDIO -> VIDEO
+// COVER IMAGE FOR AUDIO -> VIDEO (plain, non-prompt mode)
 // ============================================================
 // Prefer the shipped branded cover asset; fall back to generating a
 // plain solid-color frame once and reusing that generated file for
@@ -408,6 +409,11 @@ router.post(
 
 // ============================================================
 // AUDIO -> VIDEO
+// Supports an optional `prompt` field: when present, seize generates a
+// prompt-themed, audio-reactive video (spectrum + waveform + palette
+// chosen from prompt keywords) instead of the plain static-cover video.
+// This is entirely local (ffmpeg lavfi filters) — free, no external API,
+// no rate limit.
 // ============================================================
 router.post(
   "/audio-to-video",
@@ -419,6 +425,14 @@ router.post(
       return res.status(400).json({ error: "No file uploaded." });
     }
 
+    // Cap length defensively here too (generatePromptVideo also truncates
+    // what it burns into the video) so an absurdly long field can't bloat
+    // logs or the ffmpeg command line.
+    const prompt =
+      typeof req.body.prompt === "string"
+        ? req.body.prompt.trim().slice(0, 150)
+        : "";
+
     const jobId = uuid();
     const outputPath = path.join(TMP_DIR, `${jobId}.mp4`);
 
@@ -428,26 +442,42 @@ router.post(
       progress: 0,
       createdAt: Date.now(),
     });
-    logEvent("conversion:started", { jobId, direction: "audio-to-video" });
+    logEvent("conversion:started", {
+      jobId,
+      direction: "audio-to-video",
+      hasPrompt: !!prompt,
+    });
     res.json({ jobId });
 
     try {
-      let coverPath;
-      try {
-        coverPath = await ensureCoverImage();
-      } catch (coverErr) {
-        const wrapped = new Error(coverErr.message || String(coverErr));
-        wrapped.seizeReason = "cover-image-unavailable";
-        throw wrapped;
-      }
-
-      await audioToVideo(req.file.path, outputPath, coverPath, (pct) => {
+      const onProgress = (pct) => {
         const job = jobs.get(jobId);
         const clamped = clampProgress(pct);
         if (job && job.status === "processing" && clamped !== undefined) {
           job.progress = clamped;
         }
-      });
+      };
+
+      if (prompt) {
+        // Prompt path never touches the branded/fallback cover image —
+        // it builds the frame procedurally from the audio itself.
+        await generatePromptVideo(
+          req.file.path,
+          outputPath,
+          prompt,
+          onProgress,
+        );
+      } else {
+        let coverPath;
+        try {
+          coverPath = await ensureCoverImage();
+        } catch (coverErr) {
+          const wrapped = new Error(coverErr.message || String(coverErr));
+          wrapped.seizeReason = "cover-image-unavailable";
+          throw wrapped;
+        }
+        await audioToVideo(req.file.path, outputPath, coverPath, onProgress);
+      }
 
       updateJob(jobId, {
         status: "done",
@@ -456,7 +486,11 @@ router.post(
         downloadName: "seize-video.mp4",
         finishedAt: Date.now(),
       });
-      logEvent("conversion:done", { jobId, direction: "audio-to-video" });
+      logEvent("conversion:done", {
+        jobId,
+        direction: "audio-to-video",
+        hasPrompt: !!prompt,
+      });
     } catch (err) {
       console.error("[convert] audio-to-video failed:", err.message || err);
       updateJob(jobId, {

@@ -105,23 +105,69 @@ app.use(
 app.use(compression());
 
 // ============================================================
-// CORS - FIXED FOR RENDER
+// CORS - COMPLETE FIX
 // ============================================================
 const allowedOrigins = (process.env.ALLOWED_ORIGIN || "*")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
-const allowAllOrigins = allowedOrigins.includes("*");
+
+// Add known frontend URLs
+const defaultOrigins = [
+  "https://seize-ashy.vercel.app",
+  "https://seize-iw4w.onrender.com",
+  "http://localhost:3000",
+  "http://localhost:4000",
+  "https://*.vercel.app",
+];
+
+const allOrigins = [...new Set([...defaultOrigins, ...allowedOrigins])];
+const allowAllOrigins =
+  allowedOrigins.includes("*") || allOrigins.includes("*");
 
 app.use(
   cors({
-    origin: allowAllOrigins ? true : allowedOrigins,
+    origin: allowAllOrigins ? true : allOrigins,
     credentials: true,
     optionsSuccessStatus: 200,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Accept",
+      "Cache-Control",
+      "Pragma",
+      "Expires",
+      "Range",
+      "X-Requested-With",
+      "Origin",
+      "Referer",
+      "User-Agent",
+    ],
+    exposedHeaders: [
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Type",
+      "Range",
+    ],
+    maxAge: 86400, // 24 hours
   }),
 );
+
+// Handle preflight requests explicitly
+app.options("*", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Accept, Cache-Control, Pragma, Expires, Range, X-Requested-With",
+  );
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.status(204).end();
+});
 
 // ============================================================
 // LOGGING
@@ -141,7 +187,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 // ============================================================
-// RATE LIMITER - LESS STRICT
+// RATE LIMITER
 // ============================================================
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -199,14 +245,13 @@ app.use("/api/download", trackUser, adminRateLimit(200), downloadRoutes);
 app.use("/api/collections", trackUser, collectionsRoutes);
 
 // ============================================================
-// PUSH ROUTES - SAFELY LOADED
+// PUSH ROUTES
 // ============================================================
 try {
   const pushRoutes = require("./routes/push_routes");
   app.use("/api/push", trackUser, pushRoutes);
 } catch (err) {
   console.warn("[seize] Push routes not found, skipping:", err.message);
-  // Create a fallback route
   const fallbackRouter = express.Router();
   fallbackRouter.get("/public-key", (req, res) => {
     res.json({ publicKey: null });
@@ -334,7 +379,7 @@ server.keepAliveTimeout = 120000;
 server.headersTimeout = 120000;
 
 // ============================================================
-// PUSH SCHEDULER - SAFELY STARTED
+// PUSH SCHEDULER
 // ============================================================
 try {
   startPushScheduler();

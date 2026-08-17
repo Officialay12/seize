@@ -2,6 +2,21 @@
 const API_BASE = "https://seize-iw4w.onrender.com/api";
 
 // ============================================================
+// FIX: Increase max listeners
+// ============================================================
+if (typeof process !== "undefined" && process.setMaxListeners) {
+  process.setMaxListeners(20);
+}
+
+if (typeof EventEmitter !== "undefined") {
+  const originalSetMaxListeners = EventEmitter.prototype.setMaxListeners;
+  EventEmitter.prototype.setMaxListeners = function (n) {
+    if (n === undefined) n = 20;
+    return originalSetMaxListeners.call(this, n);
+  };
+}
+
+// ============================================================
 // PRELOADER
 // ============================================================
 !(function () {
@@ -17,6 +32,351 @@ const API_BASE = "https://seize-iw4w.onrender.com/api";
 })();
 
 // ============================================================
+// CLEAN URL
+// ============================================================
+function cleanUrl(url) {
+  if (!url) return url;
+  if (typeof url !== "string") return url;
+  let u = url;
+  u = u.replace(/u002f/gi, "/");
+  u = u.replace(/\\/g, "");
+  u = u.replace(/%2f/gi, "/");
+  u = u.replace(/%2F/gi, "/");
+  u = u.replace(/^(https?:)\/([^\/])/, "$1//$2");
+  return u;
+}
+
+// ============================================================
+// LOAD THUMBNAIL
+// ============================================================
+function loadThumbnail(src, img) {
+  if (!src) {
+    img.src = "";
+    img.style.display = "none";
+    return;
+  }
+  let url = cleanUrl(src);
+  if (url.startsWith("http://")) {
+    url = url.replace("http://", "https://");
+  }
+  if (
+    url.includes("tiktokcdn.com") ||
+    url.includes("fbcdn.net") ||
+    url.includes("cdninstagram.com") ||
+    url.includes("twimg.com")
+  ) {
+    url = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
+  }
+  img.src = url;
+  img.style.display = "block";
+  img.onerror = function () {
+    this.style.display = "none";
+  };
+}
+
+// ============================================================
+// RESOLVE FILE INFO
+// ============================================================
+const MIME_BY_EXT = {
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  mkv: "video/x-matroska",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif",
+};
+
+const EXT_BY_MIME = Object.fromEntries(
+  Object.entries(MIME_BY_EXT).map(([ext, mime]) => [mime, ext]),
+);
+
+function resolveFileInfo(response, blob, fallbackName) {
+  let name = fallbackName;
+  const cd = response.headers?.get?.("content-disposition") || "";
+  const cdMatch = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  if (cdMatch && cdMatch[1]) {
+    name = decodeURIComponent(cdMatch[1]);
+  }
+  let ext = (name.split(".").pop() || "").toLowerCase();
+  if (!MIME_BY_EXT[ext]) {
+    const mimeExt = EXT_BY_MIME[blob.type];
+    if (mimeExt) {
+      ext = mimeExt;
+      const baseName = name.includes(".")
+        ? name.slice(0, name.lastIndexOf("."))
+        : name;
+      name = `${baseName}.${ext}`;
+    }
+  }
+  return {
+    name: name,
+    mimeType: MIME_BY_EXT[ext] || blob.type || "application/octet-stream",
+  };
+}
+
+// ============================================================
+// SAVE MEDIA TO DEVICE
+// ============================================================
+async function saveMediaToDevice(url, fallbackName) {
+  let response, blob;
+  const cleanUrlStr = cleanUrl(url);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    response = await fetch(cleanUrlStr, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      if (response.status === 503) {
+        const retryResponse = await fetch(cleanUrlStr, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+          },
+        });
+        if (retryResponse.ok) {
+          response = retryResponse;
+          blob = await response.blob();
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } else {
+      blob = await response.blob();
+    }
+  } catch (err) {
+    console.error("[seize] fetch failed:", err);
+    window.open(cleanUrlStr, "_blank");
+    showToast("⚠️ Opening in new tab - please save manually", "warning");
+    return;
+  }
+  const { name, mimeType } = resolveFileInfo(response, blob, fallbackName);
+  const file = new File([blob], name, { type: mimeType });
+  const isAndroid = /Android/i.test(navigator.userAgent);
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isAndroid) {
+    try {
+      const urlObj = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = urlObj;
+      a.download = name;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      showToast("✅ Downloading to device...", "success");
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(urlObj);
+      }, 3000);
+      return;
+    } catch (e) {
+      console.warn("[seize] Android download failed:", e);
+    }
+  }
+  if (isIOS) {
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          showToast("✅ Saved to device!", "success");
+          return;
+        } catch (e) {
+          if (e?.name === "AbortError") return;
+          console.warn("[seize] iOS share failed:", e);
+        }
+      }
+      const urlObj = URL.createObjectURL(blob);
+      if (mimeType.startsWith("image/")) {
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(`
+            <html>
+              <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>${name}</title>
+                <style>
+                  body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #000; }
+                  img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                </style>
+              </head>
+              <body>
+                <img src="${urlObj}" alt="${name}" />
+                <script>
+                  setTimeout(() => {
+                    const a = document.createElement('a');
+                    a.href = '${urlObj}';
+                    a.download = '${name}';
+                    a.click();
+                  }, 500);
+                <\/script>
+              </body>
+            </html>
+          `);
+          showToast("✅ Image opened - long press to save", "success");
+          return;
+        }
+      }
+      const a = document.createElement("a");
+      a.href = urlObj;
+      a.download = name;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(urlObj);
+      }, 3000);
+      showToast("✅ Download started!", "success");
+      return;
+    } catch (e) {
+      console.warn("[seize] iOS save failed:", e);
+    }
+  }
+  try {
+    const urlObj = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = urlObj;
+    a.download = name;
+    a.rel = "noopener";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    showToast("✅ Download started!", "success");
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(urlObj);
+    }, 3000);
+    return;
+  } catch (e) {
+    console.warn("[seize] download failed:", e);
+  }
+  console.warn("[seize] All download methods failed, opening in new tab");
+  window.open(cleanUrlStr, "_blank");
+  showToast("⚠️ Opening in new tab - please save manually", "warning");
+}
+
+function showToast(message, type = "info") {
+  const existing = document.querySelector(".custom-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.className = "custom-toast";
+  const colors = {
+    info: "#7FFFB0",
+    success: "#7FFFB0",
+    error: "#FF6B6B",
+    warning: "#FFB86B",
+  };
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99999;
+    background: #141715;
+    border: 1px solid #262B27;
+    border-left: 3px solid ${colors[type] || "#7FFFB0"};
+    border-radius: 8px;
+    padding: 14px 20px;
+    color: #E8EDE9;
+    font-size: 0.9rem;
+    max-width: 400px;
+    animation: slideUp 0.3s ease-out;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 0.3s";
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+function showRecognizedTrack(track, container) {
+  const parent =
+    container || document.getElementById("convert-progress")?.parentElement;
+  if (!parent) return;
+  const existing = parent.querySelector(".recognized-track");
+  if (existing) existing.remove();
+  const div = document.createElement("div");
+  div.className = "recognized-track mono small";
+  const label = document.createElement("span");
+  label.textContent = "🎵 Identified: ";
+  div.appendChild(label);
+  const strong = document.createElement("strong");
+  const parts = [track.artist, track.title].filter(Boolean);
+  strong.textContent = parts.length ? parts.join(" – ") : "Unknown track";
+  div.appendChild(strong);
+  if (track.album) {
+    const album = document.createElement("span");
+    album.className = "recognized-track-album";
+    album.textContent = ` (${track.album})`;
+    div.appendChild(album);
+  }
+  parent.appendChild(div);
+}
+
+// ============================================================
+// POLL JOB
+// ============================================================
+function pollJob(url, progressFill, progressLabel) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const maxAttempts = 60;
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.status === "done") {
+          clearInterval(interval);
+          if (progressFill) progressFill.style.width = "100%";
+          if (progressLabel) progressLabel.textContent = "✅ Done!";
+          resolve(data);
+          return;
+        } else if (data.status === "error") {
+          clearInterval(interval);
+          reject(new Error(data.error || "Processing failed."));
+          return;
+        } else {
+          if (progressFill) {
+            progressFill.style.width = `${data.progress || 10}%`;
+          }
+          if (progressLabel) {
+            progressLabel.textContent = `Processing... ${data.progress || 0}%`;
+          }
+        }
+        if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          reject(new Error("Download timed out. Please try again."));
+        }
+      } catch (e) {
+        clearInterval(interval);
+        reject(e);
+      }
+    }, 1000);
+  });
+}
+
+// ============================================================
 // PERMISSIONS
 // ============================================================
 const PERMISSION_KEY = "seize_permissions_granted";
@@ -25,12 +385,10 @@ async function requestAppPermissions() {
   const granted = localStorage.getItem(PERMISSION_KEY);
   if (granted === "true") return;
   if (granted === "false") return;
-
   const isMobile =
     /Android|iPhone|iPad|iPod|webOS|BlackBerry|Windows Phone/i.test(
       navigator.userAgent,
     );
-
   const banner = document.createElement("div");
   banner.className = "permission-banner";
   banner.innerHTML = `
@@ -47,11 +405,9 @@ async function requestAppPermissions() {
     </div>
   `;
   document.body.appendChild(banner);
-
   const allowBtn = document.getElementById("perm-allow");
   const denyBtn = document.getElementById("perm-deny");
   const laterBtn = document.getElementById("perm-later");
-
   allowBtn.addEventListener("click", async () => {
     try {
       if ("Notification" in window && Notification.permission === "default") {
@@ -68,12 +424,10 @@ async function requestAppPermissions() {
       banner.remove();
     }
   });
-
   denyBtn.addEventListener("click", () => {
     localStorage.setItem(PERMISSION_KEY, "false");
     banner.remove();
   });
-
   laterBtn.addEventListener("click", () => {
     banner.remove();
     setTimeout(requestAppPermissions, 300000);
@@ -190,7 +544,6 @@ function queueOfflineRequest(item) {
 async function processOfflineQueue() {
   if (!navigator.onLine) return;
   const items = await getOfflineQueue();
-
   for (const item of items) {
     try {
       if (item.kind === "capture-resolve") {
@@ -212,7 +565,6 @@ async function processOfflineQueue() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "fetch retry failed");
-
         await pollJob(`${API_BASE}/download/status/${data.jobId}`, null, null);
         const ext =
           item.mode === "audio" ? "mp3" : item.mode === "image" ? "jpg" : "mp4";
@@ -231,18 +583,14 @@ async function processOfflineQueue() {
         const endpoint =
           item.target === "v2a" ? "video-to-audio" : "audio-to-video";
         if (item.target === "v2a") form.append("format", item.format || "mp3");
-        // Carry a queued audio->video prompt through to the retry too, so
-        // offline-queued prompt videos still come out themed correctly.
         if (item.target === "a2v" && item.prompt)
           form.append("prompt", item.prompt);
-
         const res = await fetch(`${API_BASE}/convert/${endpoint}`, {
           method: "POST",
           body: form,
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "convert retry failed");
-
         await pollJob(`${API_BASE}/convert/status/${data.jobId}`, null, null);
         const ext = item.target === "v2a" ? item.format || "mp3" : "mp4";
         const fileUrl = `${API_BASE}/convert/download/${data.jobId}`;
@@ -267,14 +615,12 @@ async function processOfflineQueue() {
 async function updateOfflineBanner() {
   const banner = document.getElementById("offline-banner");
   if (!banner) return;
-
   if (!navigator.onLine) {
     banner.textContent =
       "⚠ You're offline — requests will be queued and sent automatically.";
     banner.classList.remove("hidden");
     return;
   }
-
   const items = await getOfflineQueue();
   if (items.length > 0) {
     banner.textContent = `⏳ Back online — sending ${items.length} queued request${items.length > 1 ? "s" : ""}…`;
@@ -284,54 +630,6 @@ async function updateOfflineBanner() {
   }
 }
 
-// ============================================================
-// POLL JOB - FIXED: handles null progress elements
-// ============================================================
-function pollJob(url, progressFill, progressLabel) {
-  return new Promise((resolve, reject) => {
-    let attempts = 0;
-    const maxAttempts = 60;
-
-    const interval = setInterval(async () => {
-      attempts++;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.status === "done") {
-          clearInterval(interval);
-          if (progressFill) progressFill.style.width = "100%";
-          if (progressLabel) progressLabel.textContent = "✅ Done!";
-          resolve(data);
-          return;
-        } else if (data.status === "error") {
-          clearInterval(interval);
-          reject(new Error(data.error || "Processing failed."));
-          return;
-        } else {
-          if (progressFill) {
-            progressFill.style.width = `${data.progress || 10}%`;
-          }
-          if (progressLabel) {
-            progressLabel.textContent = `Processing... ${data.progress || 0}%`;
-          }
-        }
-
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          reject(new Error("Download timed out. Please try again."));
-        }
-      } catch (e) {
-        clearInterval(interval);
-        reject(e);
-      }
-    }, 1000);
-  });
-}
-
-// ============================================================
-// EXTRACT PLATFORM URL
-// ============================================================
 function extractPlatformUrl(text) {
   if (!text) return null;
   const patterns = [
@@ -355,7 +653,6 @@ function extractPlatformUrl(text) {
     /https?:\/\/[^\s]*(soundcloud\.com\/[^\s]+)/i,
     /https?:\/\/[^\s]*(spotify\.com\/[^\s]+)/i,
   ];
-
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) {
@@ -363,14 +660,10 @@ function extractPlatformUrl(text) {
       return urlMatch ? urlMatch[0] : match[0];
     }
   }
-
   const fallback = text.match(/https?:\/\/[^\s]+/gi);
   return fallback && fallback.length > 0 ? fallback[0] : null;
 }
 
-// ============================================================
-// PROCESS SHARED URL
-// ============================================================
 function processSharedUrl(url, mode) {
   console.log("[seize] Processing shared URL:", url);
   document.querySelector('[data-mode="capture"]')?.click();
@@ -384,7 +677,6 @@ function processSharedUrl(url, mode) {
     const btn = document.getElementById("resolve-btn");
     if (btn) btn.click();
   }, 800);
-
   if (mode === "convert-video") {
     document.querySelector('[data-mode="convert"]')?.click();
     setTimeout(() => {
@@ -398,22 +690,15 @@ function processSharedUrl(url, mode) {
   }
 }
 
-// ============================================================
-// ONLINE/OFFLINE HANDLING
-// ============================================================
 window.addEventListener("online", () => {
   updateOfflineBanner();
   processOfflineQueue();
 });
 window.addEventListener("offline", () => updateOfflineBanner());
 
-// ============================================================
-// SHARED URL HANDLER
-// ============================================================
 (function () {
   const sharedUrl = sessionStorage.getItem("seize_shared_url");
   const sharedMode = sessionStorage.getItem("seize_shared_mode");
-
   if (sharedUrl) {
     console.log("[seize] Found shared URL:", sharedUrl);
     if (document.readyState === "loading") {
@@ -429,7 +714,6 @@ window.addEventListener("offline", () => updateOfflineBanner());
       sessionStorage.removeItem("seize_shared_mode");
     }, 5000);
   }
-
   const params = new URLSearchParams(window.location.search);
   const paramUrl =
     params.get("share_url") || params.get("url") || params.get("text");
@@ -442,279 +726,6 @@ window.addEventListener("offline", () => updateOfflineBanner());
     }
   }
 })();
-
-// ============================================================
-// FILE SAVE HELPERS - OPTIMIZED FOR FAST DOWNLOADS
-// ============================================================
-const MIME_BY_EXT = {
-  mp4: "video/mp4",
-  mov: "video/quicktime",
-  webm: "video/webm",
-  mkv: "video/x-matroska",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  aac: "audio/aac",
-  flac: "audio/flac",
-  ogg: "audio/ogg",
-  m4a: "audio/mp4",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  gif: "image/gif",
-  avif: "image/avif",
-};
-
-const EXT_BY_MIME = Object.fromEntries(
-  Object.entries(MIME_BY_EXT).map(([ext, mime]) => [mime, ext]),
-);
-
-function resolveFileInfo(response, blob, fallbackName) {
-  let name = fallbackName;
-  const cd = response.headers?.get?.("content-disposition") || "";
-  const cdMatch = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-  if (cdMatch && cdMatch[1]) {
-    name = decodeURIComponent(cdMatch[1]);
-  }
-
-  let ext = (name.split(".").pop() || "").toLowerCase();
-  if (!MIME_BY_EXT[ext]) {
-    const mimeExt = EXT_BY_MIME[blob.type];
-    if (mimeExt) {
-      ext = mimeExt;
-      const baseName = name.includes(".")
-        ? name.slice(0, name.lastIndexOf("."))
-        : name;
-      name = `${baseName}.${ext}`;
-    }
-  }
-
-  return {
-    name: name,
-    mimeType: MIME_BY_EXT[ext] || blob.type || "application/octet-stream",
-  };
-}
-
-// ============================================================
-// OPTIMIZED FAST DOWNLOAD - Downloads Immediately
-// ============================================================
-async function saveMediaToDevice(url, fallbackName) {
-  let response, blob;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-      },
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    blob = await response.blob();
-  } catch (err) {
-    console.error("[seize] fetch failed:", err);
-    window.open(url, "_blank");
-    showToast("⚠️ Opening in new tab - please save manually", "warning");
-    return;
-  }
-
-  const { name, mimeType } = resolveFileInfo(response, blob, fallbackName);
-  const file = new File([blob], name, { type: mimeType });
-
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-  // ============================================================
-  // ANDROID - Direct download
-  // ============================================================
-  if (isAndroid) {
-    try {
-      const urlObj = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = urlObj;
-      a.download = name;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      showToast("✅ Downloading to device...", "success");
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(urlObj);
-      }, 3000);
-      return;
-    } catch (e) {
-      console.warn("[seize] Android download failed:", e);
-    }
-  }
-
-  // ============================================================
-  // iOS - Share sheet or direct download
-  // ============================================================
-  if (isIOS) {
-    try {
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file] });
-          showToast("✅ Saved to device!", "success");
-          return;
-        } catch (e) {
-          if (e?.name === "AbortError") return;
-          console.warn("[seize] iOS share failed:", e);
-        }
-      }
-
-      const urlObj = URL.createObjectURL(blob);
-      if (mimeType.startsWith("image/")) {
-        const win = window.open("", "_blank");
-        if (win) {
-          win.document.write(`
-            <html>
-              <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>${name}</title>
-                <style>
-                  body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #000; }
-                  img { max-width: 100%; max-height: 100%; object-fit: contain; }
-                </style>
-              </head>
-              <body>
-                <img src="${urlObj}" alt="${name}" />
-                <script>
-                  setTimeout(() => {
-                    const a = document.createElement('a');
-                    a.href = '${urlObj}';
-                    a.download = '${name}';
-                    a.click();
-                  }, 500);
-                <\/script>
-              </body>
-            </html>
-          `);
-          showToast("✅ Image opened - long press to save", "success");
-          return;
-        }
-      }
-
-      const a = document.createElement("a");
-      a.href = urlObj;
-      a.download = name;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(urlObj);
-      }, 3000);
-      showToast("✅ Download started!", "success");
-      return;
-    } catch (e) {
-      console.warn("[seize] iOS save failed:", e);
-    }
-  }
-
-  // ============================================================
-  // DESKTOP / FALLBACK - Direct download
-  // ============================================================
-  try {
-    const urlObj = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = urlObj;
-    a.download = name;
-    a.rel = "noopener";
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    showToast("✅ Download started!", "success");
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(urlObj);
-    }, 3000);
-    return;
-  } catch (e) {
-    console.warn("[seize] download failed:", e);
-  }
-
-  // ============================================================
-  // ULTIMATE FALLBACK - Open in new tab
-  // ============================================================
-  console.warn("[seize] All download methods failed, opening in new tab");
-  window.open(url, "_blank");
-  showToast("⚠️ Opening in new tab - please save manually", "warning");
-}
-
-function showToast(message, type = "info") {
-  const existing = document.querySelector(".custom-toast");
-  if (existing) existing.remove();
-
-  const toast = document.createElement("div");
-  toast.className = "custom-toast";
-  const colors = {
-    info: "#7FFFB0",
-    success: "#7FFFB0",
-    error: "#FF6B6B",
-    warning: "#FFB86B",
-  };
-  toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    z-index: 99999;
-    background: #141715;
-    border: 1px solid #262B27;
-    border-left: 3px solid ${colors[type] || "#7FFFB0"};
-    border-radius: 8px;
-    padding: 14px 20px;
-    color: #E8EDE9;
-    font-size: 0.9rem;
-    max-width: 400px;
-    animation: slideUp 0.3s ease-out;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  `;
-  toast.textContent = message;
-  document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transition = "opacity 0.3s";
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
-}
-
-function showRecognizedTrack(track, container) {
-  const parent =
-    container || document.getElementById("convert-progress")?.parentElement;
-  if (!parent) return;
-
-  const existing = parent.querySelector(".recognized-track");
-  if (existing) existing.remove();
-
-  const div = document.createElement("div");
-  div.className = "recognized-track mono small";
-
-  const label = document.createElement("span");
-  label.textContent = "🎵 Identified: ";
-  div.appendChild(label);
-
-  const strong = document.createElement("strong");
-  const parts = [track.artist, track.title].filter(Boolean);
-  strong.textContent = parts.length ? parts.join(" – ") : "Unknown track";
-  div.appendChild(strong);
-
-  if (track.album) {
-    const album = document.createElement("span");
-    album.className = "recognized-track-album";
-    album.textContent = ` (${track.album})`;
-    div.appendChild(album);
-  }
-
-  parent.appendChild(div);
-}
 
 // ============================================================
 // HISTORY SYSTEM
@@ -789,20 +800,15 @@ function renderHistory() {
   const list = document.getElementById("history-list");
   const empty = document.getElementById("history-empty");
   if (!list || !empty) return;
-
   list.innerHTML = "";
-
   if (history.length === 0) {
     empty.classList.remove("hidden");
     return;
   }
-
   empty.classList.add("hidden");
-
   history.forEach((entry) => {
     const item = document.createElement("div");
     item.className = "history-item";
-
     const thumb = document.createElement("img");
     thumb.className = "history-thumb";
     thumb.alt = "";
@@ -810,24 +816,18 @@ function renderHistory() {
     thumb.onerror = () => {
       thumb.src = "icons/icon-192.png";
     };
-
     const meta = document.createElement("div");
     meta.className = "history-meta";
-
     const title = document.createElement("p");
     title.className = "history-title";
     title.textContent = entry.title || "Untitled";
-
     const sub = document.createElement("p");
     sub.className = "mono small history-sub";
     sub.textContent = historySubtitle(entry);
-
     meta.appendChild(title);
     meta.appendChild(sub);
-
     const actions = document.createElement("div");
     actions.className = "history-actions";
-
     if (entry.url) {
       const resolveBtn = document.createElement("button");
       resolveBtn.type = "button";
@@ -845,7 +845,6 @@ function renderHistory() {
       });
       actions.appendChild(resolveBtn);
     }
-
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "history-remove-btn";
@@ -853,49 +852,11 @@ function renderHistory() {
     removeBtn.title = "Remove from history";
     removeBtn.addEventListener("click", () => removeHistoryEntry(entry.id));
     actions.appendChild(removeBtn);
-
     item.appendChild(thumb);
     item.appendChild(meta);
     item.appendChild(actions);
     list.appendChild(item);
   });
-}
-
-function loadThumbnail(src, img) {
-  if (!src) {
-    img.src = "";
-    img.style.display = "none";
-    return;
-  }
-
-  let url = src;
-  if (url.startsWith("http://")) {
-    url = url.replace("http://", "https://");
-  }
-
-  if (
-    url.includes("tiktokcdn.com") ||
-    url.includes("fbcdn.net") ||
-    url.includes("cdninstagram.com") ||
-    url.includes("twimg.com")
-  ) {
-    url = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
-  }
-
-  img.src = url;
-  img.style.display = "block";
-  img.onerror = function () {
-    console.warn("Failed to load thumbnail:", url);
-    if (url.includes("_t=")) {
-      const base = url.split("_t=")[0];
-      img.src = base;
-      img.onerror = function () {
-        this.style.display = "none";
-      };
-    } else {
-      this.style.display = "none";
-    }
-  };
 }
 
 document.getElementById("clear-history-btn")?.addEventListener("click", () => {
@@ -975,7 +936,6 @@ modeButtons.forEach((btn) => {
     });
     btn.classList.add("active");
     btn.setAttribute("aria-selected", "true");
-
     const mode = btn.dataset.mode;
     Object.entries(panels).forEach(([key, panel]) => {
       panel.setAttribute("data-active", key === mode ? "true" : "false");
@@ -990,7 +950,7 @@ if (savedTab && panels[savedTab]) {
 }
 
 // ============================================================
-// CAPTURE FUNCTIONALITY - COMPLETELY FIXED
+// CAPTURE FUNCTIONALITY
 // ============================================================
 const urlInput = document.getElementById("url-input");
 const pasteBtn = document.getElementById("paste-btn");
@@ -1012,9 +972,6 @@ const chips = document.querySelectorAll(".chip");
 let currentUrl = "";
 let lastResolvedItem = null;
 
-// ============================================================
-// PLATFORM CONFIGURATION - AUDIO-ONLY FIXED
-// ============================================================
 const PLATFORM_CONFIG = {
   tiktok: {
     hasVideo: true,
@@ -1126,17 +1083,12 @@ function isAudioOnlyPlatform(platform) {
   return platform === "spotify" || platform === "soundcloud";
 }
 
-// ============================================================
-// UPDATE RESULT BUTTONS - COMPLETELY FIXED
-// ============================================================
 function updateResultButtons(data) {
   const qualityRow = document.getElementById("quality-row");
   const qualitySelect = document.getElementById("quality-select");
   const platform = data.platform || "unknown";
   const config = getPlatformConfig(platform);
-
   const audioOnly = isAudioOnlyPlatform(platform);
-
   const supportsVideo = !audioOnly && (config.hasVideo || data.hasVideo);
   const supportsAudio =
     config.hasAudio ||
@@ -1146,12 +1098,9 @@ function updateResultButtons(data) {
   const supportsImage =
     !audioOnly &&
     (config.hasImage || data.hasImage || data.contentType === "image");
-
-  // VIDEO BUTTON
   if (supportsVideo) {
     fetchVideoBtn.style.display = "inline-flex";
     fetchVideoBtn.textContent = "🎬 Download video";
-
     const heights = [
       ...new Set(
         (data.media?.videos || [])
@@ -1160,7 +1109,6 @@ function updateResultButtons(data) {
       ),
     ];
     heights.sort((a, b) => b - a);
-
     qualitySelect.innerHTML = '<option value="best">Best available</option>';
     heights.forEach((h) => {
       const opt = document.createElement("option");
@@ -1173,16 +1121,12 @@ function updateResultButtons(data) {
     fetchVideoBtn.style.display = "none";
     qualityRow.classList.add("hidden");
   }
-
-  // IMAGE BUTTON
   if (supportsImage) {
     fetchImageBtn.style.display = "inline-flex";
     fetchImageBtn.textContent = "🖼️ Download image";
   } else {
     fetchImageBtn.style.display = "none";
   }
-
-  // AUDIO BUTTON
   if (supportsAudio) {
     fetchAudioBtn.style.display = "inline-flex";
     if (audioOnly) {
@@ -1195,12 +1139,9 @@ function updateResultButtons(data) {
   } else {
     fetchAudioBtn.style.display = "none";
   }
-
-  // Track info for SoundCloud/Spotify
   const metaDiv = document.querySelector(".result-meta");
   const existingTrackInfo = metaDiv.querySelector(".track-info");
   if (existingTrackInfo) existingTrackInfo.remove();
-
   if (audioOnly) {
     const trackInfo = document.createElement("div");
     trackInfo.className = "track-info mono small";
@@ -1224,20 +1165,14 @@ function clearCaptureError() {
   captureError.textContent = "";
 }
 
-// ============================================================
-// OPTIMIZED RUN CAPTURE FETCH - Faster downloads
-// ============================================================
 async function runCaptureFetch(mode) {
   clearCaptureError();
   captureProgress.classList.remove("hidden");
-
   const audioOnly =
     lastResolvedItem && isAudioOnlyPlatform(lastResolvedItem.platform);
-
   if (audioOnly) {
     mode = "audio";
   }
-
   if (!mode || mode === "auto") {
     if (lastResolvedItem) {
       const config = getPlatformConfig(lastResolvedItem.platform);
@@ -1246,21 +1181,17 @@ async function runCaptureFetch(mode) {
       mode = "video";
     }
   }
-
   let label = "FETCHING…";
   if (mode === "audio") label = "EXTRACTING AUDIO…";
   else if (mode === "image") label = "DOWNLOADING IMAGE…";
   else if (mode === "video") label = "FETCHING VIDEO…";
-
   captureProgressLabel.textContent = label;
   captureProgressFill.style.width = "10%";
   setScopeState("processing");
-
   const quality =
     mode === "video"
       ? document.getElementById("quality-select")?.value || "best"
       : "best";
-
   if (!navigator.onLine) {
     queueOfflineRequest({
       kind: "capture-fetch",
@@ -1277,11 +1208,9 @@ async function runCaptureFetch(mode) {
     setScopeState("idle");
     return;
   }
-
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 45000);
-
     const res = await fetch(`${API_BASE}/download/fetch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1289,26 +1218,20 @@ async function runCaptureFetch(mode) {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Fetch failed.");
-
     await pollJob(
       `${API_BASE}/download/status/${data.jobId}`,
       captureProgressFill,
       captureProgressLabel,
     );
-
     captureProgress.classList.add("hidden");
     setScopeState("done");
-
     const ext = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     const fileUrl = `${API_BASE}/download/file/${data.jobId}`;
     const platform = lastResolvedItem?.platform || "media";
     const filename = `seize-${platform}-${mode}-${Date.now()}.${ext}`;
-
     await saveMediaToDevice(fileUrl, filename);
-
     addHistoryEntry({
       type: "download",
       mode: mode,
@@ -1317,7 +1240,6 @@ async function runCaptureFetch(mode) {
       thumbnail: resultThumb.src || null,
       platform: platform,
     });
-
     const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
     notifyJobDone(
       "Your file is ready",
@@ -1330,7 +1252,6 @@ async function runCaptureFetch(mode) {
   }
 }
 
-// URL Input detection
 urlInput.addEventListener("input", () => {
   const text = urlInput.value.toLowerCase();
   chips.forEach((chip) => {
@@ -1360,19 +1281,13 @@ urlInput.addEventListener("input", () => {
   });
 });
 
-// ============================================================
-// CAPTURE FORM SUBMIT - COMPLETELY FIXED
-// ============================================================
 captureForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearCaptureError();
   captureResult.classList.add("hidden");
-
   const url = urlInput.value.trim();
   if (!url) return;
-
   currentUrl = url;
-
   if (!navigator.onLine) {
     queueOfflineRequest({ kind: "capture-resolve", url: url });
     showCaptureError(
@@ -1380,15 +1295,12 @@ captureForm.addEventListener("submit", async (e) => {
     );
     return;
   }
-
   resolveBtn.disabled = true;
   resolveBtn.textContent = "Resolving…";
   setScopeState("active");
-
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000);
-
     const res = await fetch(`${API_BASE}/download/resolve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1396,10 +1308,8 @@ captureForm.addEventListener("submit", async (e) => {
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not resolve.");
-
     lastResolvedItem = {
       sourceUrl: url,
       platform: data.platform || null,
@@ -1410,23 +1320,18 @@ captureForm.addEventListener("submit", async (e) => {
       hasImage: data.hasImage || false,
       media: data.media || { videos: [], images: [], audio: [] },
     };
-
     const audioOnly = isAudioOnlyPlatform(data.platform);
-
     if (audioOnly) {
       fetchImageBtn.style.display = "none";
       fetchVideoBtn.style.display = "none";
       fetchAudioBtn.style.display = "inline-flex";
       fetchAudioBtn.textContent = "🎵 Download audio";
       document.getElementById("quality-row").classList.add("hidden");
-
       resultTitle.textContent = data.title || `${data.platform} Track`;
       resultUploader.textContent = `${data.platform.toUpperCase()} · ${data.uploader || "Unknown Artist"}`;
-
       const metaDiv = document.querySelector(".result-meta");
       const existingTrackInfo = metaDiv.querySelector(".track-info");
       if (existingTrackInfo) existingTrackInfo.remove();
-
       const trackInfo = document.createElement("div");
       trackInfo.className = "track-info mono small";
       trackInfo.innerHTML = `
@@ -1436,18 +1341,15 @@ captureForm.addEventListener("submit", async (e) => {
         ${data.duration ? `<span class="track-info-duration"> · ${Math.floor(data.duration / 60)}:${String(Math.floor(data.duration % 60)).padStart(2, "0")}</span>` : ""}
       `;
       metaDiv.appendChild(trackInfo);
-
       if (!data.thumbnail) {
         resultThumb.style.display = "none";
       }
     }
-
     if (data.thumbnail && !audioOnly) {
       loadThumbnail(data.thumbnail, resultThumb);
     } else if (!audioOnly) {
       resultThumb.style.display = "none";
     }
-
     if (!audioOnly) {
       resultTitle.textContent = data.title || "Untitled";
       let uploader = data.uploader || "unknown uploader";
@@ -1456,11 +1358,9 @@ captureForm.addEventListener("submit", async (e) => {
       }
       resultUploader.textContent = uploader;
     }
-
     updateResultButtons(data);
     captureResult.classList.remove("hidden");
     setScopeState("done");
-
     addHistoryEntry({
       type: "resolve",
       url: url,
@@ -1482,7 +1382,6 @@ captureForm.addEventListener("submit", async (e) => {
   }
 });
 
-// Fetch buttons
 fetchVideoBtn.addEventListener("click", () => runCaptureFetch("video"));
 fetchAudioBtn.addEventListener("click", () => runCaptureFetch("audio"));
 fetchImageBtn.addEventListener("click", () => runCaptureFetch("image"));
@@ -1522,24 +1421,19 @@ function renderCollectionBasket() {
 function showShareLinkResult(url) {
   const existing = document.querySelector(".collection-share-result");
   if (existing) existing.remove();
-
   const div = document.createElement("div");
   div.className = "collection-share-result mono small";
-
   const p = document.createElement("p");
   p.textContent = "🎉 Your collection is ready:";
   div.appendChild(p);
-
   const row = document.createElement("div");
   row.className = "collection-share-link-row";
-
   const input = document.createElement("input");
   input.type = "text";
   input.readOnly = true;
   input.value = url;
   input.className = "text-input";
   row.appendChild(input);
-
   const copyBtn = document.createElement("button");
   copyBtn.type = "button";
   copyBtn.className = "btn-secondary";
@@ -1554,7 +1448,6 @@ function showShareLinkResult(url) {
     }
   });
   row.appendChild(copyBtn);
-
   div.appendChild(row);
   collectionBasketEl.insertAdjacentElement("afterend", div);
 }
@@ -1586,10 +1479,8 @@ collectionClearBtn?.addEventListener("click", () => {
 collectionCreateBtn?.addEventListener("click", async () => {
   const items = loadCollectionBasket();
   if (items.length === 0) return;
-
   collectionCreateBtn.disabled = true;
   collectionCreateBtn.textContent = "Creating…";
-
   try {
     const res = await fetch(`${API_BASE}/collections`, {
       method: "POST",
@@ -1598,9 +1489,7 @@ collectionCreateBtn?.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Couldn't create collection.");
-
     const url = `${window.location.origin}/?c=${data.id}`;
-
     const myCollections = JSON.parse(
       localStorage.getItem("seize_my_collections") || "[]",
     );
@@ -1611,7 +1500,6 @@ collectionCreateBtn?.addEventListener("click", async () => {
       itemCount: items.length,
     });
     localStorage.setItem("seize_my_collections", JSON.stringify(myCollections));
-
     saveCollectionBasket([]);
     renderCollectionBasket();
     showShareLinkResult(url);
@@ -1647,20 +1535,16 @@ function renderCollectionItem(item) {
   const div = document.createElement("div");
   div.className = "collection-item";
   div.appendChild(collectionThumb(item));
-
   const meta = document.createElement("div");
   meta.className = "collection-item-meta";
-
   const title = document.createElement("p");
   title.className = "collection-item-title";
   title.textContent = item.title || "Untitled";
   meta.appendChild(title);
-
   const platform = document.createElement("p");
   platform.className = "mono small collection-item-platform";
   platform.textContent = item.platform || "unknown";
   meta.appendChild(platform);
-
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn-secondary";
@@ -1669,7 +1553,6 @@ function renderCollectionItem(item) {
     window.location.href = `/?resolve=${encodeURIComponent(item.sourceUrl)}`;
   });
   meta.appendChild(btn);
-
   div.appendChild(meta);
   return div;
 }
@@ -1683,12 +1566,10 @@ async function loadCollectionView(id) {
     el.setAttribute("data-active", "false");
   });
   panelCollectionView.setAttribute("data-active", "true");
-
   try {
     const res = await fetch(`${API_BASE}/collections/${id}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Collection not found.");
-
     collectionViewName.textContent = data.name || "Shared collection";
     collectionViewMeta.textContent = `${data.items.length} item(s) · shared via seize`;
     collectionGrid.innerHTML = "";
@@ -1736,16 +1617,13 @@ function renderQueue() {
   queueList.innerHTML = "";
   queueCount.textContent = String(batchQueue.length);
   queueBlock.classList.toggle("hidden", batchQueue.length === 0);
-
   batchQueue.forEach((item) => {
     const div = document.createElement("div");
     div.className = "queue-item";
-
     const url = document.createElement("span");
     url.className = "queue-item-url";
     url.textContent = item.url;
     div.appendChild(url);
-
     const status = document.createElement("span");
     status.className = "queue-item-status";
     status.dataset.state = item.status;
@@ -1757,7 +1635,6 @@ function renderQueue() {
     };
     status.textContent = statusText[item.status] || "WAITING";
     div.appendChild(status);
-
     if (item.status !== "processing") {
       const remove = document.createElement("button");
       remove.type = "button";
@@ -1769,7 +1646,6 @@ function renderQueue() {
       });
       div.appendChild(remove);
     }
-
     queueList.appendChild(div);
   });
 }
@@ -1790,7 +1666,6 @@ function addLinksToQueue(urls) {
 async function processQueueItem(item) {
   item.status = "processing";
   renderQueue();
-
   try {
     const resolveRes = await fetch(`${API_BASE}/download/resolve`, {
       method: "POST",
@@ -1800,20 +1675,16 @@ async function processQueueItem(item) {
     const resolveData = await resolveRes.json();
     if (!resolveRes.ok)
       throw new Error(resolveData.error || "Could not resolve.");
-
     const config = getPlatformConfig(resolveData.platform);
     let mode = config.defaultMode || "video";
-
     if (isAudioOnlyPlatform(resolveData.platform)) {
       mode = "audio";
     }
-
     if (mode === "video" && !resolveData.hasVideo) {
       mode = resolveData.hasImage ? "image" : "audio";
     } else if (mode === "image" && !resolveData.hasImage) {
       mode = resolveData.hasVideo ? "video" : "audio";
     }
-
     const fetchRes = await fetch(`${API_BASE}/download/fetch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1821,14 +1692,11 @@ async function processQueueItem(item) {
     });
     const fetchData = await fetchRes.json();
     if (!fetchRes.ok) throw new Error(fetchData.error || "Fetch failed.");
-
     await pollJob(`${API_BASE}/download/status/${fetchData.jobId}`, null, null);
     item.status = "done";
-
     const ext = mode === "audio" ? "mp3" : mode === "image" ? "jpg" : "mp4";
     item.fileUrl = `${API_BASE}/download/file/${fetchData.jobId}`;
     await saveMediaToDevice(item.fileUrl, `seize-batch-${Date.now()}.${ext}`);
-
     addHistoryEntry({
       type: "download",
       mode: mode,
@@ -1875,21 +1743,17 @@ queueStartBtn.addEventListener("click", async () => {
     showCaptureError("You're offline — reconnect to start the queue.");
     return;
   }
-
   queueRunning = true;
   queueStartBtn.disabled = true;
   queueStartBtn.textContent = "Working…";
-
   for (const item of batchQueue) {
     if (item.status === "pending") {
       await processQueueItem(item);
     }
   }
-
   queueRunning = false;
   queueStartBtn.disabled = false;
   queueStartBtn.textContent = "▶ Start queue";
-
   const done = batchQueue.filter((item) => item.status === "done").length;
   notifyJobDone(
     "Batch queue finished",
@@ -1923,10 +1787,6 @@ const convertRestoreBanner = document.getElementById("convert-restore-banner");
 
 let convertTarget = "v2a";
 let selectedFile = null;
-// Holds the user's description for the next Audio -> Video conversion,
-// collected via the prompt modal right before upload. Cleared after each
-// conversion attempt (success or failure) so a stale prompt never silently
-// reattaches itself to an unrelated later conversion.
 let pendingVideoPrompt = "";
 const LAST_FORMAT_KEY = "seize_last_format";
 
@@ -1962,7 +1822,6 @@ function applySelectedFile(file, opts = {}) {
   dropzonePreviewIcon.textContent = fileTypeIcon(file);
   dropzonePreviewName.textContent = file.name;
   dropzonePreviewSize.textContent = `${(file.size / 1048576).toFixed(2)} MB`;
-
   if (!opts.skipPersist) {
     try {
       sessionStorage.setItem(
@@ -2018,7 +1877,6 @@ convertTabs.forEach((tab) => {
     tab.classList.add("active");
     convertTarget = tab.dataset.target;
     clearSelectedFile();
-
     if (convertTarget === "v2a") {
       dropzoneLabel.textContent = "Drop a video file, or click to browse";
       dropzoneHint.textContent = "MP4 · MOV · MKV · WEBM — up to 500MB";
@@ -2045,15 +1903,6 @@ fileInput.addEventListener("click", (e) => e.stopPropagation());
 dropzone.addEventListener("click", function (e) {
   e.preventDefault();
   e.stopPropagation();
-  // BUG FIX (file disappears after picker / app reload): mark that the
-  // native file picker is about to open *before* handing control to it,
-  // not after a file comes back. Mobile browsers can discard a
-  // backgrounded PWA tab under memory pressure while the OS picker is
-  // open, and reload this page fresh when the user returns — if that
-  // happens, no JS is running to catch it, so nothing gets saved. This
-  // flag lets the restore logic on load tell the user honestly what
-  // happened instead of the file just silently vanishing with no
-  // explanation.
   try {
     sessionStorage.setItem("seize_picker_open", "1");
   } catch {}
@@ -2088,8 +1937,6 @@ dropzone.addEventListener("drop", (e) => {
   }
 });
 fileInput.addEventListener("change", () => {
-  // The picker has resolved (file picked or cancelled) — clear the flag
-  // so a normal, successful pick never gets mistaken for a lost one.
   try {
     sessionStorage.removeItem("seize_picker_open");
   } catch {}
@@ -2116,14 +1963,12 @@ fileInput.addEventListener("change", () => {
     } catch {}
     return;
   }
-
   let flag = null;
   try {
     flag = JSON.parse(sessionStorage.getItem("seize_pending_flag") || "null");
   } catch {
     flag = null;
   }
-
   if (flag) {
     document.querySelector('[data-mode="convert"]')?.click();
     if (flag.target && flag.target !== convertTarget) {
@@ -2137,15 +1982,9 @@ fileInput.addEventListener("change", () => {
       sessionStorage.removeItem("seize_picker_open");
     } catch {}
   } else if (sessionStorage.getItem("seize_picker_open") === "1") {
-    // BUG FIX: the tab reloaded while the native file picker was open and
-    // nothing made it into IndexedDB in time to restore. This is a
-    // memory-saving behavior in mobile browsers (backgrounded tabs can be
-    // discarded), not a bug in seize itself — but the user should get a
-    // clear, honest explanation instead of the file just silently
-    // vanishing with no message at all.
     document.querySelector('[data-mode="convert"]')?.click();
     showRestoreBanner(
-      "⚠ The app reloaded while your file picker was open (a memory-saving behavior in some mobile browsers) — please select your file again.",
+      "⚠ The app reloaded while your file picker was open — please select your file again.",
     );
     try {
       sessionStorage.removeItem("seize_picker_open");
@@ -2161,15 +2000,6 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// ============================================================
-// AUDIO -> VIDEO PROMPT MODAL
-// ============================================================
-// Shown right before an Audio -> Video conversion starts. Lets the user
-// describe the video they want; the description is sent to the backend,
-// which uses it to theme a free, local, audio-reactive visualizer
-// (palette + on-screen caption) — no external AI, no cost, no rate limit.
-// Resolves to "" if the user skips or dismisses it, which falls back to
-// the plain branded-cover video exactly as before.
 function showVideoPromptModal() {
   return new Promise((resolve) => {
     const modal = document.createElement("div");
@@ -2178,8 +2008,7 @@ function showVideoPromptModal() {
       <div class="ios-modal-content" style="text-align:left;">
         <h3>🎨 Describe your video</h3>
         <p class="mono small" style="color:var(--muted); line-height:1.5; margin:0 0 14px;">
-          seize themes the generated visuals (colors, waveform, spectrum) around this.
-          Optional — leave blank for the default look.
+          seize themes the generated visuals around this. Optional — leave blank for the default look.
         </p>
         <input
           type="text"
@@ -2200,15 +2029,12 @@ function showVideoPromptModal() {
       </div>
     `;
     document.body.appendChild(modal);
-
     const input = modal.querySelector("#video-prompt-input");
     input.focus();
-
     const done = (value) => {
       modal.remove();
       resolve(value);
     };
-
     modal
       .querySelector("#video-prompt-skip")
       .addEventListener("click", () => done(""));
@@ -2227,13 +2053,11 @@ function showVideoPromptModal() {
 convertBtn.addEventListener("click", async () => {
   clearConvertError();
   if (!selectedFile) return;
-
   if (convertTarget === "a2v") {
     pendingVideoPrompt = await showVideoPromptModal();
   } else {
     pendingVideoPrompt = "";
   }
-
   if (!navigator.onLine) {
     queueOfflineRequest({
       kind: "convert",
@@ -2248,13 +2072,11 @@ convertBtn.addEventListener("click", async () => {
     );
     return;
   }
-
   convertBtn.disabled = true;
   convertProgress.classList.remove("hidden");
   convertProgressLabel.textContent = "UPLOADING…";
   convertProgressFill.style.width = "5%";
   setScopeState("processing");
-
   const form = new FormData();
   form.append("file", selectedFile);
   const endpoint =
@@ -2264,7 +2086,6 @@ convertBtn.addEventListener("click", async () => {
   } else if (pendingVideoPrompt) {
     form.append("prompt", pendingVideoPrompt);
   }
-
   try {
     const uploadRes = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -2292,26 +2113,21 @@ convertBtn.addEventListener("click", async () => {
       xhr.onerror = () => reject(new Error("Network error during upload."));
       xhr.send(form);
     });
-
     const jobData = await pollJob(
       `${API_BASE}/convert/status/${uploadRes.jobId}`,
       convertProgressFill,
       convertProgressLabel,
     );
-
     convertProgress.classList.add("hidden");
     setScopeState("done");
-
     const ext =
       convertTarget === "v2a"
         ? document.getElementById("format-select").value
         : "mp4";
     const fileUrl = `${API_BASE}/convert/download/${uploadRes.jobId}`;
-
     if (jobData?.recognizedTrack?.title || jobData?.recognizedTrack?.artist) {
       showRecognizedTrack(jobData.recognizedTrack);
     }
-
     await saveMediaToDevice(fileUrl, `seize-converted-${Date.now()}.${ext}`);
     addHistoryEntry({
       type: "convert",
@@ -2346,7 +2162,6 @@ convertBtn.addEventListener("click", async () => {
 async function handleSharedFile(file) {
   const isVideo = file.type.startsWith("video/");
   const isAudio = file.type.startsWith("audio/");
-
   if (isVideo) {
     document.querySelector('[data-mode="convert"]')?.click();
     setTimeout(() => {
@@ -2397,11 +2212,9 @@ let lastClipboardSuggestion = "";
 
 async function checkClipboardForLink() {
   if (!navigator.clipboard || !navigator.clipboard.readText) return;
-
   for (let i = 0; i < 4 && !document.hasFocus(); i++) {
     await new Promise((r) => setTimeout(r, 150));
   }
-
   try {
     const text = await navigator.clipboard.readText();
     const match = text && text.match(CLIPBOARD_LINK_RE);
@@ -2417,14 +2230,11 @@ async function checkClipboardForLink() {
 function showClipboardSuggestion(url) {
   const existing = document.querySelector(".clipboard-suggestion");
   if (existing) existing.remove();
-
   const div = document.createElement("div");
   div.className = "clipboard-suggestion mono small";
-
   const span = document.createElement("span");
   span.textContent = "📋 Link found on clipboard — use it?";
   div.appendChild(span);
-
   const useBtn = document.createElement("button");
   useBtn.type = "button";
   useBtn.className = "clipboard-use-btn";
@@ -2436,14 +2246,12 @@ function showClipboardSuggestion(url) {
     div.remove();
   });
   div.appendChild(useBtn);
-
   const dismissBtn = document.createElement("button");
   dismissBtn.type = "button";
   dismissBtn.className = "clipboard-dismiss-btn";
   dismissBtn.textContent = "✕";
   dismissBtn.addEventListener("click", () => div.remove());
   div.appendChild(dismissBtn);
-
   document.body.appendChild(div);
   setTimeout(() => div.remove(), 12000);
 }
@@ -2682,13 +2490,11 @@ async function showExtensionButtons() {
     downloadExtensionBtn.classList.add("hidden");
     return;
   }
-
   if (await checkExtensionInstalled()) {
     extensionBtn.classList.add("hidden");
     downloadExtensionBtn.classList.add("hidden");
     return;
   }
-
   extensionBtn.classList.remove("hidden");
   downloadExtensionBtn.classList.remove("hidden");
   extensionBtn.textContent = "🧩 Add to Chrome";
@@ -2698,7 +2504,6 @@ async function showExtensionButtons() {
 function showExtensionInstructions() {
   const existing = document.querySelector(".extension-modal");
   if (existing) existing.remove();
-
   const modal = document.createElement("div");
   modal.className = "extension-modal";
   modal.style.cssText = `
@@ -2729,7 +2534,6 @@ function showExtensionInstructions() {
       <p style="color: #8A928C; font-size: 0.9rem; margin: 0 0 20px; line-height: 1.6;">
         Add one-click download buttons to TikTok, Instagram, Twitter/X, Pinterest, YouTube, Reddit, Spotify, SoundCloud, and more.
       </p>
-
       <button id="modal-download-btn" style="
         width: 100%;
         padding: 12px;
@@ -2746,7 +2550,6 @@ function showExtensionInstructions() {
       " onmouseover="this.style.background='#9AFFC4'" onmouseout="this.style.background='#7FFFB0'">
         📦 Download Extension ZIP
       </button>
-
       <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
         <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px; background: #0B0D0C; border-radius: 6px; border: 1px solid #262B27;">
           <span style="font-size: 1.2rem; min-width: 28px;">1</span>
@@ -2777,7 +2580,6 @@ function showExtensionInstructions() {
           </div>
         </div>
       </div>
-
       <div style="display: flex; gap: 10px;">
         <button class="btn-primary" id="extension-modal-close" style="flex: 1;">Got it</button>
         <button class="btn-secondary" id="extension-modal-open" style="flex: 1;">Open chrome://extensions</button>
@@ -2785,7 +2587,6 @@ function showExtensionInstructions() {
     </div>
   `;
   document.body.appendChild(modal);
-
   document
     .getElementById("modal-download-btn")
     ?.addEventListener("click", () => {
@@ -2880,12 +2681,10 @@ function pollArchiveStatus(jobId) {
       const res = await fetch(`${API_BASE}/download/profile/status/${jobId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       archiveProgressFill.style.width = `${data.progress || 0}%`;
       if (data.progress < 100) {
         archiveProgressLabel.textContent = `Scanning... ${data.progress || 0}%`;
       }
-
       if (data.status === "done") {
         clearInterval(interval);
         archiveItems = data.items || [];
@@ -2904,7 +2703,6 @@ function pollArchiveStatus(jobId) {
         archiveProgress.classList.add("hidden");
         archiveGrid.innerHTML = `<div class="archive-empty">${data.error || "Failed to scan profile"}</div>`;
       }
-
       if (attempts >= 180) {
         clearInterval(interval);
         showArchiveError("Scan timed out. Try again.");
@@ -2928,7 +2726,6 @@ function renderArchiveGrid(items) {
       '<div class="archive-empty">No items found in this profile.</div>';
     return;
   }
-
   let html = '<div class="archive-grid">';
   items.forEach((item, index) => {
     const selected = selectedArchiveItems.has(index);
@@ -2940,7 +2737,6 @@ function renderArchiveGrid(items) {
     const title = item.title || "Untitled";
     const uploader = item.uploader || "";
     const views = item.viewCount ? `${item.viewCount}` : "";
-
     html += `
       <div class="archive-item ${selected ? "selected" : ""}" data-index="${index}">
         <div class="archive-item-checkbox">
@@ -2962,7 +2758,6 @@ function renderArchiveGrid(items) {
   });
   html += "</div>";
   archiveGrid.innerHTML = html;
-
   document.querySelectorAll(".archive-item-checkbox input").forEach((el) => {
     el.addEventListener("change", (e) => {
       e.stopPropagation();
@@ -2975,7 +2770,6 @@ function renderArchiveGrid(items) {
       updateArchiveSelectionUI();
     });
   });
-
   document.querySelectorAll(".archive-item").forEach((el) => {
     el.addEventListener("click", (e) => {
       if (e.target.closest(".archive-item-checkbox")) return;
@@ -2987,18 +2781,15 @@ function renderArchiveGrid(items) {
       }
     });
   });
-
   updateArchiveSelectionUI();
 }
 
 function updateArchiveSelectionUI() {
   const count = selectedArchiveItems.size;
-
   document.querySelectorAll(".archive-item").forEach((el) => {
     const index = parseInt(el.dataset.index);
     el.classList.toggle("selected", selectedArchiveItems.has(index));
   });
-
   if (archiveSelectAll) {
     archiveSelectAll.checked =
       selectedArchiveItems.size === archiveItems.length &&
@@ -3007,12 +2798,10 @@ function updateArchiveSelectionUI() {
       selectedArchiveItems.size > 0 &&
       selectedArchiveItems.size < archiveItems.length;
   }
-
   if (archiveDownloadSelected) {
     archiveDownloadSelected.textContent = `📥 Download Selected (${count})`;
     archiveDownloadSelected.disabled = count === 0;
   }
-
   updateArchiveCount();
 }
 
@@ -3030,11 +2819,9 @@ function pollBatchStatus(batchId) {
       const res = await fetch(`${API_BASE}/download/batch/status/${batchId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       archiveProgress.classList.remove("hidden");
       archiveProgressFill.style.width = `${data.progress || 0}%`;
       archiveProgressLabel.textContent = `Downloading ${data.processed || 0}/${data.total || 0}...`;
-
       if (data.items) {
         data.items.forEach((item, idx) => {
           const el = document.querySelector(
@@ -3054,13 +2841,11 @@ function pollBatchStatus(batchId) {
           }
         });
       }
-
       if (data.status === "done") {
         clearInterval(interval);
         archiveProgress.classList.add("hidden");
         archiveDownloadSelected.disabled = false;
         archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
-
         const doneItems = data.items.filter((item) => item.status === "done");
         for (const item of doneItems) {
           if (item.fileUrl) {
@@ -3081,7 +2866,6 @@ function pollBatchStatus(batchId) {
         archiveDownloadSelected.textContent = `📥 Download Selected (${selectedArchiveItems.size})`;
         archiveProgress.classList.add("hidden");
       }
-
       if (attempts >= 300) {
         clearInterval(interval);
         showArchiveError("Batch download timed out");
@@ -3102,7 +2886,6 @@ function pollBatchStatus(batchId) {
 function showBatchSuccess(items) {
   const container = document.getElementById("archive-batch-success");
   if (!container) return;
-
   let html = `
     <div class="batch-success">✅ ${items.length} item(s) downloaded and saved!</div>
     <div class="batch-success-items">
@@ -3151,10 +2934,8 @@ archiveBtn?.addEventListener("click", async () => {
     showArchiveError("Please enter a profile URL");
     return;
   }
-
   const mode = archiveMode?.value || "all";
   const limit = parseInt(archiveLimit?.value) || 50;
-
   archiveBtn.disabled = true;
   archiveBtn.textContent = "Scanning...";
   archiveGrid.innerHTML =
@@ -3164,7 +2945,6 @@ archiveBtn?.addEventListener("click", async () => {
   archiveProgressLabel.textContent = "Connecting...";
   archiveStatus.classList.add("hidden");
   document.getElementById("archive-error")?.classList.add("hidden");
-
   try {
     const res = await fetch(`${API_BASE}/download/profile`, {
       method: "POST",
@@ -3173,7 +2953,6 @@ archiveBtn?.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to scan profile");
-
     currentArchiveJobId = data.jobId;
     pollArchiveStatus(data.jobId);
   } catch (err) {
@@ -3198,13 +2977,11 @@ archiveSelectAll?.addEventListener("change", (e) => {
 
 archiveDownloadSelected?.addEventListener("click", async () => {
   if (selectedArchiveItems.size === 0) return;
-
   const items = Array.from(selectedArchiveItems).map(
     (index) => archiveItems[index],
   );
   archiveDownloadSelected.disabled = true;
   archiveDownloadSelected.textContent = "⏳ Preparing...";
-
   try {
     const res = await fetch(`${API_BASE}/download/profile/batch`, {
       method: "POST",
@@ -3213,7 +2990,6 @@ archiveDownloadSelected?.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Batch download failed");
-
     archiveBatchId = data.batchId;
     pollBatchStatus(data.batchId);
   } catch (err) {

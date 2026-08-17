@@ -1,0 +1,25 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.snapchat.com	TRUE	/	TRUE	1786962265	_sc-sid	289168e8-9c3b-446d-8e4a-7ab1d04e8b55
+.snapchat.com	TRUE	/	TRUE	1818496368	EssentialSession	true
+.snapchat.com	TRUE	/	TRUE	1818496462	sc-wcid	1dfd4542-1e74-4402-940a-79a07e8037b4
+.snapchat.com	TRUE	/	TRUE	1818496365	sc-language	en-US
+.snapchat.com	TRUE	/	TRUE	1818496368	sc-cookies-accepted	true
+.snapchat.com	TRUE	/	TRUE	1818496368	Preferences	true
+.snapchat.com	TRUE	/	TRUE	1818496368	Performance	true
+.snapchat.com	TRUE	/	TRUE	1818496368	Marketing	true
+.snapchat.com	TRUE	/	FALSE	1789552368	blizzard_client_id	a17bdf0c-ef02-4be4-9087-e2e08d3f8b65:1786960368764
+.snapchat.com	TRUE	/	FALSE	1786962268	blizzard_web_session_id	yAUFlMRKaaVNEFci
+.snapchat.com	TRUE	/	FALSE	1821088372	_scid	yk-6kX2LkoU4PWLw0vTzuNlUdimJ7EnD
+.snapchat.com	TRUE	/	FALSE	1821088379	_scid_r	w8-6kX2LkoU4PWLw0vTzuNlUdimJ7EnDnewA9w
+.snapchat.com	TRUE	/	TRUE	1820656384	sc_at	v2|H4sIAAAAAAAA/03GwQ0AIQgEwIpIdgNyaDdCpAqLv6/zGnM7lUnp5hajUmL0lIIVhvOk7kvD4hc+HRp6n+IH3jXAN0AAAAA=
+.snapchat.com	TRUE	/	FALSE	1821088383	_sctr	1%7C1786921200000
+accounts.snapchat.com	FALSE	/	TRUE	1818496458	__Host-X-Snap-Client-Cookie	CAISOkr/A1HAM2Y0Fy3eJ7Lkq32g9gppwz8UcDlo9DZ2uleitjJd5hyu4m27/RkRQCbjOjhVFIRXOzqJTb8
+accounts.snapchat.com	FALSE	/	FALSE	1802512437	g_state	{"i_l":0,"i_ll":1786960437573,"i_e":{"enable_itp_optimization":24},"i_et":1786960437573,"i_b":"FC4ieep1j/p5tLvo9oA/TkU4QcadtuplpwO0kHJAEhI"}
+accounts.snapchat.com	FALSE	/	TRUE	1818496458	sc-a-csrf	true
+.snapchat.com	TRUE	/	TRUE	1818496458	sc-a-nonce	bfa7c087-5771-4e18-ad71-d4089723e597
+accounts.snapchat.com	FALSE	/	TRUE	1818496458	__Host-sc-a-nonce	bfa7c087-5771-4e18-ad71-d4089723e597
+.accounts.snapchat.com	TRUE	/	TRUE	1786964062	sc-a-dbsc-session	hCgwKCjE3ODU3MTg4MDAShwGnN-X1agoh3YoLH9DTLyRB4NXR4sdDyRGEEBTTgWD1s2zhvWEYsMECeVP52_O_auamtzAxu9qptwX1Qs4K4Kr_5kMmy9iKoyF5qsnLNfUNmrPKsSvuGX67RxKzuk5WQU752DevzRYZeTJ-PeRAXSnqsJokwDMvEDIL4mWXhAYDODf0v-3at0M
+accounts.snapchat.com	FALSE	/	TRUE	1818496458	__Host-sc-a-auth-session	hCgwKCjE3ODI2OTQ4MDkSqgFmbjeEnXIduo3W3WpToly8SgZK-hnC9tHkWJiDgSVExjpZnHSZdyXggeemtu3Me6kBUcmK7IdfbxGrrCJlSh_8IZiN7z8UwTeS7H2d4sq6j2UbimWQkz1tKPgjwNSq8a8JtJ2n6prQUmanUEamkZq-InNYyI-X1g-Xiw5xvUUpkEhez-3omacY5vYpq8n-H5LR_ni-FgTheYGKBN8m2us_uVakFeHybRnM1g

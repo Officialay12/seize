@@ -1,0 +1,20 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.vimeo.com	TRUE	/	TRUE	1821520973	vuid	101052371.2100406223
+.vimeo.com	TRUE	/	FALSE	1818496970	COOKIE_ID_PICOX_ID	58580201-0e7e-42cd-a735-7cbb7c47005d
+.vimeo.com	TRUE	/	TRUE	1787047373	_gid	GA1.2.519087501.1786960880
+.vimeo.com	TRUE	/	TRUE	1786964499	auth_xsrft	df989c3fd5a0c1823d2fd4d22a9edb66feb029be
+.vimeo.com	TRUE	/	TRUE	1821520899	auth_redirect	%2F
+.vimeo.com	TRUE	/	TRUE	1821520899	redirect_url_after_social_login	%2F
+.vimeo.com	TRUE	/	TRUE	1821520899	redirect_url_after_social_join	%2Fsurvey%2Fjoin
+.vimeo.com	TRUE	/	TRUE	1821520899	vimeo_gdpr_optin	1
+.vimeo.com	TRUE	/	TRUE	1821520968	language	en
+.vimeo.com	TRUE	/	FALSE	1787047329	_uetsid	a994fc009a2211f1bab7a3f749272351|13bjgv6|2|g8o|0|2420
+.vimeo.com	TRUE	/	FALSE	1820656929	_uetvid	a99513d09a2211f1a180f9afb0eb6d93|rq2uvd|1786960929905|4|1|bat.bing.com/p/insights/c/k
+.vimeo.com	TRUE	/	TRUE	1786962769	__cf_bm	QB.fzKsWWaQ.4IXi.FFiocgsGmydqgO9MyKX.QWROO4-1786960968.5367382-1.0.1.1-Mll9djDM0i.ZMiABqLaXeNLUuLUogOJuMMh5cxq2m8bgybHc1osUM6pGHRdS1_BpgaflYeb38QIN_coS3EDSu8Y_e5S7E9GBfPTp11OvYpG8I675V5xTqkwnkwJSiQ.A
+.vimeo.com	TRUE	/	TRUE	1789552971	vimeo	OHDXDDZLttZMVHLZtXPX4tPtMNVHLZtXPX4PZ4MxH3Xtt%2CeD%2CXcSDDtNBDNBPLLZD43c3XPN44DN%2CaccdMw3h_OI3uHLMIHLN3LacLXZa%2CcDZeecXXeacttdL%2CZX4DLP3dXtB%2CSZL%2C%2CX4c%2C%2CBZe%2CXZcactXdPdX
+.vimeo.com	TRUE	/	TRUE	1821520973	_ga	GA1.2.1262707440.1786960880
+.vimeo.com	TRUE	/	FALSE	1821520973	_ga_126VYLCXDY	GS2.1.s1786960908$o1$g1$t1786960973$j60$l0$h0
+vimeo.com	FALSE	/	TRUE	1818496969	_dd_s	aid=2c129ac0-7a7e-40de-8b91-ec34d90f8e49&rum=0&expire=1786961869521
